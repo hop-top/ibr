@@ -1,19 +1,8 @@
 # Dependencies
-node_modules/
+node_modules
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
-
-# Playwright
-/test-results/
-/playwright-report/
-/playwright/.cache/
-/playwright-artifacts/
-*.png
-*.jpeg
-*.jpg
-*.gif
-*.log
 
 # Environment variables
 .env
@@ -37,10 +26,6 @@ yarn.lock
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Test results and coverage
-coverage/
-.nyc_output/
 
 # Logs
 logs
