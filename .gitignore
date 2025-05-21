@@ -27,6 +27,16 @@ yarn.lock
 ehthumbs.db
 Thumbs.db
 
+# Playwright
+/playwright-report/
+/test-results/
+/playwright/.cache/
+/playwright-artifacts/
+*.png
+*.jpeg
+*.jpg
+*.gif
+
 # Logs
 logs
 *.log
