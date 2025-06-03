@@ -58,13 +58,13 @@ Guidelines:
 }
 
 function makeFindInstructionMessage(userPrompt, domTree) {
-  const systemPrompt = `You are helping the user automate the browser by finding elements based on what the user wants to observe in the page.
+  const systemPrompt = `You are helping the user automate the browser by finding elements based on what the user wants to find in the page.
 
 You will be given:
-1. a instruction of elements to observe
-2. a hierarchical accessibility tree showing the semantic structure of the page. The tree is a JSON representation of the DOM. Where "n" is tag name,  "t" text content, "a" list of attributes, "c" is the list of children elements.
+1. a instruction of elements to find
+2. a hierarchical tree showing the semantic structure of the page. The tree is a JSON representation of the DOM. Where "n" is tag name,  "t" text content, "a" list of attributes, "c" is the list of children elements.
 
-Return an array of elements that match the instruction if they exist, elements should match the instruction, otherwise return an empty array.`;
+Return an array of elements that match the instruction if they exist, otherwise return an empty array.`;
 
   return [
     { role: 'system', content: systemPrompt },

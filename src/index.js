@@ -39,7 +39,13 @@ instructions:
 
     console.log(JSON.stringify(taskDescription, null, 2));
 
-    await operations.executeTask(taskDescription);
+    try {
+      await operations.executeTask(taskDescription);
+      console.log(JSON.stringify(operations.extracts, null, 2));
+    } catch (error) {
+      console.log(JSON.stringify(operations.executionsLog, null, 2));
+      console.error('Execution failed:', error);
+    }
   } catch (error) {
     console.error('An error occurred:', error);
   } finally {

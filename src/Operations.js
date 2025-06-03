@@ -1,6 +1,7 @@
 import { makeTaskDescriptionMessage, makeFindInstructionMessage, makeActionInstructionMessage, makeExtractInstructionMessage } from "./utils/prompts.js";
 import { DomSimplifier } from './DomSimplifier.js';
 import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS } from "./utils/constants.js";
+import logger from './utils/logger.js';
 
 export class Operations {
     /**
@@ -35,9 +36,6 @@ export class Operations {
 
     async #executeInstructions(instructions) {
         for (const instruction of instructions) {
-            // wait a randomly jittered delay
-            // jitter can be positive or negative
-            await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
             await this.#executeInstruction(instruction);
         }
     }
@@ -51,11 +49,11 @@ export class Operations {
 
     async parseTaskDescription(text) {
         const messages = makeTaskDescriptionMessage(text);
-        const response = await this.ctx.aiClient.chat.completions.create({
+            const response = await this.ctx.aiClient.chat.completions.create({
             model: "gpt-4.1-mini",
             messages: messages,
             temperature: 0,
-        });
+            });
 
         const output = response.choices[0]?.message?.content?.trim();
 
@@ -72,7 +70,7 @@ export class Operations {
     }
 
     async #conditionInstruction(instruction) {
-        console.info("Condition instruction: ", instruction.name);
+        await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
         const elements = await this.#findElements(instruction.prompt);
         if (elements.length > 0) {
             await this.#executeInstructions(instruction.success_instructions);
@@ -82,16 +80,13 @@ export class Operations {
     }
 
     async #loopInstruction(instruction) {
-        console.info("Loop instruction: ", instruction.name);
-
         while (true) {
-            console.info("checking condition")
+            await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
             const elements = await this.#findElements(instruction.prompt);
             if (elements.length > 0) {
-                console.info("condition met")
+                await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
                 await this.#executeInstructions(instruction.instructions);
             } else {
-                console.info("condition not met")
                 // break if condition elements not found
                 break;
             }
@@ -99,10 +94,12 @@ export class Operations {
     }
 
     async #extractInstruction(instruction) {
-        console.log("Extract instruction: ", instruction.name);
-
+        await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
         const domTree = await this.domSimplifier.simplify();
-        const messages = makeExtractInstructionMessage(instruction.prompt, this.domSimplifier.stringifySimplifiedDom(domTree));
+        const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+        const messages = makeExtractInstructionMessage(instruction.prompt, domTreeString);
+        logger.info('Extract instruction', { instruction: instruction.prompt });
+        // logger.debug('Extract instruction message', { message: messages[1].content });
 
         const response = await this.ctx.aiClient.chat.completions.create({
             model: "gpt-4.1-mini",
@@ -111,22 +108,17 @@ export class Operations {
         });
 
         const output = response.choices[0]?.message?.content?.trim();
-        console.info(`Extract response: ${output}`);
-
-        try {
-            const extract = output ? JSON.parse(output) : {};
-            this.extracts.push(extract);
-        } catch (err) {
-            console.error("Failed to parse extract response:", err);
-            console.error("Model output:", output); 
-        }
+        const extract = output ? JSON.parse(output) : {};
+        this.extracts.push(extract);
     }
 
     async #actionInstruction(instruction) {
-        console.log("Action instruction: ", instruction.name);
-
+        await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
         const domTree = await this.domSimplifier.simplify();
-        const messages = makeActionInstructionMessage(instruction.prompt, this.domSimplifier.stringifySimplifiedDom(domTree));
+        const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+        const messages = makeActionInstructionMessage(instruction.prompt, domTreeString);
+        logger.info('Action instruction', { instruction: instruction.prompt });
+        // logger.debug('Action instruction message', { message: messages[1].content });
 
         const response = await this.ctx.aiClient.chat.completions.create({
             model: "gpt-4.1-mini",
@@ -135,15 +127,7 @@ export class Operations {
         });
 
         const output = response.choices[0]?.message?.content?.trim();
-        console.info(`Action elements response: ${output}`);
-
-        let action;
-        try {
-            action = output ? JSON.parse(output) : {};
-        } catch (err) {
-            console.error("Failed to parse action elements response:", err);
-            action = {};
-        }
+        const action = output ? JSON.parse(output) : {elements: []};
 
         if (action.elements.length > 0) {
             const elementXPath = this.domSimplifier.xpaths[action.elements[0].x];
@@ -165,8 +149,6 @@ export class Operations {
                 //     await element.evaluate(() => window.scrollTo(0, window.screen.height*0.5));
                 //     break;
             }
-        } else {
-            console.error("No elements found for action");
         }
     }
 
@@ -195,7 +177,10 @@ export class Operations {
 
     async #findElements(userPrompt) {
         const domTree = await this.domSimplifier.simplify();
-        const messages = makeFindInstructionMessage(userPrompt, this.domSimplifier.stringifySimplifiedDom(domTree));
+        const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+        const messages = makeFindInstructionMessage(userPrompt, domTreeString);
+        logger.info('Find instruction', { instruction: userPrompt });
+        // logger.debug('Find instruction message', { message: messages[1].content });
 
         const response = await this.ctx.aiClient.chat.completions.create({
             model: "gpt-4.1-mini",
@@ -204,13 +189,6 @@ export class Operations {
         });
 
         const output = response.choices[0]?.message?.content?.trim();
-        console.info(`Find elements response: ${output}`);
-
-        try {
-            return output ? JSON.parse(output) : [];
-        } catch (err) {
-            console.error("Failed to parse find elements response:", err);
-            return [];
-        }
+        return output ? JSON.parse(output) : [];
     }
 }
