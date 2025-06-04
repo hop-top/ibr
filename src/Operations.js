@@ -63,8 +63,8 @@ export class Operations {
             }
             throw new Error("No output from model");
         } catch (err) {
-            console.error("Failed to parse JSON:", err);
-            console.error("Model output:", output);
+            logger.error("Failed to parse JSON:", err);
+            logger.error("Model output:", output);
             return null;
         }
     }
