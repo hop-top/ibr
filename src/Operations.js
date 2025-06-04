@@ -42,7 +42,7 @@ export class Operations {
 
     async executeTask(taskDescription) {
         await this.ctx.page.goto(taskDescription.url);
-        await new Promise((resolve) => setTimeout(resolve, PAGE_LOADING_DELAY_MS));
+        await this.#waitJitteredDelay(PAGE_LOADING_DELAY_MS);
         await this.#preparePage();
         await this.#executeInstructions(taskDescription.instructions);
     }
@@ -70,7 +70,7 @@ export class Operations {
     }
 
     async #conditionInstruction(instruction) {
-        await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
+        await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
         const elements = await this.#findElements(instruction.prompt);
         if (elements.length > 0) {
             await this.#executeInstructions(instruction.success_instructions);
@@ -81,10 +81,10 @@ export class Operations {
 
     async #loopInstruction(instruction) {
         while (true) {
-            await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
+            await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
             const elements = await this.#findElements(instruction.prompt);
             if (elements.length > 0) {
-                await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
+                await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
                 await this.#executeInstructions(instruction.instructions);
             } else {
                 // break if condition elements not found
@@ -94,11 +94,11 @@ export class Operations {
     }
 
     async #extractInstruction(instruction) {
-        await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
+        await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
         const domTree = await this.domSimplifier.simplify();
         const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
         const messages = makeExtractInstructionMessage(instruction.prompt, domTreeString);
-        logger.info('Extract instruction', { instruction: instruction.prompt });
+        logger.info(`Extract instruction ${instruction.prompt}`);
         // logger.debug('Extract instruction message', { message: messages[1].content });
 
         const response = await this.ctx.aiClient.chat.completions.create({
@@ -113,11 +113,11 @@ export class Operations {
     }
 
     async #actionInstruction(instruction) {
-        await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS)));
+        await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
         const domTree = await this.domSimplifier.simplify();
         const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
         const messages = makeActionInstructionMessage(instruction.prompt, domTreeString);
-        logger.info('Action instruction', { instruction: instruction.prompt });
+        logger.info(`Action instruction ${instruction.prompt}`);
         // logger.debug('Action instruction message', { message: messages[1].content });
 
         const response = await this.ctx.aiClient.chat.completions.create({
@@ -128,20 +128,29 @@ export class Operations {
 
         const output = response.choices[0]?.message?.content?.trim();
         const action = output ? JSON.parse(output) : {elements: []};
+        
+        logger.info(`Action instruction result ${JSON.stringify(action)}`);
 
         if (action.elements.length > 0) {
             const elementXPath = this.domSimplifier.xpaths[action.elements[0].x];
+            // scroll element into view
+            await this.ctx.page.locator(`xpath=${elementXPath}`).scrollIntoViewIfNeeded();
+            await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
             switch (action.type) {
                 case 'click':
+                    logger.info(`Clicking element at ${elementXPath}`);
                     await this.ctx.page.locator(`xpath=${elementXPath}`).click();
                     break;
                 case 'fill':
+                    logger.info(`Filling element at ${elementXPath} with value ${action.value}`);
                     await this.ctx.page.locator(`xpath=${elementXPath}`).fill(action.value);
                     break;
                 case 'type':
+                    logger.info(`Typing ${action.value} into element at ${elementXPath}`);
                     await this.ctx.page.locator(`xpath=${elementXPath}`).type(action.value);
                     break;
                 case 'press':
+                    logger.info(`Pressing ${action.value} on element at ${elementXPath}`);
                     await this.ctx.page.locator(`xpath=${elementXPath}`).press(action.value);
                     break;
                 // case 'scroll':
@@ -149,29 +158,30 @@ export class Operations {
                 //     await element.evaluate(() => window.scrollTo(0, window.screen.height*0.5));
                 //     break;
             }
+            await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
         }
     }
 
-    #getJitteredDelay(delay) {
-        return delay + Math.random() * INSTRUCTION_EXECUTION_JITTER_MS - INSTRUCTION_EXECUTION_JITTER_MS / 2;
+    async #waitJitteredDelay(delay) {
+        await new Promise((resolve) => setTimeout(resolve, delay + Math.random() * INSTRUCTION_EXECUTION_JITTER_MS - INSTRUCTION_EXECUTION_JITTER_MS / 2));
     }
 
     async #preparePage() {
-        let lastHeight = 0;
+        let lastWindowScrollY;
         let scrollCount = 0;
         while (true) {
-            const height = await this.ctx.page.evaluate(() => document.body.scrollHeight);
-            if (height === lastHeight) {
+            const windowScrollY = await this.ctx.page.evaluate(() => window.scrollY);
+            if (windowScrollY === lastWindowScrollY) {
                 scrollCount++;
                 if (scrollCount >= 2) {
                     break;
                 }
             } else {
                 scrollCount = 0;
-                lastHeight = height;
+                lastWindowScrollY = windowScrollY;
             }
-            await this.ctx.page.evaluate(() => window.scrollTo(0, window.screen.height*0.5));
-            await new Promise((resolve) => setTimeout(resolve, this.#getJitteredDelay(PAGE_LOADING_DELAY_MS)));
+            await this.ctx.page.evaluate(() => window.scrollTo(0, window.scrollY + window.screen.height*0.5));
+            await this.#waitJitteredDelay(PAGE_LOADING_DELAY_MS);
         }
     }
 
@@ -179,8 +189,7 @@ export class Operations {
         const domTree = await this.domSimplifier.simplify();
         const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
         const messages = makeFindInstructionMessage(userPrompt, domTreeString);
-        logger.info('Find instruction', { instruction: userPrompt });
-        // logger.debug('Find instruction message', { message: messages[1].content });
+        logger.info(`Find instruction: ${userPrompt}`);;
 
         const response = await this.ctx.aiClient.chat.completions.create({
             model: "gpt-4.1-mini",
@@ -189,6 +198,7 @@ export class Operations {
         });
 
         const output = response.choices[0]?.message?.content?.trim();
+        logger.info(`Find instruction result ${JSON.stringify(output)}`);
         return output ? JSON.parse(output) : [];
     }
 }

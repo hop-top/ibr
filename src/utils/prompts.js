@@ -80,7 +80,7 @@ You will be given:
 2. a hierarchical accessibility tree showing the semantic structure of the page. The tree is a JSON representation of the DOM. Where "n" is tag name,  "t" text content, "a" list of attributes, "c" is the list of children elements.
 
 Return an object with the following properties:
-1. elements: an array of elements that match the instruction if they exist, otherwise return an empty array.
+1. elements: an array of elements that match the instruction if they exist, elements should support the action type, otherwise return an empty array.
 2. type: name of action to perform on the element, can be "click" or "fill" or "type" or "press" or "scroll".
 3. value: value to fill or type or press.`
 
