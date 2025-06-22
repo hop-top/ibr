@@ -13,6 +13,8 @@ export class Operations {
         this.ctx = ctx;
         this.domSimplifier = new DomSimplifier(ctx.page);
         this.extracts = [];
+        this.promptTokens = [];
+        this.completionTokens = [];
     }
 
     async #executeInstruction(instruction) {
@@ -56,6 +58,8 @@ export class Operations {
             });
 
         const output = response.choices[0]?.message?.content?.trim();
+        this.promptTokens.push(response.usage.prompt_tokens);
+        this.completionTokens.push(response.usage.completion_tokens);
 
         try {
             if (output) {
@@ -110,6 +114,8 @@ export class Operations {
         const output = response.choices[0]?.message?.content?.trim();
         const extract = output ? JSON.parse(output) : {};
         this.extracts.push(extract);
+        this.promptTokens.push(response.usage.prompt_tokens);
+        this.completionTokens.push(response.usage.completion_tokens);
     }
 
     async #actionInstruction(instruction) {
@@ -128,6 +134,8 @@ export class Operations {
 
         const output = response.choices[0]?.message?.content?.trim();
         const action = output ? JSON.parse(output) : {elements: []};
+        this.promptTokens.push(response.usage.prompt_tokens);
+        this.completionTokens.push(response.usage.completion_tokens);
         
         logger.info(`Action instruction result ${JSON.stringify(action)}`);
 
@@ -199,6 +207,8 @@ export class Operations {
 
         const output = response.choices[0]?.message?.content?.trim();
         logger.info(`Find instruction result ${JSON.stringify(output)}`);
+        this.promptTokens.push(response.usage.prompt_tokens);
+        this.completionTokens.push(response.usage.completion_tokens);
         return output ? JSON.parse(output) : [];
     }
 }

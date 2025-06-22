@@ -50,6 +50,8 @@ async function run() {
     try {
       await operations.executeTask(taskDescription);
       logger.info(JSON.stringify(operations.extracts, null, 2));
+      logger.info(`Prompt tokens: ${operations.promptTokens.reduce((a, b) => a + b, 0)}`);
+      logger.info(`Completion tokens: ${operations.completionTokens.reduce((a, b) => a + b, 0)}`);
     } catch (error) {
       logger.error('Execution failed:', error);
     }

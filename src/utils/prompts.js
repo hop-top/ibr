@@ -77,7 +77,7 @@ function makeActionInstructionMessage(userPrompt, domTree) {
 
 You will be given:
 1. a instruction of elements to find for the action
-2. a hierarchical accessibility tree showing the semantic structure of the page. The tree is a JSON representation of the DOM. Where "n" is tag name,  "t" text content, "a" list of attributes, "c" is the list of children elements.
+2. a hierarchical tree showing the semantic structure of the page. The tree is a JSON representation of the DOM. Where "n" is tag name,  "t" text content, "a" list of attributes, "c" is the list of children elements.
 
 Return an object with the following properties:
 1. elements: an array of elements that match the instruction if they exist, elements should support the action type, otherwise return an empty array.

@@ -48,3 +48,5 @@ Run the tool:
 ```bash
 npm run start -- "url: https://www.airbnb.com/users/show/102012735\ninstructions:\n    - click 'view all listings' if found\n    - repeatedly:\n            - click 'show more listings' if found\n    - extract all listings: listing name, listing url"
 ```
+
+When using the tool before having a final prompt, it is recommended to follow what the tool is doing and update your prompt accordingly. The tool doesn't run in headless mode, so you can see what it's doing. for example, if the tool returns a timeout error when performing an action, most of the time there's an element obstructing the action. like a cookie banner or a modal. in that case, you can update your prompt to include instructions to handle such elements.
