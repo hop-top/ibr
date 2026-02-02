@@ -1,5 +1,5 @@
 {
-  "name": "cute_scraper",
+  "name": "@hop/idx",
   "version": "1.0.0",
   "main": "src/index.js",
   "type": "module",
@@ -15,11 +15,12 @@
   ],
   "author": "",
   "license": "ISC",
-  "description": "A web scraping tool using Playwright",
+  "description": "Intent Driven eXtractor - AI-powered instruction parser for automated web interactions",
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.35",
     "@ai-sdk/google": "^3.0.20",
     "@ai-sdk/openai": "^3.0.25",
+    "@boundaryml/baml": "latest",
     "ai": "^6.0.67",
     "dotenv": "^16.5.0",
     "node-html-parser": "^7.0.1",

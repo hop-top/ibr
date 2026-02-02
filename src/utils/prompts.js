@@ -64,7 +64,7 @@ You will be given:
 1. a instruction of elements to find
 2. a hierarchical tree showing the semantic structure of the page. The tree is a JSON representation of the DOM. Where "n" is tag name,  "t" text content, "a" list of attributes, "c" is the list of children elements.
 
-Return an array of elements that match the instruction if they exist, otherwise return an empty array.`;
+You MUST return ONLY a valid JSON array of elements that match the instruction if they exist, otherwise return an empty array. Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON array.`;
 
   return [
     { role: 'system', content: systemPrompt },
@@ -79,10 +79,12 @@ You will be given:
 1. a instruction of elements to find for the action
 2. a hierarchical tree showing the semantic structure of the page. The tree is a JSON representation of the DOM. Where "n" is tag name,  "t" text content, "a" list of attributes, "c" is the list of children elements.
 
-Return an object with the following properties:
+Return ONLY a valid JSON object with the following properties:
 1. elements: an array of elements that match the instruction if they exist, elements should support the action type, otherwise return an empty array.
 2. type: name of action to perform on the element, can be "click" or "fill" or "type" or "press" or "scroll".
-3. value: value to fill or type or press.`
+3. value: value to fill or type or press.
+
+Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON object.`
 
   return [
     { role: 'system', content: systemPrompt },
@@ -91,20 +93,26 @@ Return an object with the following properties:
 }
 
 function makeExtractInstructionMessage(userPrompt, domTree) {
-  const systemPrompt = `You are extracting content on behalf of a user.
-  If a user asks you to extract a 'list' of information, or 'all' information, 
-  YOU MUST EXTRACT ALL OF THE INFORMATION THAT THE USER REQUESTS.
-   
-  You will be given:
-1. An instruction
-2. A list of DOM elements to extract from.
+  const systemPrompt = `You are a JSON extraction tool. Your ONLY task is to extract data and return valid JSON.
 
-Print the exact text from the DOM elements with all symbols, characters, and endlines as is.
-Result is an array in JSON, if no result is found return an empty array.`;
+CRITICAL RULES:
+- Return ONLY a JSON array (starting with [ and ending with ])
+- Do NOT include any text before or after the JSON
+- Do NOT use markdown code blocks or backticks
+- Do NOT include explanations, headers, or titles
+- Extract exactly what the user asks for
+- If nothing found, return empty array: []
+
+You will be given:
+1. An extraction instruction
+2. A DOM tree to extract from
+
+Extract the exact text with all symbols and line breaks preserved.
+Return valid JSON array ONLY. Nothing else.`;
 
   return [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: `Instructions: ${userPrompt}\nTree: ${domTree}` }
+    { role: 'user', content: `Extract: ${userPrompt}\nFrom DOM: ${domTree}` }
   ];
 }
 export { makeTaskDescriptionMessage, makeFindInstructionMessage, makeActionInstructionMessage, makeExtractInstructionMessage };

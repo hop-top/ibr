@@ -1,4 +1,5 @@
 import logger from './logger.js';
+import { parseWithBAML } from '../ai/baml-parser.js';
 
 /**
  * Schema for task description returned by AI model
@@ -107,14 +108,32 @@ export function validateAndParseJSON(jsonString, context = '') {
     throw new Error(`${context}: Expected JSON string, got empty or non-string value`);
   }
 
+  // Try BAML parser first (handles markdown, flexible formatting)
   try {
-    return JSON.parse(jsonString);
-  } catch (err) {
-    throw new Error(
-      `${context}: Failed to parse JSON response\n` +
-      `Response: ${jsonString.substring(0, 200)}${jsonString.length > 200 ? '...' : ''}\n` +
-      `Error: ${err.message}`
-    );
+    const parsed = parseWithBAML(jsonString, 'generic');
+    logger.debug('Successfully parsed JSON with BAML parser', { context });
+    return parsed;
+  } catch (bamlError) {
+    logger.debug('BAML parser failed, attempting fallback parsing', { context, error: bamlError.message });
+
+    // Fallback: Try legacy parsing approach
+    let cleanedString = jsonString.trim();
+
+    // Handle markdown-wrapped JSON (```json ... ```)
+    const jsonMatch = cleanedString.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      cleanedString = jsonMatch[1].trim();
+    }
+
+    try {
+      return JSON.parse(cleanedString);
+    } catch (parseErr) {
+      throw new Error(
+        `${context}: Failed to parse JSON response\n` +
+        `Response: ${cleanedString.substring(0, 200)}${cleanedString.length > 200 ? '...' : ''}\n` +
+        `Error: ${parseErr.message}`
+      );
+    }
   }
 }
 

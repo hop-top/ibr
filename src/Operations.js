@@ -3,6 +3,9 @@ import { DomSimplifier } from './DomSimplifier.js';
 import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS } from "./utils/constants.js";
 import { generateAIResponse } from './ai/provider.js';
 import { validateTaskDescription, validateAndParseJSON, createParseErrorMessage, createErrorContext } from './utils/validation.js';
+import { parseTaskDescriptionResponse, parseFindElementsResponse, parseActionInstructionResponse, parseExtractionResponse } from './ai/baml-parser.js';
+import { CacheManager } from './cache/CacheManager.js';
+import { createDomSignature, isDomCompatible, getValidator, extractSchema } from './cache/CacheUtils.js';
 import logger from './utils/logger.js';
 
 export class Operations {
@@ -17,6 +20,7 @@ export class Operations {
         this.ctx = ctx;
         this.domSimplifier = new DomSimplifier(ctx.page);
         this.extracts = [];
+        this.cacheManager = new CacheManager();
 
         // Improved token tracking
         this.tokenUsage = {
@@ -76,6 +80,10 @@ export class Operations {
             url: taskDescription.url,
             instructionCount: taskDescription.instructions.length
         });
+
+        // Initialize cache
+        await this.cacheManager.init();
+        this.url = taskDescription.url;
 
         try {
             logger.debug('Navigating to URL', { url: taskDescription.url });
@@ -250,6 +258,9 @@ export class Operations {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
             const domTree = await this.domSimplifier.simplify();
             const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+
+            // Note: For extraction, we always call AI for fresh data
+            // Caching would require re-extracting from current DOM
             const messages = makeExtractInstructionMessage(instruction.prompt, domTreeString);
 
             logger.debug('Sending extract instruction to AI', {
@@ -269,10 +280,15 @@ export class Operations {
             let extract;
 
             try {
-                extract = output ? validateAndParseJSON(output, `Extract instruction: ${instruction.prompt}`) : {};
+                if (output) {
+                  const parsed = parseExtractionResponse(output);
+                  extract = Array.isArray(parsed) ? parsed : [parsed];
+                } else {
+                  extract = [];
+                }
             } catch (parseErr) {
                 logger.warn(createParseErrorMessage('extraction', output, parseErr));
-                extract = {};
+                extract = [];
             }
 
             this.extracts.push(extract);
@@ -305,39 +321,78 @@ export class Operations {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
             const domTree = await this.domSimplifier.simplify();
             const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
-            const messages = makeActionInstructionMessage(instruction.prompt, domTreeString);
+            const domSignature = createDomSignature(domTree);
 
-            logger.debug('Sending action instruction to AI', {
-                promptLength: instruction.prompt.length,
-                domLength: domTreeString.length
-            });
+            // Check cache first
+            const cacheKey = this.cacheManager.generateKey(this.url, instruction.prompt, 'action');
+            const cached = await this.cacheManager.get('action', cacheKey);
 
-            const response = await generateAIResponse(
-                this.ctx.aiProvider.modelInstance,
-                messages,
-                { temperature: this.temperature }
-            );
-
-            this.#updateTokenUsage(response.usage);
-
-            const output = response.content?.trim();
             let action;
 
-            try {
-                action = output ? validateAndParseJSON(output, `Action instruction: ${instruction.prompt}`) : { elements: [] };
-            } catch (parseErr) {
-                logger.warn(createParseErrorMessage('action', output, parseErr));
-                action = { elements: [] };
+            if (cached && isDomCompatible(cached.metadata.lastDomSignature, domSignature)) {
+                try {
+                    // Try to apply cached schema
+                    const { elementIndices, actionType, actionValue } = cached.schema;
+                    if (elementIndices && elementIndices.length > 0) {
+                        action = {
+                            elements: elementIndices.map(idx => ({ x: idx })),
+                            type: actionType,
+                            value: actionValue
+                        };
+                        await this.cacheManager.recordSuccess('action', cacheKey);
+                        logger.info(`${context} completed (CACHE HIT)`, { actionType });
+                    }
+                } catch (error) {
+                    logger.debug('Cache application failed', { error: error.message });
+                    await this.cacheManager.recordFailure('action', cacheKey);
+                    action = null;
+                }
             }
 
-            logger.debug(`${context} parsed`, {
-                actionType: action.type,
-                elementCount: action.elements?.length || 0,
-                promptTokens: response.usage.promptTokens,
-                completionTokens: response.usage.completionTokens
-            });
+            // Cache miss or invalid - call AI
+            if (!action) {
+                const messages = makeActionInstructionMessage(instruction.prompt, domTreeString);
 
-            if (action.elements && action.elements.length > 0) {
+                logger.debug('Sending action instruction to AI', {
+                    promptLength: instruction.prompt.length,
+                    domLength: domTreeString.length
+                });
+
+                const response = await generateAIResponse(
+                    this.ctx.aiProvider.modelInstance,
+                    messages,
+                    { temperature: this.temperature }
+                );
+
+                this.#updateTokenUsage(response.usage);
+
+                const output = response.content?.trim();
+
+                try {
+                    action = output ? parseActionInstructionResponse(output) : { elements: [] };
+                } catch (parseErr) {
+                    logger.warn(createParseErrorMessage('action', output, parseErr));
+                    action = { elements: [] };
+                }
+
+                logger.debug(`${context} parsed`, {
+                    actionType: action.type,
+                    elementCount: action.elements?.length || 0,
+                    promptTokens: response.usage.promptTokens,
+                    completionTokens: response.usage.completionTokens
+                });
+
+                // Cache successful result
+                if (action.elements && action.elements.length > 0) {
+                    const schema = extractSchema('action', action);
+                    await this.cacheManager.set('action', cacheKey, {
+                        schema,
+                        metadata: { lastDomSignature: domSignature }
+                    });
+                }
+            }
+
+            if (action && action.elements && action.elements.length > 0) {
                 const elementIndex = action.elements[0].x;
                 const elementXPath = this.domSimplifier.xpaths[elementIndex];
 
@@ -428,6 +483,32 @@ export class Operations {
         try {
             const domTree = await this.domSimplifier.simplify();
             const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const domSignature = createDomSignature(domTree);
+
+            // Check cache first
+            const cacheKey = this.cacheManager.generateKey(this.url, userPrompt, 'find');
+            const cached = await this.cacheManager.get('find', cacheKey);
+
+            if (cached && isDomCompatible(cached.metadata.lastDomSignature, domSignature)) {
+                try {
+                    // Try to apply cached schema
+                    const indices = cached.schema.elementIndices || [];
+                    const elements = indices.map(idx => ({ x: idx }));
+
+                    if (elements.length > 0) {
+                        await this.cacheManager.recordSuccess('find', cacheKey);
+                        logger.info(`${context} completed (CACHE HIT)`, {
+                            elementCount: elements.length
+                        });
+                        return elements;
+                    }
+                } catch (error) {
+                    logger.debug('Cache application failed', { error: error.message });
+                    await this.cacheManager.recordFailure('find', cacheKey);
+                }
+            }
+
+            // Cache miss or invalid - call AI
             const messages = makeFindInstructionMessage(userPrompt, domTreeString);
 
             logger.debug('Sending find instruction to AI', {
@@ -447,10 +528,19 @@ export class Operations {
             let elements;
 
             try {
-                elements = output ? validateAndParseJSON(output, `Find instruction: ${userPrompt}`) : [];
+                elements = output ? parseFindElementsResponse(output) : [];
             } catch (parseErr) {
                 logger.warn(createParseErrorMessage('element finding', output, parseErr));
                 elements = [];
+            }
+
+            // Cache successful result
+            if (elements.length > 0) {
+                const schema = extractSchema('find', elements);
+                await this.cacheManager.set('find', cacheKey, {
+                    schema,
+                    metadata: { lastDomSignature: domSignature }
+                });
             }
 
             const elementCount = Array.isArray(elements) ? elements.length : 0;

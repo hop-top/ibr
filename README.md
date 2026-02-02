@@ -1,6 +1,6 @@
-# Cute Scraper
+# idx - Intent Driven eXtractor
 
-A web scraping tool that uses AI to convert human-readable instructions into automated web actions. Powered by Playwright for browser automation and Vercel AI SDK for multi-provider AI support.
+An AI-powered instruction parser that converts human-readable instructions into automated web interactions. Powered by Playwright for browser automation and Vercel AI SDK for multi-provider AI support.
 
 ## Features
 
@@ -17,9 +17,7 @@ A web scraping tool that uses AI to convert human-readable instructions into aut
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/IdeaCraftersHQ/cute-scraper
-cd cute-scraper
-npm install
+npm install @hop/idx
 npm run browser:install
 ```
 
@@ -66,7 +64,7 @@ AI_MODEL=gpt-4-mini            # Override default model (optional)
 ### Basic Example
 
 ```bash
-npm start -- "url: https://example.com
+idx "url: https://example.com
 instructions:
   - click the 'submit' button
   - extract page title"
@@ -119,7 +117,7 @@ instructions:
 ### Real-World Example
 
 ```bash
-npm start -- "url: https://www.example.com/products
+idx "url: https://www.example.com/products
 instructions:
   - close 'cookie banner' if found
   - scroll to bottom of page
@@ -155,7 +153,7 @@ instructions:
 - Use `BROWSER_SLOWMO` to slow down and observe
 
 ```bash
-BROWSER_SLOWMO=500 npm start -- "..."
+BROWSER_SLOWMO=500 idx "..."
 ```
 
 ### Issue: Element Not Found
@@ -193,7 +191,7 @@ BROWSER_SLOWMO=500 npm start -- "..."
 See what's happening at each step:
 
 ```bash
-DEBUG=* npm start -- "..."
+DEBUG=* idx "..."
 ```
 
 Logs show:
@@ -208,7 +206,7 @@ Logs show:
 Keep the browser visible and slow it down:
 
 ```bash
-BROWSER_HEADLESS=false BROWSER_SLOWMO=500 npm start -- "..."
+BROWSER_HEADLESS=false BROWSER_SLOWMO=500 idx "..."
 ```
 
 Now you can watch exactly what the script is doing and see where it fails.

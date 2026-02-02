@@ -43,12 +43,12 @@ function getOperationOptions() {
  * Print usage information
  */
 function printUsage() {
-  logger.info('Web Scraper - AI-Powered Instruction Parser');
+  logger.info('idx - Intent Driven eXtractor');
   logger.info('');
-  logger.info('Usage: npm start -- "<user_prompt>"');
+  logger.info('Usage: idx "<user_prompt>"');
   logger.info('');
   logger.info('Example:');
-  logger.info('npm start -- "url: https://example.com\ninstructions:\n  - click submit button"');
+  logger.info('idx "url: https://example.com\ninstructions:\n  - click submit button"');
   logger.info('');
   logger.info('Configuration:');
   logger.info('  AI_PROVIDER      - AI provider (openai, anthropic, google) [default: openai]');
@@ -60,7 +60,7 @@ function printUsage() {
 }
 
 async function run() {
-  logger.info('Starting web scraper');
+  logger.info('Starting idx (Intent Driven eXtractor)');
 
   try {
     // Validate required environment variables based on provider

@@ -1,4 +1,4 @@
-import { openai } from '@ai-sdk/openai';
+import { openai, createOpenAI } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { google } from '@ai-sdk/google';
 import { generateText } from 'ai';
@@ -93,12 +93,28 @@ export function createAIProvider() {
     case 'openai':
     default:
       modelName = customModel || DEFAULT_MODELS.openai;
-      modelInstance = openai(modelName);
-      logger.info('AI Provider initialized', {
-        provider: 'OpenAI',
-        model: modelName,
-        description: 'Using OpenAI model'
-      });
+      const baseURL = process.env.OPENAI_BASE_URL;
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (baseURL) {
+        const customOpenAI = createOpenAI({
+          apiKey: apiKey || 'sk-default',
+          baseURL: baseURL
+        });
+        modelInstance = customOpenAI(modelName);
+        logger.info('AI Provider initialized', {
+          provider: 'OpenAI',
+          model: modelName,
+          baseURL: baseURL,
+          description: 'Using OpenAI-compatible model'
+        });
+      } else {
+        modelInstance = openai(modelName);
+        logger.info('AI Provider initialized', {
+          provider: 'OpenAI',
+          model: modelName,
+          description: 'Using OpenAI model'
+        });
+      }
       break;
   }
 

@@ -50,7 +50,7 @@ const logger = winston.createLogger({
     winston.format.splat(),
     winston.format.json()
   ),
-  defaultMeta: { service: 'cute-scraper' },
+  defaultMeta: { service: 'idx' },
   transports: [
     // Console transport
     new winston.transports.Console({
