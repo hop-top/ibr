@@ -1,20 +1,49 @@
 import { makeTaskDescriptionMessage, makeFindInstructionMessage, makeActionInstructionMessage, makeExtractInstructionMessage } from "./utils/prompts.js";
 import { DomSimplifier } from './DomSimplifier.js';
 import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS } from "./utils/constants.js";
+import { generateAIResponse } from './ai/provider.js';
+import { validateTaskDescription, validateAndParseJSON, createParseErrorMessage, createErrorContext } from './utils/validation.js';
 import logger from './utils/logger.js';
 
 export class Operations {
     /**
      * @param {Object} ctx - The context object
-     * @param {OpenAI} ctx.aiClient - The AI client instance
+     * @param {Object} ctx.aiProvider - The AI provider instance
      * @param {Page} ctx.page - The Playwright page instance
+     * @param {Object} options - Configuration options
+     * @param {number} options.temperature - AI temperature (0-2, default: 0)
      */
-    constructor(ctx) {
+    constructor(ctx, options = {}) {
         this.ctx = ctx;
         this.domSimplifier = new DomSimplifier(ctx.page);
         this.extracts = [];
-        this.promptTokens = [];
-        this.completionTokens = [];
+
+        // Improved token tracking
+        this.tokenUsage = {
+            prompt: 0,
+            completion: 0,
+            total: 0
+        };
+
+        // Configuration
+        this.temperature = Math.min(2, Math.max(0, options.temperature ?? 0));
+        this.executionIndex = 0;
+
+        logger.debug('Operations initialized', {
+            provider: ctx.aiProvider.provider,
+            model: ctx.aiProvider.model,
+            temperature: this.temperature
+        });
+    }
+
+    /**
+     * Update token usage tracking
+     * @param {Object} usage - Usage object with promptTokens, completionTokens
+     */
+    #updateTokenUsage(usage) {
+        this.tokenUsage.prompt += usage.promptTokens || 0;
+        this.tokenUsage.completion += usage.completionTokens || 0;
+        this.tokenUsage.total += (usage.promptTokens || 0) + (usage.completionTokens || 0);
     }
 
     async #executeInstruction(instruction) {
@@ -43,130 +72,326 @@ export class Operations {
     }
 
     async executeTask(taskDescription) {
-        await this.ctx.page.goto(taskDescription.url);
-        await this.#waitJitteredDelay(PAGE_LOADING_DELAY_MS);
-        await this.#preparePage();
-        await this.#executeInstructions(taskDescription.instructions);
+        logger.info('Executing task', {
+            url: taskDescription.url,
+            instructionCount: taskDescription.instructions.length
+        });
+
+        try {
+            logger.debug('Navigating to URL', { url: taskDescription.url });
+            await this.ctx.page.goto(taskDescription.url, { waitUntil: 'networkidle' });
+            await this.#waitJitteredDelay(PAGE_LOADING_DELAY_MS);
+
+            logger.debug('Preparing page');
+            await this.#preparePage();
+
+            logger.info('Starting instruction execution', {
+                count: taskDescription.instructions.length
+            });
+            await this.#executeInstructions(taskDescription.instructions);
+
+            logger.info('Task execution completed successfully');
+        } catch (error) {
+            logger.error('Task execution failed', {
+                url: taskDescription.url,
+                executionIndex: this.executionIndex,
+                error: error.message
+            });
+            throw error;
+        }
     }
 
     async parseTaskDescription(text) {
-        const messages = makeTaskDescriptionMessage(text);
-            const response = await this.ctx.aiClient.chat.completions.create({
-            model: "gpt-4.1-mini",
-            messages: messages,
-            temperature: 0,
-            });
+        if (!text || typeof text !== 'string' || text.trim().length === 0) {
+            throw new Error('Task description cannot be empty');
+        }
 
-        const output = response.choices[0]?.message?.content?.trim();
-        this.promptTokens.push(response.usage.prompt_tokens);
-        this.completionTokens.push(response.usage.completion_tokens);
+        logger.info('Parsing task description', {
+            inputLength: text.length,
+            preview: text.substring(0, 100)
+        });
+
+        const messages = makeTaskDescriptionMessage(text);
 
         try {
-            if (output) {
-                return JSON.parse(output);
+            const response = await generateAIResponse(
+                this.ctx.aiProvider.modelInstance,
+                messages,
+                { temperature: 0 }
+            );
+
+            this.#updateTokenUsage(response.usage);
+
+            const output = response.content?.trim();
+            if (!output) {
+                throw new Error('AI model returned empty response');
             }
-            throw new Error("No output from model");
-        } catch (err) {
-            logger.error("Failed to parse JSON:", err);
-            logger.error("Model output:", output);
-            return null;
+
+            let taskDescription;
+            try {
+                taskDescription = validateAndParseJSON(output, 'Task description parsing');
+            } catch (parseErr) {
+                logger.error(createParseErrorMessage('task description', output, parseErr));
+                throw parseErr;
+            }
+
+            // Validate structure
+            validateTaskDescription(taskDescription);
+
+            logger.info('Task description parsed successfully', {
+                url: taskDescription.url,
+                instructionCount: taskDescription.instructions.length,
+                promptTokens: response.usage.promptTokens,
+                completionTokens: response.usage.completionTokens
+            });
+
+            return taskDescription;
+        } catch (error) {
+            logger.error('Task description parsing failed', {
+                error: error.message,
+                stage: 'parseTaskDescription'
+            });
+            throw error;
         }
     }
 
     async #conditionInstruction(instruction) {
-        await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-        const elements = await this.#findElements(instruction.prompt);
-        if (elements.length > 0) {
-            await this.#executeInstructions(instruction.success_instructions);
-        } else {
-            await this.#executeInstructions(instruction.failure_instructions);
+        const context = createErrorContext('condition instruction', {
+            instructionIndex: this.executionIndex
+        });
+
+        logger.info(`${context}: ${instruction.prompt}`);
+
+        try {
+            await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+            const elements = await this.#findElements(instruction.prompt);
+
+            if (elements.length > 0) {
+                logger.debug(`${context}: Condition TRUE, executing success path`, {
+                    elementCount: elements.length,
+                    successInstructions: instruction.success_instructions?.length || 0
+                });
+                await this.#executeInstructions(instruction.success_instructions);
+            } else {
+                logger.debug(`${context}: Condition FALSE, executing failure path`, {
+                    failureInstructions: instruction.failure_instructions?.length || 0
+                });
+                await this.#executeInstructions(instruction.failure_instructions);
+            }
+
+            logger.info(`${context} completed`);
+            this.executionIndex++;
+        } catch (error) {
+            logger.error(`${context} failed`, {
+                error: error.message,
+                executionIndex: this.executionIndex
+            });
+            throw error;
         }
     }
 
     async #loopInstruction(instruction) {
-        while (true) {
-            await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-            const elements = await this.#findElements(instruction.prompt);
-            if (elements.length > 0) {
+        const context = createErrorContext('loop instruction', {
+            instructionIndex: this.executionIndex
+        });
+
+        logger.info(`${context}: ${instruction.prompt}`);
+
+        try {
+            let iterationCount = 0;
+            const maxIterations = 100; // Safety limit
+
+            while (iterationCount < maxIterations) {
                 await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-                await this.#executeInstructions(instruction.instructions);
-            } else {
-                // break if condition elements not found
-                break;
+                const elements = await this.#findElements(instruction.prompt);
+
+                if (elements.length > 0) {
+                    iterationCount++;
+                    logger.debug(`${context}: Iteration ${iterationCount}, condition TRUE, executing loop body`, {
+                        elementCount: elements.length,
+                        loopInstructions: instruction.instructions?.length || 0
+                    });
+                    await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+                    await this.#executeInstructions(instruction.instructions);
+                } else {
+                    logger.debug(`${context}: Condition FALSE, breaking loop`, {
+                        totalIterations: iterationCount
+                    });
+                    break;
+                }
             }
+
+            if (iterationCount >= maxIterations) {
+                logger.warn(`${context}: Reached maximum iteration limit (${maxIterations}), breaking to prevent infinite loop`);
+            }
+
+            logger.info(`${context} completed`, {
+                totalIterations: iterationCount
+            });
+            this.executionIndex++;
+        } catch (error) {
+            logger.error(`${context} failed`, {
+                error: error.message,
+                executionIndex: this.executionIndex
+            });
+            throw error;
         }
     }
 
     async #extractInstruction(instruction) {
-        await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-        const domTree = await this.domSimplifier.simplify();
-        const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
-        const messages = makeExtractInstructionMessage(instruction.prompt, domTreeString);
-        logger.info(`Extract instruction ${instruction.prompt}`);
-        // logger.debug('Extract instruction message', { message: messages[1].content });
-
-        const response = await this.ctx.aiClient.chat.completions.create({
-            model: "gpt-4.1-mini",
-            messages: messages,
-            temperature: 0,
+        const context = createErrorContext('extract instruction', {
+            instructionIndex: this.executionIndex,
+            instructionName: instruction.name
         });
 
-        const output = response.choices[0]?.message?.content?.trim();
-        const extract = output ? JSON.parse(output) : {};
-        this.extracts.push(extract);
-        this.promptTokens.push(response.usage.prompt_tokens);
-        this.completionTokens.push(response.usage.completion_tokens);
+        logger.info(`${context}: ${instruction.prompt}`);
+
+        try {
+            await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+            const domTree = await this.domSimplifier.simplify();
+            const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const messages = makeExtractInstructionMessage(instruction.prompt, domTreeString);
+
+            logger.debug('Sending extract instruction to AI', {
+                promptLength: instruction.prompt.length,
+                domLength: domTreeString.length
+            });
+
+            const response = await generateAIResponse(
+                this.ctx.aiProvider.modelInstance,
+                messages,
+                { temperature: this.temperature }
+            );
+
+            this.#updateTokenUsage(response.usage);
+
+            const output = response.content?.trim();
+            let extract;
+
+            try {
+                extract = output ? validateAndParseJSON(output, `Extract instruction: ${instruction.prompt}`) : {};
+            } catch (parseErr) {
+                logger.warn(createParseErrorMessage('extraction', output, parseErr));
+                extract = {};
+            }
+
+            this.extracts.push(extract);
+
+            logger.info(`${context} completed`, {
+                extractedFields: Object.keys(extract).length,
+                promptTokens: response.usage.promptTokens,
+                completionTokens: response.usage.completionTokens
+            });
+
+            this.executionIndex++;
+        } catch (error) {
+            logger.error(`${context} failed`, {
+                error: error.message,
+                executionIndex: this.executionIndex
+            });
+            throw error;
+        }
     }
 
     async #actionInstruction(instruction) {
-        await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-        const domTree = await this.domSimplifier.simplify();
-        const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
-        const messages = makeActionInstructionMessage(instruction.prompt, domTreeString);
-        logger.info(`Action instruction ${instruction.prompt}`);
-        // logger.debug('Action instruction message', { message: messages[1].content });
-
-        const response = await this.ctx.aiClient.chat.completions.create({
-            model: "gpt-4.1-mini",
-            messages: messages,
-            temperature: 0,
+        const context = createErrorContext('action instruction', {
+            instructionIndex: this.executionIndex,
+            instructionName: instruction.name
         });
 
-        const output = response.choices[0]?.message?.content?.trim();
-        const action = output ? JSON.parse(output) : {elements: []};
-        this.promptTokens.push(response.usage.prompt_tokens);
-        this.completionTokens.push(response.usage.completion_tokens);
-        
-        logger.info(`Action instruction result ${JSON.stringify(action)}`);
+        logger.info(`${context}: ${instruction.prompt}`);
 
-        if (action.elements.length > 0) {
-            const elementXPath = this.domSimplifier.xpaths[action.elements[0].x];
-            // scroll element into view
-            await this.ctx.page.locator(`xpath=${elementXPath}`).scrollIntoViewIfNeeded();
+        try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-            switch (action.type) {
-                case 'click':
-                    logger.info(`Clicking element at ${elementXPath}`);
-                    await this.ctx.page.locator(`xpath=${elementXPath}`).click();
-                    break;
-                case 'fill':
-                    logger.info(`Filling element at ${elementXPath} with value ${action.value}`);
-                    await this.ctx.page.locator(`xpath=${elementXPath}`).fill(action.value);
-                    break;
-                case 'type':
-                    logger.info(`Typing ${action.value} into element at ${elementXPath}`);
-                    await this.ctx.page.locator(`xpath=${elementXPath}`).type(action.value);
-                    break;
-                case 'press':
-                    logger.info(`Pressing ${action.value} on element at ${elementXPath}`);
-                    await this.ctx.page.locator(`xpath=${elementXPath}`).press(action.value);
-                    break;
-                // case 'scroll':
-                //     const element = await this.ctx.page.locator(`xpath=${elementXPath}`);
-                //     await element.evaluate(() => window.scrollTo(0, window.screen.height*0.5));
-                //     break;
+            const domTree = await this.domSimplifier.simplify();
+            const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const messages = makeActionInstructionMessage(instruction.prompt, domTreeString);
+
+            logger.debug('Sending action instruction to AI', {
+                promptLength: instruction.prompt.length,
+                domLength: domTreeString.length
+            });
+
+            const response = await generateAIResponse(
+                this.ctx.aiProvider.modelInstance,
+                messages,
+                { temperature: this.temperature }
+            );
+
+            this.#updateTokenUsage(response.usage);
+
+            const output = response.content?.trim();
+            let action;
+
+            try {
+                action = output ? validateAndParseJSON(output, `Action instruction: ${instruction.prompt}`) : { elements: [] };
+            } catch (parseErr) {
+                logger.warn(createParseErrorMessage('action', output, parseErr));
+                action = { elements: [] };
             }
-            await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+
+            logger.debug(`${context} parsed`, {
+                actionType: action.type,
+                elementCount: action.elements?.length || 0,
+                promptTokens: response.usage.promptTokens,
+                completionTokens: response.usage.completionTokens
+            });
+
+            if (action.elements && action.elements.length > 0) {
+                const elementIndex = action.elements[0].x;
+                const elementXPath = this.domSimplifier.xpaths[elementIndex];
+
+                if (!elementXPath) {
+                    throw new Error(`Invalid element index ${elementIndex} - XPath not found. DOM may have changed.`);
+                }
+
+                try {
+                    logger.debug(`Scrolling element into view`, { xpath: elementXPath });
+                    await this.ctx.page.locator(`xpath=${elementXPath}`).scrollIntoViewIfNeeded();
+                    await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+
+                    const actionType = action.type?.toLowerCase();
+                    switch (actionType) {
+                        case 'click':
+                            logger.info(`${context}: Clicking element`, { xpath: elementXPath });
+                            await this.ctx.page.locator(`xpath=${elementXPath}`).click();
+                            break;
+                        case 'fill':
+                            logger.info(`${context}: Filling element with text`, { xpath: elementXPath, valueLength: action.value?.length || 0 });
+                            await this.ctx.page.locator(`xpath=${elementXPath}`).fill(action.value);
+                            break;
+                        case 'type':
+                            logger.info(`${context}: Typing into element`, { xpath: elementXPath, valueLength: action.value?.length || 0 });
+                            await this.ctx.page.locator(`xpath=${elementXPath}`).type(action.value);
+                            break;
+                        case 'press':
+                            logger.info(`${context}: Pressing key`, { xpath: elementXPath, key: action.value });
+                            await this.ctx.page.locator(`xpath=${elementXPath}`).press(action.value);
+                            break;
+                        default:
+                            logger.warn(`${context}: Unknown action type`, { actionType });
+                    }
+                    await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+                    logger.info(`${context} executed successfully`, { actionType });
+                } catch (actionError) {
+                    logger.error(`${context} execution failed`, {
+                        xpath: elementXPath,
+                        actionType: action.type,
+                        error: actionError.message
+                    });
+                    throw new Error(`Failed to execute action: ${actionError.message}`);
+                }
+            } else {
+                logger.info(`${context}: No matching elements found, skipping action`);
+            }
+
+            this.executionIndex++;
+        } catch (error) {
+            logger.error(`${context} failed`, {
+                error: error.message,
+                executionIndex: this.executionIndex
+            });
+            throw error;
         }
     }
 
@@ -194,21 +419,54 @@ export class Operations {
     }
 
     async #findElements(userPrompt) {
-        const domTree = await this.domSimplifier.simplify();
-        const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
-        const messages = makeFindInstructionMessage(userPrompt, domTreeString);
-        logger.info(`Find instruction: ${userPrompt}`);;
-
-        const response = await this.ctx.aiClient.chat.completions.create({
-            model: "gpt-4.1-mini",
-            messages: messages,
-            temperature: 0,
+        const context = createErrorContext('find instruction', {
+            instructionIndex: this.executionIndex
         });
 
-        const output = response.choices[0]?.message?.content?.trim();
-        logger.info(`Find instruction result ${JSON.stringify(output)}`);
-        this.promptTokens.push(response.usage.prompt_tokens);
-        this.completionTokens.push(response.usage.completion_tokens);
-        return output ? JSON.parse(output) : [];
+        logger.info(`${context}: ${userPrompt}`);
+
+        try {
+            const domTree = await this.domSimplifier.simplify();
+            const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const messages = makeFindInstructionMessage(userPrompt, domTreeString);
+
+            logger.debug('Sending find instruction to AI', {
+                promptLength: userPrompt.length,
+                domLength: domTreeString.length
+            });
+
+            const response = await generateAIResponse(
+                this.ctx.aiProvider.modelInstance,
+                messages,
+                { temperature: this.temperature }
+            );
+
+            this.#updateTokenUsage(response.usage);
+
+            const output = response.content?.trim();
+            let elements;
+
+            try {
+                elements = output ? validateAndParseJSON(output, `Find instruction: ${userPrompt}`) : [];
+            } catch (parseErr) {
+                logger.warn(createParseErrorMessage('element finding', output, parseErr));
+                elements = [];
+            }
+
+            const elementCount = Array.isArray(elements) ? elements.length : 0;
+            logger.info(`${context} completed`, {
+                elementCount,
+                promptTokens: response.usage.promptTokens,
+                completionTokens: response.usage.completionTokens
+            });
+
+            return elements;
+        } catch (error) {
+            logger.error(`${context} failed`, {
+                error: error.message,
+                executionIndex: this.executionIndex
+            });
+            throw error;
+        }
     }
 }
