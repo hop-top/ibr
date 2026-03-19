@@ -1,0 +1,22 @@
+# 009 - Error Propagation
+
+**Persona:** [Integrator](../personas/integrator.md)
+
+## Goal
+
+Surface actionable errors programmatically so pipelines can handle or
+re-throw them without parsing stderr.
+
+## Stories
+
+- As an integrator, idx rejects its promise with a typed error when an action
+  fails, including step index and action type.
+- As an integrator, configuration errors (missing API key, unknown provider)
+  throw before any browser is launched.
+
+## Acceptance Criteria
+
+- Errors include: `{ code, message, step?, action? }`.
+- Config errors throw synchronously before browser launch.
+- Runtime errors (element not found, timeout) reject promise with step context.
+- Non-fatal skips (`if found` on absent element) do NOT reject.

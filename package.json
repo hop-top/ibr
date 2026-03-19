@@ -6,7 +6,13 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "browser:install": "npx playwright install"
+    "browser:install": "npx playwright install",
+    "test": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js",
+    "test:watch": "node --experimental-vm-modules node_modules/.bin/vitest --config test/vitest.config.js",
+    "test:unit": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/unit/",
+    "test:integration": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/integration/",
+    "test:e2e": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/e2e/",
+    "test:coverage": "node --experimental-vm-modules node_modules/.bin/vitest run --coverage --config test/vitest.config.js"
   },
   "keywords": [
     "scraping",
@@ -16,6 +22,10 @@
   "author": "",
   "license": "ISC",
   "description": "Intent Driven eXtractor - AI-powered instruction parser for automated web interactions",
+  "devDependencies": {
+    "@vitest/coverage-v8": "^2.0.0",
+    "vitest": "^2.0.0"
+  },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.35",
     "@ai-sdk/google": "^3.0.20",
