@@ -1,0 +1,21 @@
+{
+  "description": "Loop over paginated results collecting all items",
+  "category": "instruction_types",
+  "prompt": "url: {SERVER_URL}/products?page=1\ninstructions:\n  - loop while there is a next page button\n    - extract all product names\n    - click the next page button",
+  "expectedParsed": {
+    "url": "{SERVER_URL}/products?page=1",
+    "instructions": [
+      {
+        "name": "loop",
+        "instructions": [
+          { "name": "extract", "prompt": "all product names" },
+          { "name": "click", "prompt": "the next page button" }
+        ]
+      }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["loop", "extract", "click"],
+  "tags": ["fast", "pagination"],
+  "notes": "Loop may omit top-level prompt field per spec; nested instructions must have prompt"
+}

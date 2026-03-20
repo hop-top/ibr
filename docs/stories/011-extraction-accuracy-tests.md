@@ -21,3 +21,14 @@ well-typed output against known HTML fixtures.
 - Scalar extraction: keys match, values match expected text content.
 - List extraction: array length and values match fixture.
 - Missing field: `null` in output, no exception.
+
+## Fixture Infrastructure (T-0014)
+
+- Shared JSON fixture format at `test/fixtures/<category>/<name>.json`
+- `fixture-loader.js` shared by unit, e2e, and LLM-judge test tiers
+- Static validation (no browser/AI): JSON validity, schema compliance,
+  instruction type rules, parsePromptString compatibility, cross-field
+  consistency, category validity
+- Fixture categories: instruction_types, edge_cases, parsing, extraction,
+  navigation
+- Tags: @fast (commit hooks), @slow (nightly only)

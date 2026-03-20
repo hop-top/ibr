@@ -1,0 +1,17 @@
+{
+  "description": "Parsing: prompt wrapped in markdown code fences (common AI output)",
+  "category": "parsing",
+  "prompt": "```\nurl: {SERVER_URL}/search\ninstructions:\n  - fill the search box with vitest\n  - click the search button\n  - extract all result titles\n```",
+  "expectedParsed": {
+    "url": "{SERVER_URL}/search",
+    "instructions": [
+      { "name": "fill", "prompt": "fill the search box with vitest" },
+      { "name": "click", "prompt": "click the search button" },
+      { "name": "extract", "prompt": "extract all result titles" }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["fill", "click", "extract"],
+  "tags": ["fast", "extraction"],
+  "notes": "Tests that parsePromptString handles prompts regardless of surrounding markdown"
+}

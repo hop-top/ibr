@@ -1,0 +1,15 @@
+{
+  "description": "Extract a scalar value from the page — page title",
+  "category": "instruction_types",
+  "prompt": "url: {SERVER_URL}/products\ninstructions:\n  - extract the page title",
+  "expectedParsed": {
+    "url": "{SERVER_URL}/products",
+    "instructions": [
+      { "name": "extract", "prompt": "the page title" }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["extract"],
+  "tags": ["fast", "extraction"],
+  "notes": "Minimal extract fixture — single scalar extraction"
+}

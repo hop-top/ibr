@@ -1,0 +1,15 @@
+{
+  "description": "Edge case: invalid/non-HTTP URL in prompt",
+  "category": "edge_cases",
+  "prompt": "url: not-a-valid-url\ninstructions:\n  - click something",
+  "expectedParsed": {
+    "url": "not-a-valid-url",
+    "instructions": [
+      { "name": "click", "prompt": "something" }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["click"],
+  "tags": ["fast"],
+  "notes": "Parser accepts any URL string; runtime validation catches invalid URLs during navigation"
+}
