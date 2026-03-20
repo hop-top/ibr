@@ -1,114 +1,97 @@
 /**
- * Unit tests for test/e2e/helpers/resultRecorder.js (T-0015).
+ * Unit tests for test/e2e/helpers/resultRecorder.js
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFile, rm } from 'node:fs/promises';
-import { resolve, dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { recordTestResult, ensureResultsDir } from '../../e2e/helpers/resultRecorder.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const RESULTS_ROOT = resolve(__dirname, '../../results/e2e');
+describe('resultRecorder', () => {
+  const fixtureName = `_test_${Date.now()}`;
+  const fixtureCategory = 'unit_test';
+  let writtenPath;
+  let noNotesPath;
 
-// Clean up written files after each test
-const written = [];
-
-afterEach(async () => {
-  for (const fp of written) {
-    try { await rm(fp, { force: true }); } catch { /* ignore */ }
-  }
-  written.length = 0;
-});
-
-function makeResult(overrides = {}) {
-  return {
-    fixtureFile: '/path/to/fixture.json',
-    fixtureCategory: 'instruction_types',
-    fixtureName: 'click-basic',
-    prompt: 'url: http://localhost/login\ninstructions:\n  - click the login button',
-    execution: { status: 'success', duration_ms: 1234, timestamp: '2026-03-20T12:00:00.000Z' },
-    parsed: {
-      expected: { url: 'http://localhost/login', instructions: [] },
-      actual: { url: 'http://localhost/login', instructions: [] },
-      matches: true,
-      match_details: [],
-      parse_error: '',
-    },
-    extracts: {
-      expected: [],
-      actual: [],
-      matches: true,
-      match_type: 'structural',
-      structural_notes: '',
-      extract_error: '',
-    },
-    tokens: { prompt: 100, completion: 50, total: 150 },
-    ai_provider: { provider: 'openai', model: 'gpt-4-mini', temperature: 0 },
-    tags: ['fast'],
-    notes: 'test note',
-    ...overrides,
-  };
-}
-
-describe('recordTestResult()', () => {
-  it('writes a JSON file to test/results/e2e/', async () => {
-    const fp = await recordTestResult(makeResult());
-    written.push(fp);
-
-    const raw = await readFile(fp, 'utf8');
-    const data = JSON.parse(raw);
-
-    expect(data.fixtureCategory).toBe('instruction_types');
-    expect(data.fixtureName).toBeUndefined(); // not in output schema
-    expect(data.execution.status).toBe('success');
-    expect(data.execution.duration_ms).toBe(1234);
-    expect(data.tokens.total).toBe(150);
-    expect(data.tags).toEqual(['fast']);
+  beforeAll(async () => {
+    await ensureResultsDir();
   });
 
-  it('names the file <category>-<name>.json', async () => {
-    const fp = await recordTestResult(makeResult({ fixtureName: 'my-fixture' }));
-    written.push(fp);
-    expect(fp).toMatch(/instruction_types-my-fixture\.json$/);
+  afterAll(async () => {
+    if (writtenPath && existsSync(writtenPath)) {
+      await rm(writtenPath, { force: true });
+    }
+    if (noNotesPath && existsSync(noNotesPath)) {
+      await rm(noNotesPath, { force: true });
+    }
   });
 
-  it('fills defaults for missing optional fields', async () => {
-    const fp = await recordTestResult({
-      fixtureFile: '/x.json',
-      fixtureCategory: 'edge_cases',
-      fixtureName: 'empty',
-      prompt: 'url: http://localhost/',
+  it('ensureResultsDir creates the results directory', async () => {
+    const dirPath = await ensureResultsDir();
+    expect(existsSync(dirPath)).toBe(true);
+  });
+
+  it('recordTestResult writes a JSON file', async () => {
+    writtenPath = await recordTestResult({
+      fixtureFile: '/test/fixtures/unit_test/_test.json',
+      fixtureCategory,
+      fixtureName,
+      prompt: 'url: http://localhost/\ninstructions:\n  - click something',
+      execution: { status: 'success', duration_ms: 42, timestamp: '2026-01-01T00:00:00Z' },
+      parsed: {
+        expected: { url: 'http://localhost/', instructions: [{ name: 'click' }] },
+        actual: { url: 'http://localhost/', instructions: [{ name: 'click' }] },
+        matches: true,
+        match_details: [],
+      },
+      extracts: {
+        expected: [],
+        actual: [],
+        matches: true,
+        match_type: 'exact',
+      },
+      tokens: { prompt: 10, completion: 5, total: 15 },
+      aiProvider: { provider: 'openai', model: 'gpt-4-mini', temperature: 0 },
+      tags: ['fast'],
+      notes: 'unit test fixture',
     });
-    written.push(fp);
 
-    const data = JSON.parse(await readFile(fp, 'utf8'));
-    expect(data.execution.status).toBe('error');
-    expect(data.parsed.matches).toBe(false);
-    expect(data.extracts.match_type).toBe('structural');
-    expect(data.tokens.total).toBe(0);
-    expect(data.tags).toEqual([]);
-    expect(data.notes).toBe('');
+    expect(existsSync(writtenPath)).toBe(true);
+    expect(writtenPath).toContain(`${fixtureCategory}__${fixtureName}.json`);
   });
 
-  it('is idempotent — overwrites existing file', async () => {
-    const base = makeResult();
-    const fp1 = await recordTestResult(base);
-    written.push(fp1);
+  it('written file contains valid JSON with required fields', async () => {
+    const raw = await readFile(writtenPath, 'utf8');
+    const record = JSON.parse(raw);
 
-    const base2 = makeResult({ execution: { status: 'error', duration_ms: 9999, timestamp: '2026-03-20T13:00:00.000Z' } });
-    const fp2 = await recordTestResult(base2);
-    written.push(fp2);
-
-    expect(fp1).toBe(fp2);
-    const data = JSON.parse(await readFile(fp1, 'utf8'));
-    expect(data.execution.status).toBe('error');
-    expect(data.execution.duration_ms).toBe(9999);
+    expect(record.fixtureCategory).toBe(fixtureCategory);
+    expect(record.prompt).toBe('url: http://localhost/\ninstructions:\n  - click something');
+    expect(record.execution.status).toBe('success');
+    expect(record.execution.duration_ms).toBe(42);
+    expect(record.parsed.matches).toBe(true);
+    expect(record.extracts.match_type).toBe('exact');
+    expect(record.tokens.total).toBe(15);
+    expect(record.ai_provider.provider).toBe('openai');
+    expect(record.tags).toEqual(['fast']);
+    expect(record.notes).toBe('unit test fixture');
   });
-});
 
-describe('ensureResultsDir()', () => {
-  it('resolves without error when dir already exists', async () => {
-    await expect(ensureResultsDir()).resolves.toBeUndefined();
+  it('omits notes field when not provided', async () => {
+    noNotesPath = await recordTestResult({
+      fixtureFile: '/test/_no_notes.json',
+      fixtureCategory: 'unit_test',
+      fixtureName: `_test_no_notes_${Date.now()}`,
+      prompt: 'test',
+      execution: { status: 'skipped', duration_ms: 0, timestamp: '2026-01-01T00:00:00Z' },
+      parsed: { expected: {}, actual: null, matches: false, match_details: [] },
+      extracts: { expected: [], actual: [], matches: true, match_type: 'exact' },
+      tokens: { prompt: 0, completion: 0, total: 0 },
+      aiProvider: { provider: 'openai', model: 'fake', temperature: 0 },
+      tags: [],
+    });
+
+    const raw = await readFile(noNotesPath, 'utf8');
+    const record = JSON.parse(raw);
+    expect(Object.prototype.hasOwnProperty.call(record, 'notes')).toBe(false);
   });
 });

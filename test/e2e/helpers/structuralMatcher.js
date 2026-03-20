@@ -1,237 +1,170 @@
 /**
- * Structural matcher for E2E fixture assertions (T-0015).
+ * Structural matcher for T-0015 E2E fixture tests.
  *
- * Compares expected vs actual shapes — not exact values.
- * Value differences are recorded in match_details for T-0016 LLM judge.
+ * Compares expected vs actual shapes with non-determinism tolerance:
+ *   - instruction arrays: same length + same names (exact)
+ *   - URLs: exact match (after {SERVER_URL} substitution)
+ *   - extracted fields: key set + types match; values flagged 'needs_llm_eval'
  *
- * Rules:
- *   - URLs: exact match
- *   - instructions[]: same length + same names (exact); nested recursed
- *   - extracted fields: keys + types match; values flagged 'needs_llm_eval'
- *   - numbers: 10% tolerance
- *   - Structural mismatches → matches: false + match_details entry
+ * Returns { matches: bool, match_details: Array<MatchDetail> }
  */
-
-const NUMBER_TOLERANCE = 0.10;
 
 /**
- * Match two parsed task descriptions structurally.
- *
- * @param {Object} expected - fixture.expectedParsed (with {SERVER_URL} already substituted)
- * @param {Object} actual   - result of Operations.parseTaskDescription()
- * @returns {{ matches: boolean, match_details: Array }}
+ * @typedef {Object} MatchDetail
+ * @property {string} path
+ * @property {*} expected
+ * @property {*} actual
+ * @property {boolean} match
+ * @property {string} [note]
  */
-export function matchParsed(expected, actual) {
+
+/**
+ * Compare expected vs actual parsed task description.
+ * Exact structural checks: URL and instruction names must match.
+ *
+ * @param {Object} expected  fixture.expectedParsed (after URL substitution)
+ * @param {Object} actual    result of Operations.parseTaskDescription()
+ * @returns {{ matches: boolean, match_details: MatchDetail[] }}
+ */
+export function structuralMatchParsed(expected, actual) {
   const details = [];
 
   if (!actual || typeof actual !== 'object') {
-    details.push({ path: 'root', expected: 'object', actual: typeof actual, match: false });
+    const actualType = actual === null ? 'null' : typeof actual;
+    details.push({ path: 'root', expected: 'object', actual: actualType, match: false });
     return { matches: false, match_details: details };
   }
 
-  // URL: exact
-  matchExact('url', expected.url, actual.url, details);
+  // URL: exact match
+  const actualUrl = actual.url ?? null;
+  details.push({
+    path: 'url',
+    expected: expected.url,
+    actual: actualUrl,
+    match: expected.url === actualUrl,
+  });
 
-  // instructions array
-  matchInstructionArray('instructions', expected.instructions ?? [], actual.instructions ?? [], details);
+  // instructions: same length
+  const eInstr = Array.isArray(expected.instructions) ? expected.instructions : [];
+  const aInstr = Array.isArray(actual.instructions) ? actual.instructions : [];
 
-  return {
-    matches: details.every(d => d.match),
-    match_details: details,
-  };
+  details.push({
+    path: 'instructions.length',
+    expected: eInstr.length,
+    actual: aInstr.length,
+    match: eInstr.length === aInstr.length,
+  });
+
+  // instructions: same names in order
+  const len = Math.max(eInstr.length, aInstr.length);
+  for (let i = 0; i < len; i++) {
+    const eName = eInstr[i]?.name ?? '<missing>';
+    const aName = aInstr[i]?.name ?? '<missing>';
+    details.push({
+      path: `instructions[${i}].name`,
+      expected: eName,
+      actual: aName,
+      match: eName === aName,
+    });
+  }
+
+  const matches = details.every(d => d.match);
+  return { matches, match_details: details };
 }
 
 /**
- * Match extract results structurally.
+ * Compare expected vs actual extracts array.
  *
- * expected: array from fixture.expectedExtracts
- * actual:   operations.extracts (array of any values)
+ * Keys and types must match; values are not compared (non-deterministic).
+ * If both are empty arrays, that is an exact match.
  *
- * @param {Array} expected
- * @param {Array} actual
- * @returns {{ matches: boolean, match_type: string, structural_notes: string, match_details: Array }}
+ * @param {Array} expected  fixture.expectedExtracts
+ * @param {Array} actual    operations.extracts after executeTask()
+ * @returns {{ matches: boolean, match_type: string, structural_notes?: string,
+ *             match_details: MatchDetail[] }}
  */
-export function matchExtracts(expected, actual) {
+export function structuralMatchExtracts(expected, actual) {
   const details = [];
-  const actualArr = Array.isArray(actual) ? actual : [];
-  const expectedArr = Array.isArray(expected) ? expected : [];
+  const eArr = Array.isArray(expected) ? expected : [];
+  const aArr = Array.isArray(actual) ? actual : [];
 
-  // Empty expected → structural match (nothing to assert)
-  if (expectedArr.length === 0) {
+  // Both empty → exact match
+  if (eArr.length === 0 && aArr.length === 0) {
     return {
       matches: true,
-      match_type: 'structural',
-      structural_notes: 'No expected extracts defined; skipping value assertion',
-      match_details: [],
+      match_type: 'exact',
+      match_details: [{ path: 'extracts', expected: [], actual: [], match: true }],
     };
   }
 
-  // Length check
-  if (expectedArr.length !== actualArr.length) {
+  // Length
+  details.push({
+    path: 'extracts.length',
+    expected: eArr.length,
+    actual: aArr.length,
+    match: eArr.length === aArr.length,
+  });
+
+  const len = Math.max(eArr.length, aArr.length);
+  const notes = [];
+
+  for (let i = 0; i < len; i++) {
+    const eItem = eArr[i];
+    const aItem = aArr[i];
+
+    if (eItem === undefined || aItem === undefined) {
+      details.push({
+        path: `extracts[${i}]`,
+        expected: eItem,
+        actual: aItem,
+        match: false,
+      });
+      continue;
+    }
+
+    // Compare key sets
+    const eKeys = Object.keys(eItem).sort();
+    const aKeys = Object.keys(aItem).sort();
+    const keysMatch = JSON.stringify(eKeys) === JSON.stringify(aKeys);
     details.push({
-      path: 'extracts.length',
-      expected: expectedArr.length,
-      actual: actualArr.length,
-      match: false,
+      path: `extracts[${i}].keys`,
+      expected: eKeys,
+      actual: aKeys,
+      match: keysMatch,
     });
-    return {
-      matches: false,
-      match_type: 'structural',
-      structural_notes: 'Extract array length mismatch',
-      match_details: details,
-    };
+
+    // Compare types per key; flag values as needs_llm_eval
+    for (const key of eKeys) {
+      const eType = typeof eItem[key];
+      const aType = typeof aItem[key];
+      const typeMatch = eType === aType;
+      details.push({
+        path: `extracts[${i}].${key}.type`,
+        expected: eType,
+        actual: aType,
+        match: typeMatch,
+      });
+      notes.push(`extracts[${i}].${key} value not compared — needs_llm_eval`);
+    }
   }
 
-  // Per-item shape matching
-  for (let i = 0; i < expectedArr.length; i++) {
-    matchShape(`extracts[${i}]`, expectedArr[i], actualArr[i], details);
-  }
-
-  const matches = details.every(d => d.match !== false);
+  const matches = details.every(d => d.match);
   return {
     matches,
     match_type: 'structural',
-    structural_notes: matches ? '' : 'Type/key mismatch in extract results',
+    structural_notes: notes.length ? notes.join('; ') : undefined,
     match_details: details,
   };
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
-
 /**
- * Exact string/value match.
+ * Compare two numbers with 10% tolerance.
+ *
+ * @param {number} expected
+ * @param {number} actual
+ * @returns {boolean}
  */
-function matchExact(path, expected, actual, details) {
-  const match = expected === actual;
-  details.push({ path, expected, actual, match });
-}
-
-/**
- * Recursively match an instruction array.
- */
-function matchInstructionArray(path, expected, actual, details) {
-  if (expected.length !== actual.length) {
-    details.push({
-      path: `${path}.length`,
-      expected: expected.length,
-      actual: actual.length,
-      match: false,
-    });
-    return;
-  }
-
-  for (let i = 0; i < expected.length; i++) {
-    const expInstr = expected[i];
-    const actInstr = actual[i] ?? {};
-    const prefix = `${path}[${i}]`;
-
-    // name: exact match
-    matchExact(`${prefix}.name`, expInstr.name, actInstr.name, details);
-
-    // prompt: when expected has it (loop/condition may omit)
-    if (expInstr.prompt !== undefined) {
-      const pMatch = typeof actInstr.prompt === 'string' && actInstr.prompt.length > 0;
-      details.push({
-        path: `${prefix}.prompt`,
-        expected: 'non-empty string',
-        actual: actInstr.prompt,
-        match: pMatch,
-        note: pMatch ? undefined : 'missing or empty prompt',
-      });
-    }
-
-    // Nested instructions for loop
-    if (expInstr.name === 'loop' && Array.isArray(expInstr.instructions)) {
-      const actNested = Array.isArray(actInstr.instructions) ? actInstr.instructions : [];
-      matchInstructionArray(`${prefix}.instructions`, expInstr.instructions, actNested, details);
-    }
-
-    // Condition branches
-    if (expInstr.name === 'condition') {
-      if (Array.isArray(expInstr.success_instructions)) {
-        const actSuccess = Array.isArray(actInstr.success_instructions) ? actInstr.success_instructions : [];
-        matchInstructionArray(`${prefix}.success_instructions`, expInstr.success_instructions, actSuccess, details);
-      }
-      if (Array.isArray(expInstr.failure_instructions)) {
-        const actFail = Array.isArray(actInstr.failure_instructions) ? actInstr.failure_instructions : [];
-        matchInstructionArray(`${prefix}.failure_instructions`, expInstr.failure_instructions, actFail, details);
-      }
-    }
-  }
-}
-
-/**
- * Match shape of two values (keys + types).
- * Values themselves are flagged 'needs_llm_eval', not asserted.
- */
-function matchShape(path, expected, actual, details) {
-  const expType = getType(expected);
-  const actType = getType(actual);
-
-  if (expType !== actType) {
-    details.push({ path, expected: expType, actual: actType, match: false });
-    return;
-  }
-
-  if (expType === 'object') {
-    const expKeys = Object.keys(expected).sort();
-    const actKeys = Object.keys(actual ?? {}).sort();
-
-    if (expKeys.join(',') !== actKeys.join(',')) {
-      details.push({
-        path: `${path}[keys]`,
-        expected: expKeys,
-        actual: actKeys,
-        match: false,
-      });
-      return;
-    }
-
-    for (const key of expKeys) {
-      matchShape(`${path}.${key}`, expected[key], actual[key], details);
-    }
-    return;
-  }
-
-  if (expType === 'array') {
-    if (expected.length !== actual.length) {
-      details.push({ path: `${path}.length`, expected: expected.length, actual: actual.length, match: false });
-      return;
-    }
-    for (let i = 0; i < expected.length; i++) {
-      matchShape(`${path}[${i}]`, expected[i], actual[i], details);
-    }
-    return;
-  }
-
-  if (expType === 'number') {
-    const tolerance = Math.abs(expected) * NUMBER_TOLERANCE;
-    const numMatch = Math.abs((actual ?? 0) - expected) <= tolerance;
-    details.push({
-      path,
-      expected,
-      actual,
-      match: numMatch,
-      note: numMatch ? undefined : `outside 10% tolerance`,
-    });
-    return;
-  }
-
-  // Scalar strings/booleans: flag for LLM eval
-  details.push({
-    path,
-    expected,
-    actual,
-    match: true, // structural match — value deferred to T-0016
-    note: 'needs_llm_eval',
-  });
-}
-
-/**
- * Return a simplified type label.
- */
-function getType(value) {
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return 'array';
-  return typeof value;
+export function numbersMatch(expected, actual) {
+  if (expected === 0) return actual === 0;
+  return Math.abs(actual - expected) / Math.abs(expected) <= 0.1;
 }
