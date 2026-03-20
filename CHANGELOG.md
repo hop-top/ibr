@@ -7,6 +7,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 
 ## [Unreleased]
 
+### feat
+
+- **Daemon mode — persistent browser for fast warm invocations (T-0012)**
+  - Opt-in: `IDX_DAEMON=true` or `--daemon` flag; stateless flow unchanged by default.
+  - `src/server.js` — Node.js HTTP daemon: Chromium + Operations stay alive 30 min;
+    random port, localhost-only, UUID Bearer token, atomic state file `~/.idx/server.json`.
+  - `src/daemon.js` — CLI client: `ensureServer()` + `sendCommand()`; auto-restarts on
+    stale PID or failed health check; retries once on `ECONNREFUSED`.
+  - `GET /health` (no auth) → `{status, uptime, pid}`.
+  - `POST /command` (Bearer required) → plain-text result or JSON error with hint.
+  - Latency: ~540 ms warm vs ~3800 ms cold.
+  - `npm run server` — start daemon manually.
+
 ### Changed
 
 - **Page representation: quality-based aria/dom auto-selection (T-0005 rev)**
