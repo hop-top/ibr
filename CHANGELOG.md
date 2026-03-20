@@ -9,6 +9,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 
 ### test
 
+- **Tier 3 LLM-as-judge for extraction quality (T-0016)**
+  - `src/judge/QualityJudge.js` — holistic 0-10 scoring via LLM judge.
+  - `src/judge/ReportGenerator.js` — quality report + markdown summary generation.
+  - `src/commands/judge-e2e.js` — `npm run judge:e2e` CLI; exits 1 if mean < threshold.
+  - `test/judge/judge.test.js` — 24 unit tests (all AI mocked).
+  - `--validate` mode: 3-run variance check. `--threshold` configurable (default 7).
+  - Story: `docs/stories/024-llm-judge.md`.
+
 - **Tier 2 E2E AI-agent fixture testing (T-0015)**
   - `test/e2e/fixtures.test.js` — runs all fixtures through real Playwright + real AI.
   - `test/e2e/helpers/structuralMatcher.js` — shape comparison with 10% number tolerance.

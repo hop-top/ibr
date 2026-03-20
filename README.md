@@ -717,6 +717,25 @@ instructions:
 - No built-in retry on transient failures (but logs indicate when/why to retry)
 - Browser automation is slower than direct API calls
 
+## LLM Judge (Extraction Quality)
+
+Scores E2E extraction results against fixture ground-truth using an LLM judge (0–10 scale).
+
+```bash
+# Run after E2E tests have written results to test/results/e2e/
+npm run judge:e2e
+
+# Options
+npm run judge:e2e -- --threshold 8          # fail if mean < 8 (default 7)
+npm run judge:e2e -- --validate             # 3-run variance check
+npm run judge:e2e -- --run-id my-run        # label the report
+npm run judge:e2e -- --output-dir /tmp/out  # custom results dir
+```
+
+Writes `<runId>-quality.json` and `<runId>-summary.md` to the output dir.
+Exits 0 when mean score ≥ threshold; exits 1 when below.
+Fixtures without `expectedExtracts` are skipped — CI does not fail.
+
 ## License
 
 ISC
