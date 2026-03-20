@@ -33,6 +33,7 @@ export class Operations {
         this.domSimplifier = new DomSimplifier(ctx.page);
         this.extracts = [];
         this.cacheManager = new CacheManager();
+        this.pseudoButtonRefs = {};
         this.snapshotDiffer = new SnapshotDiffer();
 
         // Improved token tracking
@@ -411,44 +412,53 @@ export class Operations {
 
             if (action && action.elements && action.elements.length > 0) {
                 const descriptor = action.elements[0];
-                const locator = isAria
-                    ? resolveElement(this.ctx.page, descriptor)
-                    : (() => {
-                        // DOM fallback: descriptor may still have {x} index
-                        if (typeof descriptor.x === 'number') {
-                            const xpath = this.domSimplifier.xpaths[descriptor.x];
-                            if (!xpath) throw new Error(`Invalid element index ${descriptor.x} - XPath not found.`);
-                            return this.ctx.page.locator(`xpath=${xpath}`);
-                        }
-                        // Also accept {role,name} even in fallback mode
-                        return resolveElement(this.ctx.page, descriptor);
-                    })();
+                const elementRef = descriptor.x;
+                const refStr = elementRef != null ? String(elementRef).replace(/^@/, '') : '';
+
+                let locator;
+                let locatorDesc;
+                if (!isAria && refStr.startsWith('c') && this.pseudoButtonRefs[refStr]) {
+                    locator = this.#resolvePseudoButtonRef(refStr);
+                    locatorDesc = `data-idx-ref=${refStr}`;
+                } else if (!isAria && refStr) {
+                    const xpath = this.domSimplifier.xpaths[elementRef];
+                    if (xpath) {
+                        locator = this.ctx.page.locator(`xpath=${xpath}`);
+                        locatorDesc = `xpath=${xpath}`;
+                    } else {
+                        locator = resolveElement(this.ctx.page, descriptor);
+                        locatorDesc = JSON.stringify(descriptor);
+                    }
+                } else {
+                    locator = resolveElement(this.ctx.page, descriptor);
+                    locatorDesc = JSON.stringify(descriptor);
+                }
 
                 if (!locator) {
                     throw new Error(`Unable to resolve element descriptor: ${JSON.stringify(descriptor)}`);
                 }
 
                 try {
-                    logger.debug(`Scrolling element into view`, { descriptor });
+                    logger.debug(`Scrolling element into view`, { locator: locatorDesc });
                     await locator.scrollIntoViewIfNeeded();
                     await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
 
                     const actionType = action.type?.toLowerCase();
                     switch (actionType) {
                         case 'click':
-                            logger.info(`${context}: Clicking element`, { descriptor });
+                            logger.info(`${context}: Clicking element`, { locator: locatorDesc });
                             await locator.click();
                             break;
                         case 'fill':
-                            logger.info(`${context}: Filling element`, { descriptor, valueLength: action.value?.length || 0 });
+                            logger.info(`${context}: Filling element with text`, { locator: locatorDesc, valueLength: action.value?.length || 0 });
                             await locator.fill(action.value);
                             break;
                         case 'type':
-                            logger.info(`${context}: Typing into element`, { descriptor, valueLength: action.value?.length || 0 });
+                            logger.info(`${context}: Typing into element`, { locator: locatorDesc, valueLength: action.value?.length || 0 });
                             await locator.type(action.value);
                             break;
                         case 'press':
-                            logger.info(`${context}: Pressing key`, { descriptor, key: action.value });
+                            logger.info(`${context}: Pressing key`, { locator: locatorDesc, key: action.value });
                             await locator.press(action.value);
                             break;
                         default:
@@ -460,11 +470,16 @@ export class Operations {
                     logger.info(`${context} executed successfully`, { actionType });
                 } catch (actionError) {
                     logger.error(`${context} execution failed`, {
-                        descriptor,
+                        locator: locatorDesc,
                         actionType: action.type,
                         error: actionError.message
                     });
                     throw new Error(`Failed to execute action: ${actionError.message}`);
+                } finally {
+                    // Clean up injected refs after action
+                    await this.ctx.page.evaluate(() =>
+                        document.querySelectorAll('[data-idx-ref]').forEach(el => el.removeAttribute('data-idx-ref'))
+                    ).catch(() => {});
                 }
             } else {
                 logger.info(`${context}: No matching elements found, skipping action`);
@@ -502,8 +517,49 @@ export class Operations {
 
         logger.info(`falling back to dom mode: ${reason}`);
         const domTree = await this.domSimplifier.simplify();
-        const context = this.domSimplifier.stringifySimplifiedDom(domTree);
+        const pseudoButtons = await this.domSimplifier.extractPseudoButtons(this.ctx.page);
+        await this.#injectPseudoButtonRefs(pseudoButtons);
+        const rawContext = this.domSimplifier.stringifySimplifiedDom(domTree);
+        const context = this.domSimplifier.appendPseudoButtonsToSnapshot(rawContext, pseudoButtons);
         return { context, domTree, isAria: false };
+    }
+
+    /**
+     * Injects data-idx-ref attributes onto pseudo-button elements.
+     * @param {Array} pseudoButtons - Result from extractPseudoButtons
+     */
+    async #injectPseudoButtonRefs(pseudoButtons) {
+        if (!pseudoButtons || pseudoButtons.length === 0) return;
+        this.pseudoButtonRefs = {};
+        try {
+            await this.ctx.page.evaluate((buttons) => {
+                buttons.forEach((btn, i) => {
+                    const ref = `c${i + 1}`;
+                    try {
+                        const el = document.querySelector(btn.selector);
+                        if (el) el.setAttribute('data-idx-ref', ref);
+                    } catch {
+                        // skip individual failures
+                    }
+                });
+            }, pseudoButtons);
+
+            pseudoButtons.forEach((btn, i) => {
+                const ref = `c${i + 1}`;
+                this.pseudoButtonRefs[ref] = btn.selector;
+            });
+        } catch (err) {
+            logger.warn('Failed to inject pseudo-button refs', { error: err.message });
+        }
+    }
+
+    /**
+     * Returns a Playwright locator for a @c ref.
+     * @param {string} ref - e.g. "c1"
+     * @returns {import('playwright').Locator}
+     */
+    #resolvePseudoButtonRef(ref) {
+        return this.ctx.page.locator(`[data-idx-ref="${ref}"]`);
     }
 
     async #waitJitteredDelay(delay) {
@@ -537,7 +593,7 @@ export class Operations {
         logger.info(`${context}: ${userPrompt}`);
 
         try {
-            const { context: pageContext, isAria } = await this.#getPageContext();
+            const { context: pageContext, domTree, isAria } = await this.#getPageContext();
             const domSignature = createDomSignature(pageContext);
 
             // Check cache first
