@@ -77,7 +77,13 @@ export function assessQuality(snapshot) {
  * @returns {{ mode: 'aria'|'dom', reason: string }}
  */
 export function selectMode(snapshot, forcedMode = 'auto') {
-  if (forcedMode === 'aria') return { mode: 'aria', reason: 'forced' };
+  if (forcedMode === 'aria') {
+    // If snapshot unavailable, warn and fall back to dom rather than propagating null
+    if (!snapshot || typeof snapshot !== 'string') {
+      return { mode: 'dom', reason: 'forced-aria-unavailable' };
+    }
+    return { mode: 'aria', reason: 'forced' };
+  }
   if (forcedMode === 'dom')  return { mode: 'dom',  reason: 'forced' };
 
   // auto

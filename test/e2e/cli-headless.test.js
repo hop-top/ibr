@@ -3,12 +3,13 @@
  * Tests: BROWSER_HEADLESS=true completes successfully without visible window.
  */
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startFakeAIServerE2E } from '../helpers/fakeAIServerE2E.js';
 import { startStaticServer } from '../helpers/staticServer.js';
 
-import { fileURLToPath } from 'url';
-const CWD = fileURLToPath(new URL('../../..', import.meta.url));
+const CWD = path.resolve(fileURLToPath(import.meta.url), '../../..');
 
 function runIdx(args, env = {}) {
   return new Promise((resolve) => {

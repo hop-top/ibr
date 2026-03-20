@@ -484,8 +484,14 @@ export class Operations {
         const { mode, reason } = selectMode(snapshot, this.mode);
 
         if (mode === 'aria') {
-            logger.info('using aria mode', { reason });
-            return { context: snapshot, domTree: null, isAria: true };
+            if (typeof snapshot !== 'string') {
+                // selectMode should have prevented this via forced-aria-unavailable,
+                // but guard defensively in case snapshot is still null.
+                logger.warn('aria mode selected but snapshot is null, falling back to dom', { reason });
+            } else {
+                logger.info('using aria mode', { reason });
+                return { context: snapshot, domTree: null, isAria: true };
+            }
         }
 
         logger.info(`falling back to dom mode: ${reason}`);

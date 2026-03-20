@@ -7,19 +7,28 @@ import crypto from 'crypto';
 import logger from '../utils/logger.js';
 
 /**
- * Create a structural signature from an ARIA snapshot string.
- * Extracts only role/name lines to strip dynamic text values.
- * Falls back to full hash when snapshot is null/undefined.
- * @param {string} ariaSnapshot
+ * Create a structural signature from a page context string.
+ * Supports both ARIA snapshot strings and DOM JSON strings (DomSimplifier output).
+ *
+ * - ARIA snapshot: extracts role tokens only (strips names for stability).
+ * - DOM JSON: hashes the full string (structure is already stable).
+ *
+ * @param {string} pageContext
  * @returns {string|null}
  */
-export function createDomSignature(ariaSnapshot) {
+export function createDomSignature(pageContext) {
   try {
-    if (!ariaSnapshot || typeof ariaSnapshot !== 'string') return null;
+    if (!pageContext || typeof pageContext !== 'string') return null;
 
-    // Extract structural lines: lines starting with role tokens (role: name pattern)
-    // This strips dynamic values while preserving the structural skeleton.
-    const structuralLines = ariaSnapshot
+    // Detect DOM JSON mode: DomSimplifier outputs a JSON object/array string.
+    const trimmed = pageContext.trimStart();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      // Hash entire DOM string — structure is already normalised by DomSimplifier.
+      return crypto.createHash('sha256').update(pageContext).digest('hex');
+    }
+
+    // ARIA snapshot mode: extract structural lines (role tokens only, strip names).
+    const structuralLines = pageContext
       .split('\n')
       .map(line => {
         // Keep indentation + role token only (drop the name part for stability)
@@ -31,7 +40,7 @@ export function createDomSignature(ariaSnapshot) {
 
     return crypto.createHash('sha256').update(structuralLines).digest('hex');
   } catch (error) {
-    logger.debug('Failed to create ARIA signature', { error: error.message });
+    logger.debug('Failed to create page signature', { error: error.message });
     return null;
   }
 }
@@ -100,8 +109,20 @@ export function getValidator(type) {
 }
 
 /**
- * Extract cached schema from AI response
- * Uses {role, name} descriptors (ARIA-based) instead of numeric XPath indices.
+ * Normalise a single element descriptor for caching.
+ * Preserves ARIA {role,name} when present; falls back to DOM {x} index.
+ * @param {Object} el
+ * @returns {Object}
+ */
+function normaliseDescriptor(el) {
+  if (el.role || el.name) return { role: el.role, name: el.name };
+  if (typeof el.x === 'number') return { x: el.x };
+  return null;
+}
+
+/**
+ * Extract cached schema from AI response.
+ * Supports both ARIA {role,name} and DOM {x} descriptor shapes.
  */
 export function extractSchema(type, result) {
   try {
@@ -109,15 +130,15 @@ export function extractSchema(type, result) {
       case 'find':
         return {
           elementDescriptors: result
-            .filter(el => el.role || el.name)
-            .map(el => ({ role: el.role, name: el.name }))
+            .map(normaliseDescriptor)
+            .filter(Boolean)
         };
 
       case 'action':
         return {
           elementDescriptors: result.elements
-            .filter(el => el.role || el.name)
-            .map(el => ({ role: el.role, name: el.name })),
+            .map(normaliseDescriptor)
+            .filter(Boolean),
           actionType: result.type,
           actionValue: result.value || null
         };

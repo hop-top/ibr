@@ -83,11 +83,11 @@ describe('constants', () => {
     expect(INSTRUCTION_EXECUTION_JITTER_MS).toBe(0);
   });
 
-  // ── Fix 3: parseNonNegativeIntOrDefault guards NaN/empty string ────────────
+  // ── parseEnvMs guards NaN/empty string ────────────────────────────────────
   // These run in a child process so module-level constants are freshly evaluated
   // with the supplied env vars (vitest module cache cannot be re-evaluated).
 
-  describe('parseNonNegativeIntOrDefault — regression: NaN/empty falls back to default', () => {
+  describe('parseEnvMs — regression: NaN/empty falls back to default', () => {
     it('empty string → falls back to hard-coded default (2500 / 2000 / 500)', () => {
       const vals = evalConstants({
         PAGE_LOADING_DELAY_MS: '',
