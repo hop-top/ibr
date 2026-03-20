@@ -20,3 +20,8 @@ re-throw them without parsing stderr.
 - Config errors throw synchronously before browser launch.
 - Runtime errors (element not found, timeout) reject promise with step context.
 - Non-fatal skips (`if found` on absent element) do NOT reject.
+
+### Extended (T-0013 — high-precision messages)
+
+- Error messages are self-contained: include what failed, why, and how to fix.
+- No vague messages — every throw names the exact bad value or missing field.

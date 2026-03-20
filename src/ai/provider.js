@@ -150,11 +150,19 @@ export async function generateAIResponse(modelInstance, messages, options = {}) 
 
       // Validate response has required fields
       if (!response.text || typeof response.text !== 'string') {
-        throw new Error('AI response missing or invalid text content');
+        throw new Error(
+          'AI response missing or invalid text content. ' +
+          'The model returned a non-string or empty response — check that AI_PROVIDER and AI_MODEL are set to a supported, ' +
+          'text-generating model. Current provider: ' + (process.env.AI_PROVIDER || 'openai') + '.'
+        );
       }
 
       if (!response.usage) {
-        throw new Error('AI response missing usage information');
+        throw new Error(
+          'AI response missing usage information. ' +
+          'The provider did not return token counts — this may indicate an API version mismatch or unsupported model. ' +
+          'Check AI_MODEL and the provider SDK version.'
+        );
       }
 
       // Normalize response format across all providers

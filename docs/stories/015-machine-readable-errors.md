@@ -21,3 +21,12 @@ screen-scraping free-form text.
 - Distinct codes for: `CONFIG_ERROR`, `ELEMENT_NOT_FOUND`, `TIMEOUT`,
   `AI_PARSE_ERROR`, `LOOP_CAP_REACHED`.
 - stdout remains clean (extracted data only) regardless of errors.
+
+### Extended (T-0013 — high-precision AI-actionable messages)
+
+- Every thrown error includes a next-step hint the AI agent can act on without
+  reading docs (e.g. `Run "idx snap <url> -i"`, `Set AI_TEMPERATURE=0`).
+- Config errors name the exact env var and accepted values.
+- Element-not-found errors name the descriptor and suggest `idx snap -i`.
+- Parse errors suggest `AI_TEMPERATURE=0` and prompt format corrections.
+- Flag errors include Usage + Example in the message string.

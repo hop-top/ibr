@@ -403,7 +403,7 @@ describe('decryptCookieValue — pure crypto', () => {
   it('throws on unknown encryption prefix', () => {
     const ev = Buffer.concat([Buffer.from('xyz'), Buffer.alloc(16, 0)]);
     const row = { value: '', encrypted_value: ev };
-    expect(() => decryptCookieValue(row, TEST_KEY)).toThrow('Unknown encryption prefix: xyz');
+    expect(() => decryptCookieValue(row, TEST_KEY)).toThrow('Unknown cookie encryption prefix: "xyz"');
   });
 
   it('decrypts a valid v10-encrypted value correctly', () => {

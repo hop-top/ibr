@@ -58,7 +58,11 @@ function getBrowserConfig() {
 function getOperationOptions() {
   const temperature = parseFloat(process.env.AI_TEMPERATURE || '0');
   if (isNaN(temperature) || temperature < 0 || temperature > 2) {
-    throw new Error('AI_TEMPERATURE must be a number between 0 and 2');
+    throw new Error(
+      'AI_TEMPERATURE must be a number between 0 and 2 (got: ' + process.env.AI_TEMPERATURE + '). ' +
+      'Set AI_TEMPERATURE=0 for deterministic outputs or up to 2 for more creative responses. ' +
+      'Remove the env var to use the default (0).'
+    );
   }
   return { temperature };
 }
@@ -186,12 +190,19 @@ async function handleRequest(req, res) {
       body = JSON.parse(raw);
     } catch (err) {
       const status = err.code === 'ERR_BODY_TOO_LARGE' ? 413 : 400;
-      sendJSON(res, status, { error: status === 413 ? 'Request entity too large' : 'Invalid JSON body' });
+      sendJSON(res, status, {
+        error: status === 413
+          ? 'Request entity too large (limit: 1 MiB). Shorten your prompt.'
+          : 'Invalid JSON body. POST must send {"command":"task","args":["<prompt>"]}.'
+      });
       return;
     }
 
-    if (body.command !== 'task' || !Array.isArray(body.args) || !body.args[0]) {
-      sendJSON(res, 400, { error: 'Expected {command:"task", args:[prompt]}' });
+    if (body.command !== 'task' || !Array.isArray(body.args) || typeof body.args[0] !== 'string' || body.args[0].trim().length === 0) {
+      sendJSON(res, 400, {
+        error: 'Malformed request body. Expected {"command":"task","args":["<your prompt here>"]}.',
+        hint: 'The "args" array must contain at least one non-empty string prompt.'
+      });
       return;
     }
 
@@ -207,7 +218,7 @@ async function handleRequest(req, res) {
       } catch (err) {
         sendJSON(res, 500, {
           error: `Parse failed: ${err.message}`,
-          hint: 'Check prompt format',
+          hint: 'Ensure prompt includes "url:" and "instructions:" fields. Example: "url: https://example.com\\ninstructions:\\n  - click submit".',
         });
         return;
       }
@@ -230,7 +241,8 @@ async function handleRequest(req, res) {
       logger.error('Command failed', { error: err.message });
       sendJSON(res, 500, {
         error: err.message,
-        hint: 'Task execution failed; check server logs',
+        hint: 'Task execution failed. Check daemon logs for the failing instruction index and observability context. ' +
+              'Run "idx snap <url> -i" to inspect the page state before retrying.',
       });
     }
     return;
@@ -273,7 +285,12 @@ async function main() {
   };
   const requiredKey = apiKeyMap[provider];
   if (requiredKey && !process.env[requiredKey]) {
-    logger.error(`Missing required env var: ${requiredKey}`);
+    logger.error(
+      `Missing required env var: ${requiredKey}. ` +
+      `Set ${requiredKey} in your environment or .env file. ` +
+      `Current AI_PROVIDER is "${provider}". ` +
+      `Supported providers: openai, anthropic, google.`
+    );
     process.exit(1);
   }
 
@@ -283,7 +300,11 @@ async function main() {
   browser = await chromium.launch(browserConfig);
 
   browser.on('disconnected', () => {
-    logger.error('Browser disconnected unexpectedly');
+    logger.error(
+      'Browser disconnected unexpectedly. ' +
+      'The Chromium process may have crashed or been killed externally. ' +
+      'Restart the daemon with "idx --daemon" or check system resource limits.'
+    );
     removeStateFile().finally(() => process.exit(1));
   });
 
@@ -323,6 +344,9 @@ async function main() {
 }
 
 main().catch(err => {
-  logger.error('Daemon startup failed', { error: err.message });
+  logger.error(
+    'Daemon startup failed. Check env vars (AI_PROVIDER, API key), Playwright installation, and available ports.',
+    { error: err.message }
+  );
   process.exit(1);
 });

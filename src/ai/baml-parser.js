@@ -12,8 +12,23 @@ import logger from '../utils/logger.js';
  * @returns {Object} Parsed and validated response object
  */
 export function parseWithBAML(response, expectedType = 'generic') {
-  if (!response || typeof response !== 'string') {
-    throw new Error('BAML parser: Invalid response format - expected string');
+  if (!response || typeof response !== 'string' || response.trim() === '') {
+    let gotDescription;
+    if (response === '') {
+      gotDescription = 'an empty string ("")';
+    } else if (typeof response === 'string' && response.trim() === '') {
+      gotDescription = 'a whitespace-only string';
+    } else if (response === null) {
+      gotDescription = 'null';
+    } else {
+      gotDescription = typeof response;
+    }
+    throw new Error(
+      'BAML parser: Invalid response format — expected a non-empty string but got ' +
+      gotDescription + '. ' +
+      'This usually means the AI provider returned an empty or non-text response. ' +
+      'Check AI_PROVIDER, AI_MODEL, and that the API key is valid.'
+    );
   }
 
   const cleaned = response.trim();
@@ -113,7 +128,10 @@ export function parseWithBAML(response, expectedType = 'generic') {
   });
 
   throw new Error(
-    `BAML parser: Unable to extract JSON from response (type: ${expectedType})\n` +
+    `BAML parser: Unable to extract JSON from "${expectedType}" response after trying all strategies ` +
+    `(plain JSON, markdown code block, embedded JSON, JSONL, markdown list). ` +
+    `The AI may have responded in an unexpected format. ` +
+    `Try lowering AI_TEMPERATURE or switching AI_MODEL. ` +
     `Response preview: ${cleaned.substring(0, 200)}${cleaned.length > 200 ? '...' : ''}`
   );
 }
@@ -129,15 +147,27 @@ export function parseTaskDescriptionResponse(response) {
 
     // Validate required fields
     if (!parsed.url) {
-      throw new Error('Task description missing required field: url');
+      throw new Error(
+        'Task description missing required field: "url". ' +
+        'The prompt must specify a URL for idx to navigate to. ' +
+        'Example prompt: "url: https://example.com\\ninstructions:\\n  - click submit".'
+      );
     }
     if (!Array.isArray(parsed.instructions)) {
-      throw new Error('Task description missing required field: instructions (must be array)');
+      throw new Error(
+        'Task description missing required field: "instructions" (must be an array). ' +
+        'Ensure the prompt includes a list of step-by-step instructions. ' +
+        'Example: "instructions:\\n  - click the login button\\n  - fill the email field".'
+      );
     }
 
     return parsed;
   } catch (error) {
-    throw new Error(`Failed to parse task description: ${error.message}`);
+    throw new Error(
+      `Failed to parse task description: ${error.message} ` +
+      `Verify the prompt format and that the AI model returned structured JSON. ` +
+      `Run with a lower AI_TEMPERATURE (e.g. 0) to reduce response variability.`
+    );
   }
 }
 
@@ -184,7 +214,11 @@ export function parseActionInstructionResponse(response) {
 
     return result;
   } catch (error) {
-    throw new Error(`Failed to parse action instruction: ${error.message}`);
+    throw new Error(
+      `Failed to parse action instruction: ${error.message} ` +
+      `Expected response format: {"elements":[...],"type":"click|fill|type|press","value":"..."}. ` +
+      `Run "idx snap <url> -i" to see available elements and retry with a more specific prompt.`
+    );
   }
 }
 

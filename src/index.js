@@ -22,13 +22,18 @@ dotenv.config();
  * @param {string[]} argv  process.argv
  * @returns {{ browser: string, domains: string[] } | null}
  */
-function parseCookiesFlag(argv) {
+export function parseCookiesFlag(argv) {
   const idx = argv.indexOf('--cookies');
   if (idx === -1) return null;
 
   const raw = argv[idx + 1];
   if (!raw || raw.startsWith('--')) {
-    throw new Error('--cookies requires a value: --cookies <browser>[:<domain,...>]');
+    throw new Error(
+      '--cookies flag requires a value. ' +
+      'Usage: --cookies <browser>[:<domain1>,<domain2>]. ' +
+      'Example: --cookies chrome  or  --cookies arc:github.com,linear.app. ' +
+      'Supported browsers: chrome, arc, brave, edge, comet.'
+    );
   }
 
   const colonIdx = raw.indexOf(':');
@@ -98,7 +103,10 @@ function parseCliFlags() {
     if (argv[i] === '--mode' && argv[i + 1]) {
       const val = argv[++i].toLowerCase();
       if (!VALID_MODES.has(val)) {
-        logger.error(`Invalid --mode value: "${val}". Must be aria, dom, or auto.`);
+        logger.error(
+          `Invalid --mode value: "${val}". Must be one of: aria, dom, auto. ` +
+          `Use "aria" to force accessibility tree, "dom" for XPath-based DOM, or "auto" (default) to let idx choose based on page quality.`
+        );
         process.exit(1);
       }
       mode = val;
@@ -115,11 +123,15 @@ function parseCliFlags() {
  * @param {string} mode - mode from CLI flags
  * @returns {Object} Operation options
  */
-function getOperationOptions(mode) {
+export function getOperationOptions(mode) {
   const temperature = parseFloat(process.env.AI_TEMPERATURE || '0');
 
   if (isNaN(temperature) || temperature < 0 || temperature > 2) {
-    throw new Error('AI_TEMPERATURE must be a number between 0 and 2');
+    throw new Error(
+      'AI_TEMPERATURE must be a number between 0 and 2 (got: ' + process.env.AI_TEMPERATURE + '). ' +
+      'Set AI_TEMPERATURE=0 for deterministic outputs or up to 2 for more creative responses. ' +
+      'Remove the env var to use the default (0).'
+    );
   }
 
   return { temperature, mode };
@@ -218,7 +230,11 @@ async function run() {
 
     // Validate command line arguments (after stripping --cookies and --mode)
     if (!args[0]) {
-      logger.error('No user prompt provided');
+      logger.error(
+        'No user prompt provided. ' +
+        'Pass a task description as the first argument, e.g.: idx "url: https://example.com\\ninstructions:\\n  - click the login button". ' +
+        'Run "idx --help" for full usage.'
+      );
       printUsage();
       process.exit(1);
     }
@@ -235,7 +251,8 @@ async function run() {
         const browserConfig = getBrowserConfig();
         await runDomCommand(domArgs, browserConfig);
       } catch (err) {
-        logger.error('snap subcommand failed', { error: err.message });
+        logger.error('snap subcommand failed. Check the URL is reachable and Playwright is installed. ' +
+          'Run "idx snap --help" for flag reference.', { error: err.message });
         process.exit(1);
       }
       return;
@@ -291,7 +308,12 @@ async function run() {
             });
           }
         } catch (err) {
-          logger.error(`Cookie import failed: ${err.message}`, { code: err.code });
+          logger.error(
+            `Cookie import failed: ${err.message} ` +
+            `Continuing without session cookies — authenticated pages may be inaccessible. ` +
+            `Check that the browser is installed and you granted Keychain access when prompted.`,
+            { code: err.code }
+          );
           // Non-fatal — continue without session cookies
         }
       }
@@ -317,9 +339,11 @@ async function run() {
       try {
         taskDescription = await operations.parseTaskDescription(userPrompt);
       } catch (error) {
-        logger.error('Failed to parse task description:', {
+        logger.error('Failed to parse task description. ' +
+          'Ensure the prompt includes a "url:" field and an "instructions:" list. ' +
+          'Example: "url: https://example.com\\ninstructions:\\n  - click submit". ' +
+          'Check AI_PROVIDER and API key env vars if the AI call itself failed.', {
           error: error.message,
-          suggestion: 'Check that your prompt format is correct and try again'
         });
         process.exit(1);
       }
@@ -342,7 +366,9 @@ async function run() {
           totalTokens: operations.tokenUsage.total
         });
       } catch (error) {
-        logger.error('Task execution failed', {
+        logger.error('Task execution failed. ' +
+          'Review the error above for the failing instruction index and observability context. ' +
+          'Run "idx snap <url> -i" to inspect the page state before retrying.', {
           error: error.message,
           stage: 'task execution'
         });

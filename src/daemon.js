@@ -111,7 +111,10 @@ export async function startServer() {
 
   throw new Error(
     `idx daemon did not start within ${POLL_TIMEOUT_MS / 1000}s. ` +
-    'Check logs or run: node src/server.js'
+    `The daemon process may have crashed during startup. ` +
+    `Check for errors in the process log, verify env vars (AI_PROVIDER, API key) are set, ` +
+    `and confirm Playwright browsers are installed (npx playwright install chromium). ` +
+    `To start manually: node src/server.js`
   );
 }
 

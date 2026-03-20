@@ -370,7 +370,11 @@ function decryptCookieValue(row, key) {
 
   const prefix = ev.slice(0, 3).toString('utf-8');
   if (prefix !== 'v10') {
-    throw new Error(`Unknown encryption prefix: ${prefix}`);
+    throw new Error(
+      `Unknown cookie encryption prefix: "${prefix}" (expected "v10"). ` +
+      `This cookie may have been encrypted with an unsupported Chromium version or a Windows/Linux format. ` +
+      `Only macOS Chromium "v10" AES-128-CBC cookies are supported.`
+    );
   }
 
   const ciphertext = ev.slice(3);

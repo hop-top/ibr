@@ -16,6 +16,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 
 ### feat
 
+- **High-precision AI-actionable error messages (T-0013)**
+  - 29 error strings rewritten across 8 source files; no logic changes.
+  - Every error is self-contained: what failed + why + concrete next step.
+  - Element resolution failures include `idx snap <url> -i` and `@refs` hint.
+  - Action failures include `hidden, disabled, or covered` diagnosis hint.
+  - AI parse failures suggest `AI_TEMPERATURE=0` and prompt format corrections.
+  - Config/flag errors include bad value, accepted range/set, Usage, Example.
+  - Story: `docs/stories/021-high-precision-errors.md`.
+  - Tests: unit coverage added for all new error paths in
+    `snap.parse.test.js`, `index.flags.test.js`,
+    `Operations.instructions.test.js`, `ai/provider.test.js`.
+  - E2E: `test/e2e/cli-errors.test.js` validates high-precision output for
+    missing prompt, missing snap URL, bad `AI_TEMPERATURE`, malformed AI JSON,
+    missing `--cookies` value.
+
 - **Daemon mode — persistent browser for fast warm invocations (T-0012)**
   - Opt-in: `IDX_DAEMON=true` or `--daemon` flag; stateless flow unchanged by default.
   - `src/server.js` — Node.js HTTP daemon: Chromium + Operations stay alive 30 min;
