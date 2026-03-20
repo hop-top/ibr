@@ -57,6 +57,12 @@ Guidelines:
   ];
 }
 
+const PSEUDO_BUTTON_GUIDANCE = `
+The snapshot may include two sections:
+1. Standard ARIA elements with @e refs (buttons, links, inputs)
+2. Pseudo-interactive elements with @c refs (divs/spans with cursor:pointer or onclick)
+Prefer @e refs; use @c refs only for custom interactive components not in the ARIA tree.`;
+
 function makeFindInstructionMessage(userPrompt, domTree) {
   const systemPrompt = `You are helping the user automate the browser by finding elements based on what the user wants to find in the page.
 
@@ -64,7 +70,8 @@ You will be given:
 1. a instruction of elements to find
 2. a hierarchical tree showing the semantic structure of the page. The tree is a JSON representation of the DOM. Where "n" is tag name,  "t" text content, "a" list of attributes, "c" is the list of children elements.
 
-You MUST return ONLY a valid JSON array of elements that match the instruction if they exist, otherwise return an empty array. Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON array.`;
+You MUST return ONLY a valid JSON array of elements that match the instruction if they exist, otherwise return an empty array. Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON array.
+${PSEUDO_BUTTON_GUIDANCE}`;
 
   return [
     { role: 'system', content: systemPrompt },
@@ -84,7 +91,8 @@ Return ONLY a valid JSON object with the following properties:
 2. type: name of action to perform on the element, can be "click" or "fill" or "type" or "press" or "scroll".
 3. value: value to fill or type or press.
 
-Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON object.`
+Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON object.
+${PSEUDO_BUTTON_GUIDANCE}`
 
   return [
     { role: 'system', content: systemPrompt },

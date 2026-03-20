@@ -21,6 +21,7 @@ export class Operations {
         this.domSimplifier = new DomSimplifier(ctx.page);
         this.extracts = [];
         this.cacheManager = new CacheManager();
+        this.pseudoButtonRefs = {};
 
         // Improved token tracking
         this.tokenUsage = {
@@ -320,7 +321,10 @@ export class Operations {
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
             const domTree = await this.domSimplifier.simplify();
-            const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const pseudoButtons = await this.domSimplifier.extractPseudoButtons(this.ctx.page);
+            await this.#injectPseudoButtonRefs(pseudoButtons);
+            const rawDomString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const domTreeString = this.domSimplifier.appendPseudoButtonsToSnapshot(rawDomString, pseudoButtons);
             const domSignature = createDomSignature(domTree);
 
             // Check cache first
@@ -393,35 +397,46 @@ export class Operations {
             }
 
             if (action && action.elements && action.elements.length > 0) {
-                const elementIndex = action.elements[0].x;
-                const elementXPath = this.domSimplifier.xpaths[elementIndex];
+                const elementRef = action.elements[0].x;
+                const refStr = String(elementRef);
 
-                if (!elementXPath) {
-                    throw new Error(`Invalid element index ${elementIndex} - XPath not found. DOM may have changed.`);
+                // Resolve locator: @c refs use data-idx-ref attr; others use xpath index
+                let locator;
+                let locatorDesc;
+                if (refStr.startsWith('c') && this.pseudoButtonRefs[refStr]) {
+                    locator = this.#resolvePseudoButtonRef(refStr);
+                    locatorDesc = `data-idx-ref=${refStr}`;
+                } else {
+                    const elementXPath = this.domSimplifier.xpaths[elementRef];
+                    if (!elementXPath) {
+                        throw new Error(`Invalid element index ${elementRef} - XPath not found. DOM may have changed.`);
+                    }
+                    locator = this.ctx.page.locator(`xpath=${elementXPath}`);
+                    locatorDesc = `xpath=${elementXPath}`;
                 }
 
                 try {
-                    logger.debug(`Scrolling element into view`, { xpath: elementXPath });
-                    await this.ctx.page.locator(`xpath=${elementXPath}`).scrollIntoViewIfNeeded();
+                    logger.debug(`Scrolling element into view`, { locator: locatorDesc });
+                    await locator.scrollIntoViewIfNeeded();
                     await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
 
                     const actionType = action.type?.toLowerCase();
                     switch (actionType) {
                         case 'click':
-                            logger.info(`${context}: Clicking element`, { xpath: elementXPath });
-                            await this.ctx.page.locator(`xpath=${elementXPath}`).click();
+                            logger.info(`${context}: Clicking element`, { locator: locatorDesc });
+                            await locator.click();
                             break;
                         case 'fill':
-                            logger.info(`${context}: Filling element with text`, { xpath: elementXPath, valueLength: action.value?.length || 0 });
-                            await this.ctx.page.locator(`xpath=${elementXPath}`).fill(action.value);
+                            logger.info(`${context}: Filling element with text`, { locator: locatorDesc, valueLength: action.value?.length || 0 });
+                            await locator.fill(action.value);
                             break;
                         case 'type':
-                            logger.info(`${context}: Typing into element`, { xpath: elementXPath, valueLength: action.value?.length || 0 });
-                            await this.ctx.page.locator(`xpath=${elementXPath}`).type(action.value);
+                            logger.info(`${context}: Typing into element`, { locator: locatorDesc, valueLength: action.value?.length || 0 });
+                            await locator.type(action.value);
                             break;
                         case 'press':
-                            logger.info(`${context}: Pressing key`, { xpath: elementXPath, key: action.value });
-                            await this.ctx.page.locator(`xpath=${elementXPath}`).press(action.value);
+                            logger.info(`${context}: Pressing key`, { locator: locatorDesc, key: action.value });
+                            await locator.press(action.value);
                             break;
                         default:
                             logger.warn(`${context}: Unknown action type`, { actionType });
@@ -430,11 +445,16 @@ export class Operations {
                     logger.info(`${context} executed successfully`, { actionType });
                 } catch (actionError) {
                     logger.error(`${context} execution failed`, {
-                        xpath: elementXPath,
+                        locator: locatorDesc,
                         actionType: action.type,
                         error: actionError.message
                     });
                     throw new Error(`Failed to execute action: ${actionError.message}`);
+                } finally {
+                    // Clean up injected refs after action
+                    await this.ctx.page.evaluate(() =>
+                        document.querySelectorAll('[data-idx-ref]').forEach(el => el.removeAttribute('data-idx-ref'))
+                    ).catch(() => {});
                 }
             } else {
                 logger.info(`${context}: No matching elements found, skipping action`);
@@ -448,6 +468,44 @@ export class Operations {
             });
             throw error;
         }
+    }
+
+    /**
+     * Injects data-idx-ref attributes onto pseudo-button elements.
+     * @param {Array} pseudoButtons - Result from extractPseudoButtons
+     */
+    async #injectPseudoButtonRefs(pseudoButtons) {
+        if (!pseudoButtons || pseudoButtons.length === 0) return;
+        this.pseudoButtonRefs = {};
+        try {
+            await this.ctx.page.evaluate((buttons) => {
+                buttons.forEach((btn, i) => {
+                    const ref = `c${i + 1}`;
+                    try {
+                        const el = document.querySelector(btn.selector);
+                        if (el) el.setAttribute('data-idx-ref', ref);
+                    } catch {
+                        // skip individual failures
+                    }
+                });
+            }, pseudoButtons);
+
+            pseudoButtons.forEach((btn, i) => {
+                const ref = `c${i + 1}`;
+                this.pseudoButtonRefs[ref] = btn.selector;
+            });
+        } catch (err) {
+            logger.warn('Failed to inject pseudo-button refs', { error: err.message });
+        }
+    }
+
+    /**
+     * Returns a Playwright locator for a @c ref.
+     * @param {string} ref - e.g. "c1"
+     * @returns {import('playwright').Locator}
+     */
+    #resolvePseudoButtonRef(ref) {
+        return this.ctx.page.locator(`[data-idx-ref="${ref}"]`);
     }
 
     async #waitJitteredDelay(delay) {
@@ -482,7 +540,10 @@ export class Operations {
 
         try {
             const domTree = await this.domSimplifier.simplify();
-            const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const pseudoButtons = await this.domSimplifier.extractPseudoButtons(this.ctx.page);
+            await this.#injectPseudoButtonRefs(pseudoButtons);
+            const rawDomString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const domTreeString = this.domSimplifier.appendPseudoButtonsToSnapshot(rawDomString, pseudoButtons);
             const domSignature = createDomSignature(domTree);
 
             // Check cache first
