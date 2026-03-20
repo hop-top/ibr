@@ -11,7 +11,8 @@ import {
 import { DomSimplifier } from './DomSimplifier.js';
 import { SnapshotDiffer } from './utils/SnapshotDiffer.js';
 import { getSnapshot, resolveElement, selectMode } from './utils/ariaSimplifier.js';
-import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS } from "./utils/constants.js";
+import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS, DIALOG_AUTO_ACCEPT, DIALOG_BUFFER_CAPACITY, DIALOG_DEFAULT_PROMPT_TEXT } from "./utils/constants.js";
+import { DialogManager } from './DialogManager.js';
 import { generateAIResponse } from './ai/provider.js';
 import { validateTaskDescription, validateAndParseJSON, createParseErrorMessage, createErrorContext } from './utils/validation.js';
 import { parseTaskDescriptionResponse, parseFindElementsResponse, parseActionInstructionResponse, parseExtractionResponse } from './ai/baml-parser.js';
@@ -52,6 +53,12 @@ export class Operations {
         this._requestStartTimes = new WeakMap();
         this.annotationService = new AnnotationService(ctx.page);
         this.annotateMode = options.annotate || false;
+        this.dialogManager = new DialogManager(ctx.page, {
+            autoAccept: DIALOG_AUTO_ACCEPT,
+            defaultPromptText: DIALOG_DEFAULT_PROMPT_TEXT,
+            bufferCapacity: DIALOG_BUFFER_CAPACITY,
+        });
+        this.dialogManager.init();
 
         // Attach observability listeners
         const page = ctx.page;
@@ -156,6 +163,7 @@ export class Operations {
             this.observabilityBuffer.pageOriginHost = null;
         }
         this.observabilityBuffer.clear();
+        this.dialogManager.clear();
 
         // Re-attach listeners each task (they were removed in the previous finally)
         const page = this.ctx.page;

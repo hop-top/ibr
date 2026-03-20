@@ -16,6 +16,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Daemon Mode**: Optional persistent browser server; warm invocations ~540ms vs ~3800ms cold
 - **Visual Debugging**: `--annotate` / `-a` flag captures annotated PNGs with labeled bounding boxes
 - **Failure Screenshots**: `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` auto-captures on action failure
+- **Dialog Handling**: Auto-accepts browser dialogs; buffers history for inspection
 - **Comprehensive Logging**: Detailed execution logs for debugging
 - **NDJSON Streaming**: `NDJSON_STREAM=true` emits structured browser events for pipeline integration
 
@@ -622,6 +623,9 @@ Now you can watch exactly what the script is doing and see where it fails.
 | `BROWSER_HEADLESS` | true/false | false | Run browser headless |
 | `BROWSER_SLOWMO` | milliseconds | 100 | Slow down browser actions |
 | `BROWSER_TIMEOUT` | milliseconds | 30000 | Page load timeout |
+| `DIALOG_AUTO_ACCEPT` | true/false | true | Auto-accept browser dialogs (alert/confirm/prompt) |
+| `DIALOG_BUFFER_CAPACITY` | number | 50000 | Max dialog events to buffer |
+| `DIALOG_DEFAULT_PROMPT_TEXT` | string | '' | Default text submitted for prompt() dialogs |
 
 ### Observability
 | Variable | Values | Default | Purpose |
