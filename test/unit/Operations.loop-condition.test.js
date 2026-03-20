@@ -30,12 +30,17 @@ function makePage(html = '<html><head></head><body></body></html>') {
     fill: vi.fn().mockResolvedValue(undefined),
     type: vi.fn().mockResolvedValue(undefined),
     press: vi.fn().mockResolvedValue(undefined),
+    ariaSnapshot: vi.fn().mockResolvedValue('- button "Next"'),
   };
   return {
     content: vi.fn().mockResolvedValue(html),
     goto: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue(0),
     locator: vi.fn().mockReturnValue(locator),
+    getByRole: vi.fn().mockReturnValue(locator),
+    getByLabel: vi.fn().mockReturnValue(locator),
+    getByText: vi.fn().mockReturnValue(locator),
+    getByPlaceholder: vi.fn().mockReturnValue(locator),
     _locator: locator,
   };
 }
@@ -54,7 +59,7 @@ function aiResp(content) {
 const BASE_URL = 'https://example.com';
 
 // find-elements response helpers
-const FOUND = JSON.stringify([{ x: 0 }]);
+const FOUND = JSON.stringify([{ role: 'button', name: 'Next' }]);
 const NOT_FOUND = JSON.stringify([]);
 
 // ── loop tests ───────────────────────────────────────────────────────────────
@@ -69,7 +74,7 @@ describe('Operations.loopInstruction', () => {
   });
 
   it('iterates exactly 3 times when AI finds elements 3 times then returns empty', async () => {
-    const actionClick = JSON.stringify({ elements: [{ x: 0 }], type: 'click' });
+    const actionClick = JSON.stringify({ elements: [{ role: 'button', name: 'Next' }], type: 'click' });
 
     // AI is called for: find(iter1), action-body(iter1), find(iter2), action-body(iter2),
     //                   find(iter3), action-body(iter3), find(break)
@@ -148,7 +153,7 @@ describe('Operations.conditionInstruction', () => {
   });
 
   it('executes success_instructions when elements are found', async () => {
-    const clickResp = JSON.stringify({ elements: [{ x: 0 }], type: 'click' });
+    const clickResp = JSON.stringify({ elements: [{ role: 'button', name: 'Next' }], type: 'click' });
     generateAIResponse
       .mockResolvedValueOnce(aiResp(FOUND))      // condition find
       .mockResolvedValueOnce(aiResp(clickResp)); // success click
@@ -167,7 +172,7 @@ describe('Operations.conditionInstruction', () => {
   });
 
   it('executes failure_instructions when elements are NOT found', async () => {
-    const clickResp = JSON.stringify({ elements: [{ x: 0 }], type: 'click' });
+    const clickResp = JSON.stringify({ elements: [{ role: 'button', name: 'Next' }], type: 'click' });
     generateAIResponse
       .mockResolvedValueOnce(aiResp(NOT_FOUND)) // condition find
       .mockResolvedValueOnce(aiResp(clickResp)); // failure click

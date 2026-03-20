@@ -30,6 +30,7 @@ function makeLocator() {
     fill: vi.fn().mockResolvedValue(undefined),
     type: vi.fn().mockResolvedValue(undefined),
     press: vi.fn().mockResolvedValue(undefined),
+    ariaSnapshot: vi.fn().mockResolvedValue('- button "Submit"'),
   };
   return loc;
 }
@@ -41,6 +42,10 @@ function makePage(html = '<html><head></head><body></body></html>') {
     goto: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue(0),
     locator: vi.fn().mockReturnValue(locatorInstance),
+    getByRole: vi.fn().mockReturnValue(locatorInstance),
+    getByLabel: vi.fn().mockReturnValue(locatorInstance),
+    getByText: vi.fn().mockReturnValue(locatorInstance),
+    getByPlaceholder: vi.fn().mockReturnValue(locatorInstance),
     _locatorInstance: locatorInstance,
   };
 }
@@ -101,23 +106,9 @@ describe('Operations instruction dispatch', () => {
 
   describe('actionInstruction dispatch', () => {
     const actionResponse = JSON.stringify({
-      elements: [{ x: 0 }],
+      elements: [{ role: 'button', name: 'Submit' }],
       type: 'click',
     });
-
-    async function runAction(name, value) {
-      const instr = value !== undefined
-        ? { name, prompt: `do ${name}`, value }
-        : { name, prompt: `do ${name}` };
-
-      const resp = JSON.stringify({
-        elements: [{ x: 0 }],
-        type: name,
-        value: value ?? undefined,
-      });
-      generateAIResponse.mockResolvedValue(aiResp(resp));
-      await ops.executeTask({ ...TASK, instructions: [instr] });
-    }
 
     it('calls locator.click() for click instruction', async () => {
       generateAIResponse.mockResolvedValue(aiResp(actionResponse));
@@ -126,21 +117,21 @@ describe('Operations instruction dispatch', () => {
     });
 
     it('calls locator.fill() for fill instruction', async () => {
-      const resp = JSON.stringify({ elements: [{ x: 0 }], type: 'fill', value: 'hello' });
+      const resp = JSON.stringify({ elements: [{ role: 'textbox', name: 'Email' }], type: 'fill', value: 'hello' });
       generateAIResponse.mockResolvedValue(aiResp(resp));
       await ops.executeTask({ ...TASK, instructions: [{ name: 'fill', prompt: 'input' }] });
       expect(page._locatorInstance.fill).toHaveBeenCalledWith('hello');
     });
 
     it('calls locator.type() for type instruction', async () => {
-      const resp = JSON.stringify({ elements: [{ x: 0 }], type: 'type', value: 'abc' });
+      const resp = JSON.stringify({ elements: [{ role: 'textbox', name: 'Search' }], type: 'type', value: 'abc' });
       generateAIResponse.mockResolvedValue(aiResp(resp));
       await ops.executeTask({ ...TASK, instructions: [{ name: 'type', prompt: 'input' }] });
       expect(page._locatorInstance.type).toHaveBeenCalledWith('abc');
     });
 
     it('calls locator.press() for press instruction', async () => {
-      const resp = JSON.stringify({ elements: [{ x: 0 }], type: 'press', value: 'Enter' });
+      const resp = JSON.stringify({ elements: [{ role: 'textbox', name: 'Query' }], type: 'press', value: 'Enter' });
       generateAIResponse.mockResolvedValue(aiResp(resp));
       await ops.executeTask({ ...TASK, instructions: [{ name: 'press', prompt: 'key' }] });
       expect(page._locatorInstance.press).toHaveBeenCalledWith('Enter');

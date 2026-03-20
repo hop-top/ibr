@@ -9,66 +9,60 @@ import {
   validateExtractResult
 } from '../../../src/cache/CacheUtils.js';
 
-// --- DOM fixtures ---
-const domTree = {
-  n: 'div',
-  a: { id: 'root' },
-  c: [
-    { n: 'ul', c: [
-      { n: 'li', a: { 'data-testid': 'item-1' } },
-      { n: 'li', a: { 'data-testid': 'item-2' } }
-    ]}
-  ]
-};
+// --- ARIA snapshot fixtures ---
+const ariaSnapshot = `- heading "Products" [level=1]
+- list
+  - listitem
+    - button "Add to cart"
+  - listitem
+    - button "Add to cart"
+- link "Checkout"`;
 
-const domTreeDiff = {
-  n: 'section',
-  a: { id: 'other' },
-  c: [{ n: 'p' }]
-};
+const ariaSnapshotDiff = `- heading "Sign In" [level=1]
+- textbox "Email"
+- textbox "Password"
+- button "Sign In"`;
 
 describe('createDomSignature', () => {
-  it('same DOM tree → same hash', () => {
-    const h1 = createDomSignature(domTree);
-    const h2 = createDomSignature(domTree);
+  it('same ARIA snapshot → same hash', () => {
+    const h1 = createDomSignature(ariaSnapshot);
+    const h2 = createDomSignature(ariaSnapshot);
     expect(h1).toBe(h2);
     expect(typeof h1).toBe('string');
     expect(h1.length).toBeGreaterThan(0);
   });
 
   it('different structure → different hash', () => {
-    const h1 = createDomSignature(domTree);
-    const h2 = createDomSignature(domTreeDiff);
+    const h1 = createDomSignature(ariaSnapshot);
+    const h2 = createDomSignature(ariaSnapshotDiff);
     expect(h1).not.toBe(h2);
   });
 
-  it('null input → returns a hash (node=null hashes to "null" string)', () => {
-    // extractStructure(null) returns null; JSON.stringify(null)="null" → still hashed
+  it('null input → returns null', () => {
     const result = createDomSignature(null);
-    expect(typeof result).toBe('string');
-    expect(result.length).toBe(64); // sha256 hex
+    expect(result).toBeNull();
   });
 });
 
 describe('isDomCompatible', () => {
   it('same signature → true', () => {
-    const sig = createDomSignature(domTree);
+    const sig = createDomSignature(ariaSnapshot);
     expect(isDomCompatible(sig, sig)).toBe(true);
   });
 
   it('different signatures → false', () => {
-    const s1 = createDomSignature(domTree);
-    const s2 = createDomSignature(domTreeDiff);
+    const s1 = createDomSignature(ariaSnapshot);
+    const s2 = createDomSignature(ariaSnapshotDiff);
     expect(isDomCompatible(s1, s2)).toBe(false);
   });
 
   it('old null → true', () => {
-    const sig = createDomSignature(domTree);
+    const sig = createDomSignature(ariaSnapshot);
     expect(isDomCompatible(null, sig)).toBe(true);
   });
 
   it('new null → true', () => {
-    const sig = createDomSignature(domTree);
+    const sig = createDomSignature(ariaSnapshot);
     expect(isDomCompatible(sig, null)).toBe(true);
   });
 
@@ -78,20 +72,29 @@ describe('isDomCompatible', () => {
 });
 
 describe('extractSchema', () => {
-  it('type find → { elementIndices }', () => {
-    const result = [{ x: 0 }, { x: 3 }];
+  it('type find → { elementDescriptors }', () => {
+    const result = [{ role: 'button', name: 'Sign in' }, { role: 'link', name: 'Learn more' }];
     const schema = extractSchema('find', result);
-    expect(schema).toEqual({ elementIndices: [0, 3] });
+    expect(schema).toEqual({
+      elementDescriptors: [
+        { role: 'button', name: 'Sign in' },
+        { role: 'link', name: 'Learn more' }
+      ]
+    });
   });
 
-  it('type action → { elementIndices, actionType, actionValue }', () => {
-    const result = { elements: [{ x: 1 }], type: 'click', value: null };
+  it('type action → { elementDescriptors, actionType, actionValue }', () => {
+    const result = { elements: [{ role: 'button', name: 'Submit' }], type: 'click', value: null };
     const schema = extractSchema('action', result);
-    expect(schema).toEqual({ elementIndices: [1], actionType: 'click', actionValue: null });
+    expect(schema).toEqual({
+      elementDescriptors: [{ role: 'button', name: 'Submit' }],
+      actionType: 'click',
+      actionValue: null
+    });
   });
 
   it('type action with value → actionValue populated', () => {
-    const result = { elements: [{ x: 2 }], type: 'fill', value: 'hello' };
+    const result = { elements: [{ role: 'textbox', name: 'Email' }], type: 'fill', value: 'hello' };
     const schema = extractSchema('action', result);
     expect(schema.actionValue).toBe('hello');
   });

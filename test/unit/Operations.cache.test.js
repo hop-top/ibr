@@ -25,12 +25,17 @@ function makePage(html = '<html><head></head><body></body></html>') {
     fill: vi.fn().mockResolvedValue(undefined),
     type: vi.fn().mockResolvedValue(undefined),
     press: vi.fn().mockResolvedValue(undefined),
+    ariaSnapshot: vi.fn().mockResolvedValue('- button "Submit"'),
   };
   return {
     content: vi.fn().mockResolvedValue(html),
     goto: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue(0),
     locator: vi.fn().mockReturnValue(locator),
+    getByRole: vi.fn().mockReturnValue(locator),
+    getByLabel: vi.fn().mockReturnValue(locator),
+    getByText: vi.fn().mockReturnValue(locator),
+    getByPlaceholder: vi.fn().mockReturnValue(locator),
     _locator: locator,
   };
 }
@@ -43,8 +48,8 @@ function makeCtx(page) {
 }
 
 const BASE_TASK = { url: 'https://example.com', instructions: [] };
-const CLICK_RESP = JSON.stringify({ elements: [{ x: 0 }], type: 'click' });
-const FOUND_RESP = JSON.stringify([{ x: 0 }]);
+const CLICK_RESP = JSON.stringify({ elements: [{ role: 'button', name: 'Submit' }], type: 'click' });
+const FOUND_RESP = JSON.stringify([{ role: 'button', name: 'Submit' }]);
 
 // ── actionInstruction cache tests ─────────────────────────────────────────────
 
@@ -93,7 +98,7 @@ describe('Operations cache – actionInstruction', () => {
     // isDomCompatible returns true regardless.
     const cachedEntry = {
       schema: {
-        elementIndices: [0],
+        elementDescriptors: [{ role: 'button', name: 'Submit' }],
         actionType: 'click',
         actionValue: null,
       },
@@ -129,7 +134,7 @@ describe('Operations cache – actionInstruction', () => {
     // sig_old ≠ sig_new → isDomCompatible returns false
     const cachedEntry = {
       schema: {
-        elementIndices: [0],
+        elementDescriptors: [{ role: 'button', name: 'Submit' }],
         actionType: 'click',
         actionValue: null,
       },
@@ -204,7 +209,7 @@ describe('Operations cache – findElements (via conditionInstruction)', () => {
 
   it('cache hit: returns cached elements without AI call', async () => {
     const cachedEntry = {
-      schema: { elementIndices: [0] },
+      schema: { elementDescriptors: [{ role: 'button', name: 'Submit' }] },
       metadata: {
         lastDomSignature: null,
         failureCount: 0,
