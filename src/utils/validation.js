@@ -67,36 +67,6 @@ export function validateTaskDescription(taskDesc) {
 }
 
 /**
- * Validate AI response structure
- * @param {Object} response - Response from AI provider
- * @returns {boolean} True if valid
- * @throws {Error} With detailed message if invalid
- */
-export function validateAIResponse(response) {
-  if (!response || typeof response !== 'object') {
-    throw new Error('AI response must be a valid object');
-  }
-
-  if (typeof response.content !== 'string') {
-    throw new Error('AI response must have a "content" field (string)');
-  }
-
-  if (!response.usage || typeof response.usage !== 'object') {
-    throw new Error('AI response must have a "usage" field (object)');
-  }
-
-  if (typeof response.usage.promptTokens !== 'number' || response.usage.promptTokens < 0) {
-    throw new Error('AI response usage must have valid "promptTokens" (non-negative number)');
-  }
-
-  if (typeof response.usage.completionTokens !== 'number' || response.usage.completionTokens < 0) {
-    throw new Error('AI response usage must have valid "completionTokens" (non-negative number)');
-  }
-
-  return true;
-}
-
-/**
  * Validate extracted data structure
  * @param {string} jsonString - JSON string to parse and validate
  * @param {Object} expectedStructure - Expected structure (keys and types)
