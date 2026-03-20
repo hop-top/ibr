@@ -24,7 +24,10 @@ export async function buildOperations(fixtureUrl, options = {}) {
   await page.goto(fixtureUrl);
 
   const aiProvider = options.aiProvider ?? DEFAULT_AI_PROVIDER;
-  const operations = new Operations({ aiProvider, page });
+  // Default to 'dom' mode in integration tests so {x} index responses work
+  // correctly. Pass mode: 'aria' explicitly when testing ARIA descriptor paths.
+  const mode = options.mode ?? 'dom';
+  const operations = new Operations({ aiProvider, page }, { mode });
 
   async function cleanup() {
     await page.close();

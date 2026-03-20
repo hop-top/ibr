@@ -20,10 +20,18 @@ export function taskDescriptionResponse(url, instructions) {
 }
 
 /**
- * Response for findElements — array of element stubs by indices
+ * Response for findElements — array of element stubs by DOM indices (dom mode)
  */
 export function findElementsResponse(indices) {
   return makeResponse(indices.map(x => ({ x })));
+}
+
+/**
+ * Response for findElements using ARIA descriptors (aria mode)
+ * @param {Array<{role: string, name: string}>} descriptors
+ */
+export function findElementsResponseAria(descriptors) {
+  return makeResponse(descriptors);
 }
 
 /**
@@ -34,10 +42,20 @@ export function emptyFindResponse() {
 }
 
 /**
- * Response for action instruction — { elements, type, value }
+ * Response for action instruction — { elements, type, value } using DOM indices (dom mode)
  */
 export function actionResponse(type, value, indices = [0]) {
   return makeResponse({ elements: indices.map(x => ({ x })), type, value });
+}
+
+/**
+ * Response for action instruction using ARIA descriptors (aria mode)
+ * @param {string} type
+ * @param {string|undefined} value
+ * @param {Array<{role: string, name: string}>} descriptors
+ */
+export function actionResponseAria(type, value, descriptors = [{ role: 'button', name: '' }]) {
+  return makeResponse({ elements: descriptors, type, value });
 }
 
 /**

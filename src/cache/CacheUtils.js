@@ -7,55 +7,42 @@ import crypto from 'crypto';
 import logger from '../utils/logger.js';
 
 /**
- * Create a structural signature of the DOM tree
- * Ignores dynamic content (text, timestamps) but preserves structure
+ * Create a structural signature from a page context string.
+ * Supports both ARIA snapshot strings and DOM JSON strings (DomSimplifier output).
+ *
+ * - ARIA snapshot: extracts role tokens only (strips names for stability).
+ * - DOM JSON: hashes the full string (structure is already stable).
+ *
+ * @param {string} pageContext
+ * @returns {string|null}
  */
-export function createDomSignature(domTree) {
+export function createDomSignature(pageContext) {
   try {
-    const structure = extractStructure(domTree, 0);
-    const hash = crypto.createHash('sha256').update(JSON.stringify(structure)).digest('hex');
-    return hash;
+    if (!pageContext || typeof pageContext !== 'string') return null;
+
+    // Detect DOM JSON mode: DomSimplifier outputs a JSON object/array string.
+    const trimmed = pageContext.trimStart();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      // Hash entire DOM string — structure is already normalised by DomSimplifier.
+      return crypto.createHash('sha256').update(pageContext).digest('hex');
+    }
+
+    // ARIA snapshot mode: extract structural lines (role tokens only, strip names).
+    const structuralLines = pageContext
+      .split('\n')
+      .map(line => {
+        // Keep indentation + role token only (drop the name part for stability)
+        const m = line.match(/^(\s*-\s+\w[\w-]*)/);
+        return m ? m[1] : line.match(/^\s*$/) ? null : line.replace(/:\s+.+$/, ':');
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    return crypto.createHash('sha256').update(structuralLines).digest('hex');
   } catch (error) {
-    logger.debug('Failed to create DOM signature', { error: error.message });
+    logger.debug('Failed to create page signature', { error: error.message });
     return null;
   }
-}
-
-/**
- * Extract structural elements from DOM tree
- * Limits depth to 5 and only keeps stable attributes
- */
-function extractStructure(node, depth) {
-  if (!node || depth > 5) return null;
-
-  const structure = {
-    n: node.n // tag name
-  };
-
-  // Only include stable attributes
-  if (node.a) {
-    const stableAttrs = {};
-    ['id', 'name', 'aria-label', 'role', 'data-testid'].forEach(key => {
-      if (node.a[key]) stableAttrs[key] = node.a[key];
-    });
-    if (Object.keys(stableAttrs).length > 0) {
-      structure.a = stableAttrs;
-    }
-  }
-
-  // Include first 10 children (truncated for performance)
-  if (node.c && Array.isArray(node.c)) {
-    const children = node.c
-      .slice(0, 10)
-      .map(child => extractStructure(child, depth + 1))
-      .filter(Boolean);
-
-    if (children.length > 0) {
-      structure.c = children;
-    }
-  }
-
-  return structure;
 }
 
 /**
@@ -122,19 +109,36 @@ export function getValidator(type) {
 }
 
 /**
- * Extract cached schema from AI response
+ * Normalise a single element descriptor for caching.
+ * Preserves ARIA {role,name} when present; falls back to DOM {x} index.
+ * @param {Object} el
+ * @returns {Object}
+ */
+function normaliseDescriptor(el) {
+  if (el.role || el.name) return { role: el.role, name: el.name };
+  if (typeof el.x === 'number') return { x: el.x };
+  return null;
+}
+
+/**
+ * Extract cached schema from AI response.
+ * Supports both ARIA {role,name} and DOM {x} descriptor shapes.
  */
 export function extractSchema(type, result) {
   try {
     switch (type) {
       case 'find':
         return {
-          elementIndices: result.map(el => el.x).filter(x => typeof x === 'number')
+          elementDescriptors: result
+            .map(normaliseDescriptor)
+            .filter(Boolean)
         };
 
       case 'action':
         return {
-          elementIndices: result.elements.map(el => el.x).filter(x => typeof x === 'number'),
+          elementDescriptors: result.elements
+            .map(normaliseDescriptor)
+            .filter(Boolean),
           actionType: result.type,
           actionValue: result.value || null
         };

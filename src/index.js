@@ -81,18 +81,47 @@ function getBrowserConfig() {
   });
 }
 
+const VALID_MODES = new Set(['aria', 'dom', 'auto']);
+
 /**
- * Get operation options from environment
+ * Parse CLI flags from argv.
+ * Strips recognised flags and returns remaining positional args + parsed options.
+ * @returns {{ args: string[], mode: 'aria'|'dom'|'auto' }}
+ */
+function parseCliFlags() {
+  const argv = process.argv.slice(2);
+  const remaining = [];
+  let mode = 'auto';
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--mode' && argv[i + 1]) {
+      const val = argv[++i].toLowerCase();
+      if (!VALID_MODES.has(val)) {
+        logger.error(`Invalid --mode value: "${val}". Must be aria, dom, or auto.`);
+        process.exit(1);
+      }
+      mode = val;
+    } else {
+      remaining.push(argv[i]);
+    }
+  }
+
+  return { args: remaining, mode };
+}
+
+/**
+ * Get operation options from environment + CLI flags
+ * @param {string} mode - mode from CLI flags
  * @returns {Object} Operation options
  */
-function getOperationOptions() {
+function getOperationOptions(mode) {
   const temperature = parseFloat(process.env.AI_TEMPERATURE || '0');
 
   if (isNaN(temperature) || temperature < 0 || temperature > 2) {
     throw new Error('AI_TEMPERATURE must be a number between 0 and 2');
   }
 
-  return { temperature };
+  return { temperature, mode };
 }
 
 /**
@@ -101,17 +130,20 @@ function getOperationOptions() {
 function printUsage() {
   logger.info('idx - Intent Driven eXtractor');
   logger.info('');
-  logger.info('Usage: idx [--cookies <browser>[:<domain,...>]] "<user_prompt>"');
+  logger.info('Usage: idx [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] "<user_prompt>"');
+  logger.info('');
+  logger.info('Flags:');
+  logger.info('  --cookies <browser>              Import all non-expired cookies from browser');
+  logger.info('  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only');
+  logger.info('  Supported browsers: chrome, arc, brave, edge, comet');
+  logger.info('  --mode aria   Force ARIA accessibility tree (ariaSnapshot)');
+  logger.info('  --mode dom    Force DOM simplifier + XPath');
+  logger.info('  --mode auto   Auto-select based on quality (default)');
   logger.info('');
   logger.info('Examples:');
   logger.info('  idx "url: https://example.com\\ninstructions:\\n  - click submit button"');
   logger.info('  idx --cookies chrome "url: https://github.com\\ninstructions:\\n  - get repo list"');
-  logger.info('  idx --cookies arc:github.com,linear.app "url: https://linear.app\\ninstructions:\\n  - list issues"');
-  logger.info('');
-  logger.info('Cookie flag:');
-  logger.info('  --cookies <browser>              Import all non-expired cookies from browser');
-  logger.info('  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only');
-  logger.info('  Supported browsers: chrome, arc, brave, edge, comet');
+  logger.info('  idx --mode dom "url: https://canvas-app.example.com\\ninstructions:\\n  - click submit"');
   logger.info('');
   logger.info('Configuration:');
   logger.info('  AI_PROVIDER      - AI provider (openai, anthropic, google) [default: openai]');
@@ -152,14 +184,21 @@ async function run() {
       validateEnvironmentVariables([requiredApiKey]);
     }
 
-    // Validate command line arguments (after stripping --cookies)
-    if (!effectiveArgv[2]) {
+    // Parse CLI flags (--mode) from the already-stripped argv (no --cookies)
+    // parseCliFlags reads process.argv, so we temporarily shadow it
+    const savedArgv = process.argv;
+    process.argv = ['node', 'src/index.js', ...effectiveArgv.slice(2)];
+    const { args, mode } = parseCliFlags();
+    process.argv = savedArgv;
+
+    // Validate command line arguments (after stripping --cookies and --mode)
+    if (!args[0]) {
       logger.error('No user prompt provided');
       printUsage();
       process.exit(1);
     }
 
-    if (effectiveArgv[2] === '--help' || effectiveArgv[2] === '-h') {
+    if (args[0] === '--help' || args[0] === '-h') {
       printUsage();
       process.exit(0);
     }
@@ -171,7 +210,7 @@ async function run() {
     // Get browser and operation configuration
     logger.debug('Loading configuration');
     const browserConfig = getBrowserConfig();
-    const operationOptions = getOperationOptions();
+    const operationOptions = getOperationOptions(mode);
 
     logger.debug('Browser configuration', { ...browserConfig, channel: browserConfig.channel || 'default' });
     logger.debug('Operation options', operationOptions);
@@ -217,8 +256,8 @@ async function run() {
         operationOptions
       );
 
-      // Get user prompt from effective argv (prompt is always the first non-flag arg after node/script)
-      const userPrompt = effectiveArgv[2];
+      // Get user prompt from remaining CLI args (after stripping --cookies and --mode)
+      const userPrompt = args[0];
 
       // Parse task description
       logger.info('Parsing task description');
