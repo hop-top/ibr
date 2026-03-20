@@ -15,5 +15,8 @@ test-integration:
 test-e2e:
     npm run test:e2e
 
+test-e2e-fast:
+    npm run test:e2e:fast
+
 test-coverage:
     npm run test:coverage

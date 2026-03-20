@@ -47,6 +47,9 @@ yarn-error.log*
 # Cache
 .idx-cache/
 
+# E2E test results (runtime-generated, consumed by T-0016)
+test/results/
+
 # Optional npm cache directory
 .npm
 

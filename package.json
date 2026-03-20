@@ -13,6 +13,7 @@
     "test:unit": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/unit/",
     "test:integration": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/integration/",
     "test:e2e": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/e2e/",
+    "test:e2e:fast": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/e2e/ --grep '@fast'",
     "test:coverage": "node --experimental-vm-modules node_modules/.bin/vitest run --coverage --config test/vitest.config.js"
   },
   "keywords": [
