@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   validateEnvironmentVariables,
   validateTaskDescription,
-  validateAIResponse,
   validateAndParseJSON,
   validateBrowserConfig,
   createErrorContext,
+  createParseErrorMessage,
 } from '../../../src/utils/validation.js';
 
 // ---------------------------------------------------------------------------
@@ -104,50 +104,6 @@ describe('validateTaskDescription', () => {
 });
 
 // ---------------------------------------------------------------------------
-// validateAIResponse
-// ---------------------------------------------------------------------------
-describe('validateAIResponse', () => {
-  const valid = {
-    content: 'some text',
-    usage: { promptTokens: 10, completionTokens: 5 },
-  };
-
-  it('returns true for valid response', () => {
-    expect(validateAIResponse(valid)).toBe(true);
-  });
-
-  it('throws when content is not a string', () => {
-    expect(() => validateAIResponse({ ...valid, content: 42 })).toThrow(/content/i);
-  });
-
-  it('throws when usage is missing', () => {
-    expect(() => validateAIResponse({ content: 'ok' })).toThrow(/usage/i);
-  });
-
-  it('throws when usage is not an object', () => {
-    expect(() => validateAIResponse({ content: 'ok', usage: 'bad' })).toThrow(/usage/i);
-  });
-
-  it('throws when promptTokens is not a number', () => {
-    expect(() => validateAIResponse({
-      content: 'ok',
-      usage: { promptTokens: 'x', completionTokens: 5 },
-    })).toThrow(/promptTokens/i);
-  });
-
-  it('throws when completionTokens is negative', () => {
-    expect(() => validateAIResponse({
-      content: 'ok',
-      usage: { promptTokens: 5, completionTokens: -1 },
-    })).toThrow(/completionTokens/i);
-  });
-
-  it('throws for null input', () => {
-    expect(() => validateAIResponse(null)).toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // validateAndParseJSON
 // ---------------------------------------------------------------------------
 describe('validateAndParseJSON', () => {
@@ -221,6 +177,41 @@ describe('validateBrowserConfig', () => {
 
   it('does not throw for empty config', () => {
     expect(() => validateBrowserConfig({})).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createParseErrorMessage
+// ---------------------------------------------------------------------------
+describe('createParseErrorMessage', () => {
+  const err = new Error('unexpected token');
+
+  it('includes operation name in output', () => {
+    const msg = createParseErrorMessage('task parsing', '{"bad}', err);
+    expect(msg).toContain('task parsing');
+  });
+
+  it('includes original error message', () => {
+    const msg = createParseErrorMessage('op', '{}', err);
+    expect(msg).toContain('unexpected token');
+  });
+
+  it('truncates response to 300 chars and appends ellipsis', () => {
+    const long = 'x'.repeat(400);
+    const msg = createParseErrorMessage('op', long, err);
+    expect(msg).toContain('...');
+    // must not include chars beyond 300
+    const responseSection = msg.split('Model response:')[1].split('\n')[0];
+    expect(responseSection.length).toBeLessThanOrEqual(310); // 300 + "..." + space
+  });
+
+  it('handles null response without throwing', () => {
+    expect(() => createParseErrorMessage('op', null, err)).not.toThrow();
+  });
+
+  it('includes suggestions block', () => {
+    const msg = createParseErrorMessage('op', '{}', err);
+    expect(msg).toContain('Suggestions');
   });
 });
 

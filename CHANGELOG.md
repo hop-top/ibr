@@ -7,6 +7,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 
 ## [Unreleased]
 
+### refactor
+
+- **Removed dead `validateAIResponse` function (T-0027)**
+  - `src/utils/validation.js` — deleted unused function; no callers existed.
+  - `test/unit/utils/validation.test.js` — removed corresponding dead tests.
+  - No user-facing behaviour change.
+
 ### feat
 
 - **Daemon mode — persistent browser for fast warm invocations (T-0012)**
