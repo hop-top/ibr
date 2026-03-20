@@ -90,7 +90,7 @@ describe('Operations.parseTaskDescription()', () => {
   it('throws "AI model returned empty response" on empty AI content', async () => {
     generateAIResponse.mockResolvedValue(makeAIResponse(''));
     await expect(ops.parseTaskDescription('Do something')).rejects.toThrow(
-      'AI model returned empty response'
+      'AI model returned an empty response'
     );
   });
 

@@ -7,10 +7,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../src/ai/provider.js');
 vi.mock('../../src/cache/CacheManager.js');
 vi.mock('../../src/utils/logger.js');
+// resolveElement is mocked so we can control what it returns per test.
+// Default: return undefined so tests that need it failing can set mockReturnValue(null).
+// Existing dispatch tests stub it to return a locator via the page fixture below.
+vi.mock('../../src/utils/ariaSimplifier.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, resolveElement: vi.fn() };
+});
 
 import { generateAIResponse } from '../../src/ai/provider.js';
 import { CacheManager } from '../../src/cache/CacheManager.js';
 import { Operations } from '../../src/Operations.js';
+import { resolveElement } from '../../src/utils/ariaSimplifier.js';
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
@@ -75,6 +83,9 @@ describe('Operations instruction dispatch', () => {
     vi.clearAllMocks();
     page = makePage();
     ops = new Operations(makeCtx(page));
+    // Default: resolveElement returns the page's shared locator instance
+    // (mirrors what the real ariaSimplifier.resolveElement does for role-based descriptors)
+    resolveElement.mockReturnValue(page._locatorInstance);
   });
 
   // ── executeTask: navigation ─────────────────────────────────────────────────
@@ -98,7 +109,7 @@ describe('Operations instruction dispatch', () => {
           ...TASK,
           instructions: [{ name: 'teleport', prompt: 'somewhere' }],
         })
-      ).rejects.toThrow('Unknown instruction type: teleport');
+      ).rejects.toThrow('Unknown instruction type: "teleport"');
     });
   });
 
@@ -180,6 +191,96 @@ describe('Operations instruction dispatch', () => {
       await expect(
         ops.executeTask({ ...TASK, instructions: [{ name: 'scroll', prompt: 'down' }] })
       ).resolves.not.toThrow();
+    });
+  });
+
+  // ── high-precision error messages (T-0013) ───────────────────────────────────
+
+  describe('Unable to resolve element descriptor — high-precision error', () => {
+    it('throws with idx snap suggestion when resolveElement returns null', async () => {
+      // AI returns a role-based descriptor (aria mode path: resolveElement called)
+      const actionResp = JSON.stringify({
+        elements: [{ role: 'button', name: 'Ghost' }],
+        type: 'click',
+      });
+      generateAIResponse.mockResolvedValue(aiResp(actionResp));
+      // Make resolveElement return null so the descriptor cannot be resolved
+      resolveElement.mockReturnValue(null);
+
+      await expect(
+        ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'ghost btn' }] })
+      ).rejects.toThrow('Unable to resolve element descriptor');
+    });
+
+    it('includes idx snap -i hint in the error', async () => {
+      const actionResp = JSON.stringify({
+        elements: [{ role: 'button', name: 'Ghost' }],
+        type: 'click',
+      });
+      generateAIResponse.mockResolvedValue(aiResp(actionResp));
+      resolveElement.mockReturnValue(null);
+
+      await expect(
+        ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'ghost btn' }] })
+      ).rejects.toThrow('idx snap <url> -i');
+    });
+
+    it('error mentions inspecting @refs', async () => {
+      const actionResp = JSON.stringify({
+        elements: [{ role: 'button', name: 'Ghost' }],
+        type: 'click',
+      });
+      generateAIResponse.mockResolvedValue(aiResp(actionResp));
+      resolveElement.mockReturnValue(null);
+
+      await expect(
+        ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'ghost btn' }] })
+      ).rejects.toThrow('@refs');
+    });
+  });
+
+  describe('Failed to execute action — high-precision error', () => {
+    it('throws with hidden/disabled/covered hint when click fails', async () => {
+      const actionResp = JSON.stringify({
+        elements: [{ role: 'button', name: 'Submit' }],
+        type: 'click',
+      });
+      generateAIResponse.mockResolvedValue(aiResp(actionResp));
+      // resolveElement returns a valid locator but click throws
+      const failingLocator = {
+        scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
+        click: vi.fn().mockRejectedValue(new Error('element is not visible')),
+        fill: vi.fn(),
+        type: vi.fn(),
+        press: vi.fn(),
+        ariaSnapshot: vi.fn().mockResolvedValue('- button "Submit"'),
+      };
+      resolveElement.mockReturnValue(failingLocator);
+
+      await expect(
+        ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+      ).rejects.toThrow('hidden, disabled, or covered by another element');
+    });
+
+    it('includes idx snap page state hint in action failure', async () => {
+      const actionResp = JSON.stringify({
+        elements: [{ role: 'button', name: 'Submit' }],
+        type: 'click',
+      });
+      generateAIResponse.mockResolvedValue(aiResp(actionResp));
+      const failingLocator = {
+        scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
+        click: vi.fn().mockRejectedValue(new Error('not clickable')),
+        fill: vi.fn(),
+        type: vi.fn(),
+        press: vi.fn(),
+        ariaSnapshot: vi.fn().mockResolvedValue('- button "Submit"'),
+      };
+      resolveElement.mockReturnValue(failingLocator);
+
+      await expect(
+        ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+      ).rejects.toThrow('idx snap <url> -i');
     });
   });
 });

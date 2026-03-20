@@ -108,7 +108,11 @@ export class Operations {
             case 'scroll':
                 return await this.#actionInstruction(instruction);
             default:
-                throw new Error(`Unknown instruction type: ${instruction.name}`);
+                throw new Error(
+                    `Unknown instruction type: "${instruction.name}". ` +
+                    `Supported types: loop, condition, extract, click, fill, type, press, scroll. ` +
+                    `Check the task description returned by parseTaskDescription() and ensure each instruction uses a valid "name" field.`
+                );
         }
     }
 
@@ -178,7 +182,10 @@ export class Operations {
 
     async parseTaskDescription(text) {
         if (!text || typeof text !== 'string' || text.trim().length === 0) {
-            throw new Error('Task description cannot be empty');
+            throw new Error(
+                'Task description cannot be empty. ' +
+                'Pass a non-empty string prompt, e.g.: "url: https://example.com\\ninstructions:\\n  - click the login button"'
+            );
         }
 
         logger.info('Parsing task description', {
@@ -199,7 +206,11 @@ export class Operations {
 
             const output = response.content?.trim();
             if (!output) {
-                throw new Error('AI model returned empty response');
+                throw new Error(
+                    'AI model returned an empty response while parsing the task description. ' +
+                    'Verify AI_PROVIDER and the corresponding API key are set correctly. ' +
+                    'If the prompt is very short, try adding more context about the target URL and desired actions.'
+                );
             }
 
             let taskDescription;
@@ -500,7 +511,12 @@ export class Operations {
                 }
 
                 if (!locator) {
-                    throw new Error(`Unable to resolve element descriptor: ${JSON.stringify(descriptor)}`);
+                    throw new Error(
+                        `Unable to resolve element descriptor: ${JSON.stringify(descriptor)}. ` +
+                        `The AI returned a reference that could not be matched to a page element. ` +
+                        `Run "idx snap <url> -i" to inspect available interactive elements and their @refs, ` +
+                        `then retry with a more specific prompt.`
+                    );
                 }
 
                 try {
@@ -539,7 +555,11 @@ export class Operations {
                         actionType: action.type,
                         error: actionError.message
                     });
-                    throw new Error(`Failed to execute action: ${actionError.message}`);
+                    throw new Error(
+                        `Failed to execute "${action.type}" action on element ${locatorDesc}: ${actionError.message}. ` +
+                        `The element was found but the action failed — it may be hidden, disabled, or covered by another element. ` +
+                        `Run "idx snap <url> -i" to inspect the page state.`
+                    );
                 } finally {
                     // Clean up injected refs after action
                     await this.ctx.page.evaluate(() =>

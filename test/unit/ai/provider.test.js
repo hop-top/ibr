@@ -101,6 +101,40 @@ describe('generateAIResponse', () => {
     );
   });
 
+  it('missing text error includes actionable provider hint', async () => {
+    vi.stubEnv('AI_PROVIDER', 'anthropic');
+    generateText.mockResolvedValueOnce({
+      text: '',
+      usage: { promptTokens: 5, completionTokens: 0 }
+    });
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await expect(generateAIResponse(fakeModel, messages)).rejects.toThrow(
+      'check that AI_PROVIDER and AI_MODEL are set to a supported'
+    );
+  });
+
+  it('missing usage → throws with api version hint', async () => {
+    generateText.mockResolvedValueOnce({
+      text: 'hello',
+      usage: null,
+    });
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await expect(generateAIResponse(fakeModel, messages)).rejects.toThrow(
+      'AI response missing usage information'
+    );
+  });
+
+  it('missing usage error mentions API version mismatch', async () => {
+    generateText.mockResolvedValueOnce({
+      text: 'hello',
+      usage: undefined,
+    });
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await expect(generateAIResponse(fakeModel, messages)).rejects.toThrow(
+      'API version mismatch or unsupported model'
+    );
+  });
+
   it('non-retryable error → throws immediately (no retry)', async () => {
     generateText.mockRejectedValue(new Error('Authentication failed'));
     const { generateAIResponse } = await import('../../../src/ai/provider.js');

@@ -54,11 +54,17 @@ export function parseDomArgs(args) {
       opts.annotated = true;
     } else if (arg === '-d') {
       const n = parseInt(args[i + 1], 10);
-      if (isNaN(n)) throw new Error('-d requires a numeric depth argument');
+      if (isNaN(n)) throw new Error(
+        '-d requires a numeric depth argument (e.g. -d 5). ' +
+        'Depth controls how many DOM levels are included in the output.'
+      );
       opts.depth = n;
       i++;
     } else if (arg === '-s') {
-      if (!args[i + 1]) throw new Error('-s requires a CSS selector argument');
+      if (!args[i + 1]) throw new Error(
+        '-s requires a CSS selector argument (e.g. -s "#main-content"). ' +
+        'Scope the DOM output to the subtree rooted at the matching element.'
+      );
       opts.selector = args[i + 1];
       i++;
     } else if (!opts.url && !arg.startsWith('-')) {
@@ -67,7 +73,11 @@ export function parseDomArgs(args) {
     i++;
   }
 
-  if (!opts.url) throw new Error('snap subcommand requires a URL argument');
+  if (!opts.url) throw new Error(
+    'snap subcommand requires a URL argument. ' +
+    'Usage: idx snap <url> [flags]. ' +
+    'Example: idx snap https://example.com -i'
+  );
   return opts;
 }
 

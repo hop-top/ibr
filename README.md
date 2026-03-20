@@ -506,23 +506,26 @@ BROWSER_SLOWMO=500 idx "..."
 
 ### Issue: Element Not Found
 
-**Symptom**: "No matching elements found" for an action
+**Symptom**: `Unable to resolve element descriptor: {...}` or action failure
+mentioning `hidden, disabled, or covered by another element`
 
 **Solutions**:
-- Be more specific in description: instead of "button", try "submit button in form"
-- Check if element requires scrolling into view (tool does this automatically)
-- Verify element exists on page (check browser window)
-- Try alternative text descriptions
+- Run `idx snap <url> -i` to list interactive elements and their `@refs`
+- Use the exact role/name from the snapshot in your prompt
+- If the element is a pseudo-button (no ARIA role), use `--mode dom` and
+  reference its index
+- If the element is present but action fails, check for overlays (modal,
+  cookie banner) and add an instruction to dismiss them first
 
 ### Issue: JSON Parsing Errors
 
-**Symptom**: "Failed to parse JSON response" from AI model
+**Symptom**: `Failed to parse task description` or `BAML parser: Unable to extract JSON`
 
 **Solutions**:
-- The AI model returned invalid JSON
-- Try rephrasing your prompt more clearly
-- Ensure extracted data actually exists on page
-- Check logs for what the model returned
+- Set `AI_TEMPERATURE=0` for deterministic outputs
+- Ensure prompt includes `url:` and `instructions:` fields
+- If using a custom model, verify it returns structured JSON responses
+- Try switching `AI_MODEL` to a model known to follow instructions reliably
 
 ### Issue: Infinite Loops
 
