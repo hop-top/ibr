@@ -20,6 +20,17 @@ import { createDomSignature, isDomCompatible, getValidator, extractSchema } from
 import logger from './utils/logger.js';
 import { ObservabilityBuffer } from './observability/ObservabilityBuffer.js';
 import { AnnotationService } from './services/AnnotationService.js';
+import { streamer } from './observability/NdjsonStreamer.js';
+
+/** Strip query params from URL before emitting to NDJSON stream (avoid leaking tokens/keys). */
+function sanitizeUrlForStream(rawUrl) {
+    try {
+        const u = new URL(rawUrl);
+        return `${u.origin}${u.pathname}`;
+    } catch {
+        return rawUrl;
+    }
+}
 
 export class Operations {
     /**
@@ -131,6 +142,9 @@ export class Operations {
             instructionCount: taskDescription.instructions.length
         });
 
+        const taskStartMs = Date.now();
+        streamer.taskStart({ prompt: taskDescription.url });
+
         // Initialize cache
         await this.cacheManager.init();
         this.url = taskDescription.url;
@@ -154,7 +168,13 @@ export class Operations {
         try {
             logger.debug('Navigating to URL', { url: taskDescription.url });
             this.snapshotDiffer.reset();
-            await this.ctx.page.goto(taskDescription.url, { waitUntil: 'networkidle' });
+            try {
+                await this.ctx.page.goto(taskDescription.url, { waitUntil: 'networkidle' });
+                streamer.navigation({ url: sanitizeUrlForStream(taskDescription.url), status: 'success' });
+            } catch (err) {
+                streamer.navigation({ url: sanitizeUrlForStream(taskDescription.url), status: 'error', error: err.message });
+                throw err;
+            }
             await this.#waitJitteredDelay(PAGE_LOADING_DELAY_MS);
 
             logger.debug('Preparing page');
@@ -166,12 +186,14 @@ export class Operations {
             await this.#executeInstructions(taskDescription.instructions);
 
             logger.info('Task execution completed successfully');
+            streamer.taskEnd({ startMs: taskStartMs, status: 'success' });
         } catch (error) {
             logger.error('Task execution failed', {
                 url: taskDescription.url,
                 executionIndex: this.executionIndex,
                 error: error.message
             });
+            streamer.taskEnd({ startMs: taskStartMs, status: 'error', error: error.message });
             throw error;
         } finally {
             const page = this.ctx.page;
@@ -384,6 +406,17 @@ export class Operations {
 
             this.extracts.push(extract);
 
+            // Emit one NDJSON event per extracted field
+            // extract is already an array (parseExtractionResponse normalises it above)
+            for (const item of extract) {
+                if (item && typeof item === 'object') {
+                    for (const [field, value] of Object.entries(item)) {
+                        const safeValue = (value !== null && typeof value === 'object') ? String(value) : value;
+                        streamer.extract({ field, value: safeValue, status: 'success' });
+                    }
+                }
+            }
+
             logger.info(`${context} completed`, {
                 extractedFields: Object.keys(extract).length,
                 promptTokens: response.usage.promptTokens,
@@ -401,6 +434,7 @@ export class Operations {
                 error: errMsg,
                 executionIndex: this.executionIndex
             });
+            streamer.instructionError({ instructionType: 'extract', error: error.message });
             throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
         }
     }
@@ -547,6 +581,12 @@ export class Operations {
                         default:
                             logger.warn(`${context}: Unknown action type`, { actionType });
                     }
+                    streamer.action({
+                        actionType: actionType || instruction.name,
+                        selector: locatorDesc,
+                        valueLength: action.value != null ? String(action.value).length : 0,
+                        status: 'success',
+                    });
                     await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
                     // Reset snapshot after action so next #findElements gets fresh diff baseline
                     this.snapshotDiffer.reset();
@@ -556,6 +596,13 @@ export class Operations {
                         locator: locatorDesc,
                         actionType: action.type,
                         error: actionError.message
+                    });
+                    streamer.action({
+                        actionType: action.type?.toLowerCase() || instruction.name,
+                        selector: locatorDesc,
+                        valueLength: action.value != null ? String(action.value).length : 0,
+                        status: 'error',
+                        error: actionError.message,
                     });
                     throw new Error(
                         `Failed to execute "${action.type}" action on element ${locatorDesc}: ${actionError.message}. ` +

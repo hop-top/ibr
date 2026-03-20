@@ -21,6 +21,9 @@ Observe execution in real-time and access structured logs to diagnose failures.
 - As a CLI user, I set `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` so idx
   automatically captures an annotated screenshot whenever an action fails —
   letting me diagnose issues without re-running with `--annotate`.
+- As a CLI user, I set `NDJSON_STREAM=true` to receive one JSON object per
+  line on stdout for each browser event (navigation, click, extract, error),
+  enabling real-time pipeline integration or structured log ingestion.
 
 ## Acceptance Criteria
 
@@ -39,3 +42,8 @@ Observe execution in real-time and access structured logs to diagnose failures.
   logged as warnings; execution continues without screenshot.
 - Path validation rejects paths outside `/tmp` or `cwd`; returns
   `{success:false}` without throwing.
+- `NDJSON_STREAM=true`: each browser event emits one JSON line to stdout:
+  `{event, timestamp, ...eventFields}`. Events: task_start, navigation,
+  action, extract, error, task_end.
+- Disabled by default; no output when unset.
+- Stream write errors are swallowed — observability never breaks core flow.

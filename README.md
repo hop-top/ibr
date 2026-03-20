@@ -17,6 +17,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Visual Debugging**: `--annotate` / `-a` flag captures annotated PNGs with labeled bounding boxes
 - **Failure Screenshots**: `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` auto-captures on action failure
 - **Comprehensive Logging**: Detailed execution logs for debugging
+- **NDJSON Streaming**: `NDJSON_STREAM=true` emits structured browser events for pipeline integration
 
 ## Setup
 
@@ -621,6 +622,11 @@ Now you can watch exactly what the script is doing and see where it fails.
 | `BROWSER_HEADLESS` | true/false | false | Run browser headless |
 | `BROWSER_SLOWMO` | milliseconds | 100 | Slow down browser actions |
 | `BROWSER_TIMEOUT` | milliseconds | 30000 | Page load timeout |
+
+### Observability
+| Variable | Values | Default | Purpose |
+|----------|--------|---------|---------|
+| `NDJSON_STREAM` | true/false | false | Stream browser events as NDJSON to stdout |
 
 ### API Keys (REQUIRED)
 - `OPENAI_API_KEY` - For OpenAI provider
