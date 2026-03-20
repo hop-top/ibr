@@ -18,6 +18,7 @@ import { parseTaskDescriptionResponse, parseFindElementsResponse, parseActionIns
 import { CacheManager } from './cache/CacheManager.js';
 import { createDomSignature, isDomCompatible, getValidator, extractSchema } from './cache/CacheUtils.js';
 import logger from './utils/logger.js';
+import { ObservabilityBuffer } from './observability/ObservabilityBuffer.js';
 
 export class Operations {
     /**
@@ -35,6 +36,32 @@ export class Operations {
         this.cacheManager = new CacheManager();
         this.pseudoButtonRefs = {};
         this.snapshotDiffer = new SnapshotDiffer();
+        this.observabilityBuffer = new ObservabilityBuffer();
+        this._requestStartTimes = new WeakMap();
+
+        // Attach observability listeners
+        const page = ctx.page;
+        this._onConsole = (msg) => this.observabilityBuffer.addConsoleLog(msg.type(), msg.text());
+        this._onRequest = (req) => {
+            this._requestStartTimes.set(req, Date.now());
+            this.observabilityBuffer.addNetworkRequest(req.method(), req.url());
+        };
+        this._onResponse = (res) => {
+            const req = res.request();
+            let duration = null;
+            if (req) {
+                const startTime = this._requestStartTimes.get(req);
+                if (typeof startTime === 'number') {
+                    duration = Date.now() - startTime;
+                }
+            }
+            this.observabilityBuffer.matchNetworkResponse(res.url(), res.status(), duration);
+        };
+        if (page?.on) {
+            page.on('console', this._onConsole);
+            page.on('request', this._onRequest);
+            page.on('response', this._onResponse);
+        }
 
         // Improved token tracking
         this.tokenUsage = {
@@ -101,6 +128,22 @@ export class Operations {
         await this.cacheManager.init();
         this.url = taskDescription.url;
 
+        // Reset observability buffer; set page origin for cross-origin detection
+        try {
+            this.observabilityBuffer.pageOriginHost = new URL(taskDescription.url).host;
+        } catch {
+            this.observabilityBuffer.pageOriginHost = null;
+        }
+        this.observabilityBuffer.clear();
+
+        // Re-attach listeners each task (they were removed in the previous finally)
+        const page = this.ctx.page;
+        if (page?.on) {
+            page.on('console', this._onConsole);
+            page.on('request', this._onRequest);
+            page.on('response', this._onResponse);
+        }
+
         try {
             logger.debug('Navigating to URL', { url: taskDescription.url });
             this.snapshotDiffer.reset();
@@ -123,6 +166,13 @@ export class Operations {
                 error: error.message
             });
             throw error;
+        } finally {
+            const page = this.ctx.page;
+            if (page?.off) {
+                page.off('console', this._onConsole);
+                page.off('request', this._onRequest);
+                page.off('response', this._onResponse);
+            }
         }
     }
 
@@ -207,11 +257,16 @@ export class Operations {
             logger.info(`${context} completed`);
             this.executionIndex++;
         } catch (error) {
+            const alreadyAnnotated = error.message.includes('--- observability ---');
+            const obs = alreadyAnnotated ? '' : this.observabilityBuffer.flush();
+            const errMsg = alreadyAnnotated
+                ? error.message
+                : `${error.message}\n--- observability ---\n${obs}`;
             logger.error(`${context} failed`, {
-                error: error.message,
+                error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw error;
+            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
         }
     }
 
@@ -255,11 +310,16 @@ export class Operations {
             });
             this.executionIndex++;
         } catch (error) {
+            const alreadyAnnotated = error.message.includes('--- observability ---');
+            const obs = alreadyAnnotated ? '' : this.observabilityBuffer.flush();
+            const errMsg = alreadyAnnotated
+                ? error.message
+                : `${error.message}\n--- observability ---\n${obs}`;
             logger.error(`${context} failed`, {
-                error: error.message,
+                error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw error;
+            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
         }
     }
 
@@ -318,11 +378,16 @@ export class Operations {
 
             this.executionIndex++;
         } catch (error) {
+            const alreadyAnnotated = error.message.includes('--- observability ---');
+            const obs = alreadyAnnotated ? '' : this.observabilityBuffer.flush();
+            const errMsg = alreadyAnnotated
+                ? error.message
+                : `${error.message}\n--- observability ---\n${obs}`;
             logger.error(`${context} failed`, {
-                error: error.message,
+                error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw error;
+            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
         }
     }
 
@@ -487,11 +552,16 @@ export class Operations {
 
             this.executionIndex++;
         } catch (error) {
+            const alreadyAnnotated = error.message.includes('--- observability ---');
+            const obs = alreadyAnnotated ? '' : this.observabilityBuffer.flush();
+            const errMsg = alreadyAnnotated
+                ? error.message
+                : `${error.message}\n--- observability ---\n${obs}`;
             logger.error(`${context} failed`, {
-                error: error.message,
+                error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw error;
+            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
         }
     }
 
@@ -695,11 +765,16 @@ export class Operations {
 
             return elements;
         } catch (error) {
+            const alreadyAnnotated = error.message.includes('--- observability ---');
+            const obs = alreadyAnnotated ? '' : this.observabilityBuffer.flush();
+            const errMsg = alreadyAnnotated
+                ? error.message
+                : `${error.message}\n--- observability ---\n${obs}`;
             logger.error(`${context} failed`, {
-                error: error.message,
+                error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw error;
+            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
         }
     }
 }
