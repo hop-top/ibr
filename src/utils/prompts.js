@@ -134,6 +134,12 @@ Return valid JSON array ONLY. Nothing else.`;
 
 // ── DOM mode prompts (DomSimplifier / XPath) ───────────────────────────────
 
+const PSEUDO_BUTTON_GUIDANCE = `
+The snapshot may include two sections:
+1. Standard DOM elements with numeric x refs
+2. Pseudo-interactive elements with @c refs (divs/spans with cursor:pointer or onclick)
+Prefer numeric x refs; use @c refs only for custom interactive components not reachable by index.`;
+
 function makeFindInstructionMessageDom(userPrompt, pageContext) {
   const systemPrompt = `You are helping the user automate the browser by finding elements based on what the user wants to find in the page.
 
@@ -142,12 +148,14 @@ You will be given:
 2. A simplified DOM tree where each interactive element is labelled with an index x
 
 Return ONLY a valid JSON array of element descriptors that match the instruction. Each descriptor must have:
-  - "x": the integer index of the element in the DOM tree
+  - "x": the element reference — either an integer index (standard DOM) or a string like "c1" (pseudo-button, without leading @)
 
 Example: [{"x": 3}, {"x": 17}]
+Pseudo-button example: [{"x": "c1"}]
 
 If nothing matches, return an empty array: []
-Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON array.`;
+Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON array.
+${PSEUDO_BUTTON_GUIDANCE}`;
 
   return [
     { role: 'system', content: systemPrompt },
@@ -164,14 +172,15 @@ You will be given:
 
 Return ONLY a valid JSON object with the following properties:
 1. elements: array of element descriptors. Each must have:
-   - "x": the integer index of the element in the DOM tree
+   - "x": the element reference — either an integer index (standard DOM) or a string like "c1" (pseudo-button, without leading @)
    If no match, return an empty array.
 2. type: action to perform — "click", "fill", "type", "press", or "scroll"
 3. value: value to fill, type, or press (omit if not applicable)
 
 Example: {"elements": [{"x": 5}], "type": "fill", "value": "user@example.com"}
 
-Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON object.`;
+Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON object.
+${PSEUDO_BUTTON_GUIDANCE}`;
 
   return [
     { role: 'system', content: systemPrompt },

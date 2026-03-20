@@ -1,5 +1,6 @@
 import { parse, HTMLElement, NodeType } from 'node-html-parser';
 import { generateElementXPath } from './utils/xpathUtils.js';
+import { PSEUDO_BUTTON_LIMIT, PSEUDO_BUTTON_TEXT_MAX_LENGTH, STANDARD_INTERACTIVE_TAGS } from './utils/constants.js';
 
 export class DomSimplifier {
   /**
@@ -63,7 +64,7 @@ export class DomSimplifier {
     });
 
     const filteredAttributes = Object.keys(element.attributes).reduce((acc, key) => {
-      if (["id", "href", "src", "alt", "title", "aria-label", "role", "name", "content"].includes(key)) {
+      if (["id", "href", "src", "alt", "title", "aria-label", "role", "name", "content", "data-idx-ref"].includes(key)) {
         acc[key] = element.attributes[key];
       }
       return acc;
@@ -108,6 +109,95 @@ export class DomSimplifier {
       .replaceAll(/,+"t":""/g, "")
       .replaceAll(/,+"c":\[\]/g, "")
       .replaceAll(/,+"a":\{\}/g, "");
+  }
+
+  /**
+   * Scans the page for pseudo-interactive elements (not standard interactive tags)
+   * that have cursor:pointer, onclick attr, or tabindex >= 0.
+   * @param {Page} page - Playwright page instance
+   * @returns {Promise<Array>} Array of pseudo-button descriptors
+   */
+  async extractPseudoButtons(page) {
+    try {
+      return await page.evaluate(
+        ({ limit, maxLen, standardTags }) => {
+          function cssPath(el) {
+            const parts = [];
+            let node = el;
+            while (node && node.nodeType === Node.ELEMENT_NODE) {
+              let idx = 1;
+              let sib = node.previousElementSibling;
+              while (sib) { idx++; sib = sib.previousElementSibling; }
+              parts.unshift(`${node.tagName.toLowerCase()}:nth-child(${idx})`);
+              node = node.parentElement;
+            }
+            return parts.join(' > ');
+          }
+
+          const results = [];
+          const all = document.querySelectorAll('*');
+
+          for (const el of all) {
+            if (results.length >= limit) break;
+
+            const tag = el.tagName.toUpperCase();
+            if (standardTags.includes(tag)) continue;
+            if (el.hasAttribute('role')) continue;
+            if (el.getClientRects().length === 0) continue;
+
+            const style = window.getComputedStyle(el);
+            if (
+              style.display === 'none' ||
+              style.visibility === 'hidden' ||
+              style.opacity === '0'
+            ) continue;
+
+            const reasons = [];
+            if (style.cursor === 'pointer') reasons.push('cursor:pointer');
+            if (el.hasAttribute('onclick')) reasons.push('onclick');
+            const tabIndex = parseInt(el.getAttribute('tabindex') ?? '', 10);
+            if (!isNaN(tabIndex) && tabIndex >= 0) reasons.push(`tabindex=${tabIndex}`);
+            if (reasons.length === 0) continue;
+
+            let text = (el.innerText || '').trim().slice(0, maxLen);
+            if (!text) {
+              text = el.getAttribute('aria-label') ||
+                el.className.toString().trim() ||
+                tag;
+            }
+
+            results.push({ selector: cssPath(el), text, reasons });
+          }
+
+          return results;
+        },
+        {
+          limit: PSEUDO_BUTTON_LIMIT,
+          maxLen: PSEUDO_BUTTON_TEXT_MAX_LENGTH,
+          standardTags: STANDARD_INTERACTIVE_TAGS,
+        }
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Appends a pseudo-button section to a DOM snapshot string.
+   * @param {string} domTreeString - Existing DOM snapshot
+   * @param {Array} pseudoButtons - Result from extractPseudoButtons
+   * @returns {string} Augmented snapshot
+   */
+  appendPseudoButtonsToSnapshot(domTreeString, pseudoButtons) {
+    if (!pseudoButtons || pseudoButtons.length === 0) return domTreeString;
+
+    let section = '\n── cursor-interactive (not in ARIA tree) ──\n';
+    pseudoButtons.forEach((btn, i) => {
+      const ref = `c${i + 1}`;
+      section += `@${ref} [${btn.reasons.join(', ')}] "${btn.text}"\n`;
+    });
+
+    return domTreeString + section;
   }
 }
 

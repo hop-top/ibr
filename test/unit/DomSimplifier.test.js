@@ -124,14 +124,14 @@ describe('DomSimplifier', () => {
       expect(btn.a).not.toHaveProperty('onclick');
     });
 
-    it('keeps role attribute (regression: role added to allowed list)', async () => {
+    it('keeps data-idx-ref and role attributes; strips non-allowed attrs', async () => {
       const html = `<html><head></head>
-        <body><div role="navigation" class="nav" data-v="1">nav</div></body></html>`;
+        <body><div role="navigation" data-idx-ref="c1" class="nav" data-v="1">nav</div></body></html>`;
       const ds = new DomSimplifier(makePage(html));
       const result = await ds.simplify();
       const div = findNode(result, 'DIV');
+      expect(div.a).toHaveProperty('data-idx-ref', 'c1');
       expect(div.a).toHaveProperty('role', 'navigation');
-      // non-allowed attrs must still be stripped
       expect(div.a).not.toHaveProperty('class');
       expect(div.a).not.toHaveProperty('data-v');
     });
@@ -248,6 +248,65 @@ describe('DomSimplifier', () => {
       const a = findNode(parsed, 'A');
       expect(a.a).toMatchObject({ id: 'nav', href: '/home' });
       expect(a.t).toBe('Home');
+    });
+  });
+
+  // ── appendPseudoButtonsToSnapshot ──────────────────────────────────────────
+
+  describe('appendPseudoButtonsToSnapshot()', () => {
+    it('returns original string unchanged when pseudoButtons is empty', () => {
+      const ds = new DomSimplifier(makePage('<html></html>'));
+      const base = '{"x":0,"n":"HTML"}';
+      expect(ds.appendPseudoButtonsToSnapshot(base, [])).toBe(base);
+      expect(ds.appendPseudoButtonsToSnapshot(base, null)).toBe(base);
+    });
+
+    it('appends cursor-interactive section with @cN refs', () => {
+      const ds = new DomSimplifier(makePage('<html></html>'));
+      const base = '{"x":0}';
+      const buttons = [
+        { reasons: ['cursor:pointer'], text: 'Open menu', selector: 'div:nth-child(1)' },
+        { reasons: ['onclick', 'tabindex=0'], text: 'Submit', selector: 'span:nth-child(2)' },
+      ];
+      const result = ds.appendPseudoButtonsToSnapshot(base, buttons);
+      expect(result).toContain('@c1');
+      expect(result).toContain('@c2');
+      expect(result).toContain('cursor:pointer');
+      expect(result).toContain('onclick');
+      expect(result).toContain('Open menu');
+      expect(result).toContain('Submit');
+      expect(result.startsWith(base)).toBe(true);
+    });
+
+    it('assigns sequential c refs starting at 1', () => {
+      const ds = new DomSimplifier(makePage('<html></html>'));
+      const buttons = Array.from({ length: 3 }, (_, i) => ({
+        reasons: ['cursor:pointer'], text: `btn${i}`, selector: `div:nth-child(${i + 1})`,
+      }));
+      const result = ds.appendPseudoButtonsToSnapshot('{}', buttons);
+      expect(result).toContain('@c1');
+      expect(result).toContain('@c2');
+      expect(result).toContain('@c3');
+      expect(result).not.toContain('@c0');
+    });
+  });
+
+  // ── extractPseudoButtons ────────────────────────────────────────────────────
+
+  describe('extractPseudoButtons()', () => {
+    it('returns empty array when page.evaluate throws', async () => {
+      const ds = new DomSimplifier(makePage('<html></html>'));
+      const badPage = { evaluate: vi.fn().mockRejectedValue(new Error('eval error')) };
+      const result = await ds.extractPseudoButtons(badPage);
+      expect(result).toEqual([]);
+    });
+
+    it('returns the value from page.evaluate on success', async () => {
+      const ds = new DomSimplifier(makePage('<html></html>'));
+      const fakeButtons = [{ selector: 'div:nth-child(1)', text: 'Click me', reasons: ['cursor:pointer'] }];
+      const mockPage = { evaluate: vi.fn().mockResolvedValue(fakeButtons) };
+      const result = await ds.extractPseudoButtons(mockPage);
+      expect(result).toEqual(fakeButtons);
     });
   });
 
