@@ -5,12 +5,12 @@
  */
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
-import path from 'path';
+import { resolve, dirname } from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startFakeAIServerE2E } from '../helpers/fakeAIServerE2E.js';
 import { startStaticServer } from '../helpers/staticServer.js';
 
-const CWD = path.resolve(fileURLToPath(import.meta.url), '../../..');
+const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 function runIdx(args, env = {}) {
   return new Promise((resolve) => {
@@ -94,5 +94,55 @@ describe('cli exit codes (story 017)', () => {
       },
     );
     expect(result.code).toBe(0);
+  }, 30000);
+
+  // ── idx snap dispatches before API key validation (regression fix) ──────────
+  // Fix: `idx snap` must exit 0 and produce DOM output even when no API key is
+  // set, because it is a pure browser-inspection command that does not use AI.
+
+  it('idx snap exits 0 without any API key set', async () => {
+    const env = { ...process.env };
+    delete env.OPENAI_API_KEY;
+    delete env.ANTHROPIC_API_KEY;
+    delete env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+    const result = await runIdx(
+      ['snap', `${web.baseUrl}/product-page.html`],
+      {
+        ...env,
+        OPENAI_API_KEY: '',
+        ANTHROPIC_API_KEY: '',
+        GOOGLE_GENERATIVE_AI_API_KEY: '',
+        BROWSER_HEADLESS: 'true',
+        BROWSER_SLOWMO: '0',
+        BROWSER_TIMEOUT: '5000',
+        LOG_LEVEL: 'error',
+      },
+    );
+    expect(result.code).toBe(0);
+  }, 30000);
+
+  it('idx snap outputs DOM Tree header without API key', async () => {
+    const env = { ...process.env };
+    delete env.OPENAI_API_KEY;
+    delete env.ANTHROPIC_API_KEY;
+    delete env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+    const result = await runIdx(
+      ['snap', `${web.baseUrl}/product-page.html`],
+      {
+        ...env,
+        OPENAI_API_KEY: '',
+        ANTHROPIC_API_KEY: '',
+        GOOGLE_GENERATIVE_AI_API_KEY: '',
+        BROWSER_HEADLESS: 'true',
+        BROWSER_SLOWMO: '0',
+        BROWSER_TIMEOUT: '5000',
+        LOG_LEVEL: 'error',
+      },
+    );
+    // Must emit DOM output, NOT an API key error
+    expect(result.stdout).toContain('=== DOM Tree ===');
+    expect(result.stdout + result.stderr).not.toMatch(/api.?key/i);
   }, 30000);
 });

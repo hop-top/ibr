@@ -12,10 +12,10 @@
  */
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
-import path from 'path';
+import { resolve, dirname } from 'path';
 import { describe, it, expect } from 'vitest';
 
-const CWD = path.resolve(fileURLToPath(import.meta.url), '../../..');
+const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 function runIdx(args, env = {}) {
   return new Promise((resolve) => {
