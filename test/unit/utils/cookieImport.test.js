@@ -5,8 +5,11 @@
  *   1. Keychain timeout — execFileSync SIGTERM/ETIMEDOUT → CookieImportError('keychain_timeout')
  *   2. assertMacOS() — non-darwin platform → CookieImportError('unsupported_platform')
  *   3. Domain filter expansion — bare domain auto-expands to include leading-dot variant
+ *   4. Pure function unit tests: decryptCookieValue, toPlaywrightCookie,
+ *      chromiumEpochToUnix, mapSameSite
  */
 
+import crypto from 'crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ─── Mock child_process before any import of cookieImport ────────────────────
@@ -182,6 +185,110 @@ describe('cookieImport — Copilot review regression tests', () => {
     });
   });
 
+  // ── keychain_not_found and keychain_error branches ────────────────────────
+
+  describe('getKeychainPassword — keychain_not_found + keychain_error', () => {
+    it('maps "could not be found" stderr to keychain_not_found', async () => {
+      const err = Object.assign(new Error('not found'), {
+        signal: null,
+        stderr: 'The specified item could not be found',
+        code: undefined,
+      });
+      execFileSync.mockImplementation(() => { throw err; });
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+
+      const { importCookies, CookieImportError } = await loadModule();
+      await expect(importCookies('chrome', [])).rejects.toSatisfy(
+        e => e instanceof CookieImportError && e.code === 'keychain_not_found'
+      );
+    });
+
+    it('maps "not found" stderr to keychain_not_found', async () => {
+      const err = Object.assign(new Error('not found'), {
+        signal: null,
+        stderr: 'SecKeychainSearchCopyNext: not found',
+        code: undefined,
+      });
+      execFileSync.mockImplementation(() => { throw err; });
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+
+      const { importCookies, CookieImportError } = await loadModule();
+      await expect(importCookies('chrome', [])).rejects.toSatisfy(
+        e => e instanceof CookieImportError && e.code === 'keychain_not_found'
+      );
+    });
+
+    it('maps unknown keychain error to keychain_error', async () => {
+      const err = Object.assign(new Error('something unexpected'), {
+        signal: null,
+        stderr: 'some other keychain failure',
+        code: undefined,
+      });
+      execFileSync.mockImplementation(() => { throw err; });
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+
+      const { importCookies, CookieImportError } = await loadModule();
+      await expect(importCookies('chrome', [])).rejects.toSatisfy(
+        e => e instanceof CookieImportError && e.code === 'keychain_error'
+      );
+    });
+  });
+
+  // ── openDbFromCopy — db_locked path ────────────────────────────────────────
+
+  describe('openDb — SQLITE_BUSY triggers openDbFromCopy → db_locked', () => {
+    it('throws db_locked when DB is busy and copy also fails', async () => {
+      execFileSync.mockReturnValue('dGVzdA==\n');
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+
+      // First Database() call → SQLITE_BUSY; copy path → also throws
+      const Database = (await import('better-sqlite3')).default;
+      const fs = await import('fs');
+      // copyFileSync throws so openDbFromCopy catch fires
+      fs.copyFileSync.mockImplementation(() => { throw new Error('copy failed'); });
+      Database.mockImplementation(() => {
+        const e = new Error('SQLITE_BUSY: database is locked');
+        e.message = 'SQLITE_BUSY: database is locked';
+        throw e;
+      });
+
+      const { importCookies, CookieImportError } = await loadModule();
+      await expect(importCookies('chrome', [])).rejects.toSatisfy(
+        e => e instanceof CookieImportError && e.code === 'db_locked'
+      );
+    });
+
+    it('opens DB from copy successfully when original is busy', async () => {
+      execFileSync.mockReturnValue('dGVzdA==\n');
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+
+      const fs = await import('fs');
+      fs.copyFileSync.mockImplementation(() => {});
+      // existsSync: first call (getCookieDbPath) → true; wal/shm → false
+      fs.existsSync
+        .mockReturnValueOnce(true)   // getCookieDbPath check
+        .mockReturnValue(false);     // wal / shm not present
+
+      const mockStmt = { all: vi.fn(() => []) };
+      const mockDb = { prepare: vi.fn(() => mockStmt), close: vi.fn() };
+
+      const Database = (await import('better-sqlite3')).default;
+      let callCount = 0;
+      Database.mockImplementation((p) => {
+        callCount++;
+        if (callCount === 1) {
+          const e = new Error('SQLITE_BUSY: database is locked');
+          throw e;
+        }
+        return mockDb;
+      });
+
+      const { importCookies } = await loadModule();
+      const result = await importCookies('chrome', []);
+      expect(result).toMatchObject({ count: 0 });
+    });
+  });
+
   // ── Fix 4: domain filter expansion ────────────────────────────────────────
 
   describe('importCookies — domain expansion (bare + dot variant)', () => {
@@ -264,4 +371,145 @@ describe('cookieImport — Copilot review regression tests', () => {
       expect(capturedParams).toHaveLength(1);
     });
   });
+});
+
+// ─── Pure-function unit tests (no mocks needed) ──────────────────────────────
+
+import {
+  decryptCookieValue,
+  toPlaywrightCookie,
+  chromiumEpochToUnix,
+  mapSameSite,
+} from '../../../src/utils/cookieImport.js';
+
+// Pre-computed v10 fixture:
+//   key = Buffer.alloc(16, 0xAB), iv = Buffer.alloc(16, 0x20)
+//   payload = [32× 0x00] + "test-value"
+const TEST_KEY = Buffer.alloc(16, 0xAB);
+const ENCRYPTED_V10_HEX =
+  '763130b4f90a7f44e8388f66ceae1e62e06ec05b522e3a9d674a6bf97645ea57c3d4a2a70bcde99482355074dfd3312ddf1169';
+
+describe('decryptCookieValue — pure crypto', () => {
+  it('returns row.value directly when non-empty (unencrypted path)', () => {
+    const row = { value: 'plain', encrypted_value: Buffer.alloc(0) };
+    expect(decryptCookieValue(row, TEST_KEY)).toBe('plain');
+  });
+
+  it('returns empty string when encrypted_value is empty Buffer', () => {
+    const row = { value: '', encrypted_value: Buffer.alloc(0) };
+    expect(decryptCookieValue(row, TEST_KEY)).toBe('');
+  });
+
+  it('throws on unknown encryption prefix', () => {
+    const ev = Buffer.concat([Buffer.from('xyz'), Buffer.alloc(16, 0)]);
+    const row = { value: '', encrypted_value: ev };
+    expect(() => decryptCookieValue(row, TEST_KEY)).toThrow('Unknown encryption prefix: xyz');
+  });
+
+  it('decrypts a valid v10-encrypted value correctly', () => {
+    const ev = Buffer.from(ENCRYPTED_V10_HEX, 'hex');
+    const row = { value: '', encrypted_value: ev };
+    expect(decryptCookieValue(row, TEST_KEY)).toBe('test-value');
+  });
+
+  it('returns empty string when decrypted plaintext is exactly 32 bytes (no payload)', () => {
+    // Encrypt a payload of exactly 32 bytes (all zeros) — after stripping prefix, value = ''
+    const key = TEST_KEY;
+    const iv = Buffer.alloc(16, 0x20);
+    const payload = Buffer.alloc(32, 0); // 32 bytes HMAC tag, nothing after
+    const cipher = crypto.createCipheriv('aes-128-cbc', key, iv);
+    const encrypted = Buffer.concat([cipher.update(payload), cipher.final()]);
+    const ev = Buffer.concat([Buffer.from('v10'), encrypted]);
+    const row = { value: '', encrypted_value: ev };
+    expect(decryptCookieValue(row, TEST_KEY)).toBe('');
+  });
+
+  it('returns bytes after first 32 when decrypted plaintext >32 bytes', () => {
+    // Already covered by the fixture test above; verify the slice explicitly
+    const ev = Buffer.from(ENCRYPTED_V10_HEX, 'hex');
+    const row = { value: '', encrypted_value: ev };
+    const result = decryptCookieValue(row, TEST_KEY);
+    expect(result.length).toBeGreaterThan(0);
+    expect(result).toBe('test-value');
+  });
+});
+
+describe('toPlaywrightCookie — field mapping', () => {
+  const baseRow = {
+    name: 'session',
+    host_key: '.example.com',
+    path: '/app',
+    expires_utc: 13000000000000000n,
+    is_secure: 1,
+    is_httponly: 1,
+    has_expires: 1,
+    samesite: 2,
+  };
+
+  it('maps all fields correctly', () => {
+    const cookie = toPlaywrightCookie(baseRow, 'abc123');
+    expect(cookie.name).toBe('session');
+    expect(cookie.value).toBe('abc123');
+    expect(cookie.domain).toBe('.example.com');
+    expect(cookie.path).toBe('/app');
+    expect(cookie.secure).toBe(true);
+    expect(cookie.httpOnly).toBe(true);
+    expect(cookie.sameSite).toBe('Strict');
+    expect(typeof cookie.expires).toBe('number');
+  });
+
+  it('defaults path to "/" when row.path is null', () => {
+    const row = { ...baseRow, path: null };
+    expect(toPlaywrightCookie(row, 'v').path).toBe('/');
+  });
+
+  it('defaults path to "/" when row.path is undefined', () => {
+    const row = { ...baseRow, path: undefined };
+    expect(toPlaywrightCookie(row, 'v').path).toBe('/');
+  });
+
+  it('is_secure=0 → secure:false', () => {
+    const row = { ...baseRow, is_secure: 0 };
+    expect(toPlaywrightCookie(row, 'v').secure).toBe(false);
+  });
+
+  it('is_httponly=0 → httpOnly:false', () => {
+    const row = { ...baseRow, is_httponly: 0 };
+    expect(toPlaywrightCookie(row, 'v').httpOnly).toBe(false);
+  });
+});
+
+describe('chromiumEpochToUnix — session + epoch conversion', () => {
+  it('returns -1 when hasExpires=0 (session cookie)', () => {
+    expect(chromiumEpochToUnix(13000000000000000n, 0)).toBe(-1);
+  });
+
+  it('returns -1 when epoch=0', () => {
+    expect(chromiumEpochToUnix(0, 1)).toBe(-1);
+  });
+
+  it('returns -1 when epoch=0n (BigInt)', () => {
+    expect(chromiumEpochToUnix(0n, 1)).toBe(-1);
+  });
+
+  it('converts a known Chromium epoch to correct Unix timestamp', () => {
+    // 13_000_000_000_000_000 µs chromium epoch
+    // unix = (13000000000000000 - 11644473600000000) / 1000000 = 1355526400
+    const result = chromiumEpochToUnix(13000000000000000n, 1);
+    expect(result).toBe(1355526400);
+  });
+
+  it('accepts numeric epoch (non-BigInt)', () => {
+    // Same epoch value as number
+    const result = chromiumEpochToUnix(13000000000000000, 1);
+    expect(result).toBe(1355526400);
+  });
+});
+
+describe('mapSameSite — value mapping', () => {
+  it('0 → None', () => expect(mapSameSite(0)).toBe('None'));
+  it('1 → Lax', () => expect(mapSameSite(1)).toBe('Lax'));
+  it('2 → Strict', () => expect(mapSameSite(2)).toBe('Strict'));
+  it('default (unknown) → Lax', () => expect(mapSameSite(99)).toBe('Lax'));
+  it('-1 → Lax', () => expect(mapSameSite(-1)).toBe('Lax'));
 });

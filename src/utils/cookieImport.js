@@ -419,3 +419,6 @@ function mapSameSite(value) {
     default: return 'Lax';
   }
 }
+
+/* test exports */
+export { decryptCookieValue, toPlaywrightCookie, chromiumEpochToUnix, mapSameSite };
