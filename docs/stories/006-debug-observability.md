@@ -15,6 +15,12 @@ Observe execution in real-time and access structured logs to diagnose failures.
 - As a CLI user, I enable `DEBUG=*` to get per-step logs including AI prompts,
   token counts, element resolution, and action outcomes.
 - As a CLI user, log output is written to `logs/` for post-run inspection.
+- As a CLI user, I run `idx --annotate` (or `-a`) to get a PNG screenshot after
+  each element-resolution step, showing red bounding-box overlays labeled
+  `@e1`, `@e2`, `@c1`, etc. — so I can visually confirm what the AI targeted.
+- As a CLI user, I set `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` so idx
+  automatically captures an annotated screenshot whenever an action fails —
+  letting me diagnose issues without re-running with `--annotate`.
 
 ## Acceptance Criteria
 
@@ -23,3 +29,13 @@ Observe execution in real-time and access structured logs to diagnose failures.
 - `DEBUG=*` emits structured logs to stderr/log file.
 - Each log entry identifies: step index, action type, element resolved,
   tokens used, outcome (success/skip/error).
+- `--annotate` / `-a` flag: after each `#findElements` call that returns ≥1
+  element, captures a full-page PNG to `/tmp/idx-annotate-step-N-<ts>.png`
+  with red overlays + ref labels injected via DOM `page.evaluate`.
+- `ANNOTATED_SCREENSHOTS_ON_FAILURE=true`: on any `#actionInstruction` catch,
+  captures PNG to `/tmp/idx-failure-step-N-<ts>.png`; non-fatal (never
+  propagates screenshot errors).
+- Overlay cleanup always runs (finally block); CSP failures are caught and
+  logged as warnings; execution continues without screenshot.
+- Path validation rejects paths outside `/tmp` or `cwd`; returns
+  `{success:false}` without throwing.

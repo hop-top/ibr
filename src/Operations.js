@@ -19,6 +19,7 @@ import { CacheManager } from './cache/CacheManager.js';
 import { createDomSignature, isDomCompatible, getValidator, extractSchema } from './cache/CacheUtils.js';
 import logger from './utils/logger.js';
 import { ObservabilityBuffer } from './observability/ObservabilityBuffer.js';
+import { AnnotationService } from './services/AnnotationService.js';
 
 export class Operations {
     /**
@@ -38,6 +39,8 @@ export class Operations {
         this.snapshotDiffer = new SnapshotDiffer();
         this.observabilityBuffer = new ObservabilityBuffer();
         this._requestStartTimes = new WeakMap();
+        this.annotationService = new AnnotationService(ctx.page);
+        this.annotateMode = options.annotate || false;
 
         // Attach observability listeners
         const page = ctx.page;
@@ -410,6 +413,7 @@ export class Operations {
 
         logger.info(`${context}: ${instruction.prompt}`);
 
+        let action;
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
             const { context: pageContext, isAria } = await this.#getPageContext();
@@ -418,8 +422,6 @@ export class Operations {
             // Check cache first
             const cacheKey = this.cacheManager.generateKey(this.url, instruction.prompt, 'action');
             const cached = await this.cacheManager.get('action', cacheKey);
-
-            let action;
 
             if (cached && isDomCompatible(cached.metadata.lastDomSignature, domSignature)) {
                 try {
@@ -572,6 +574,16 @@ export class Operations {
 
             this.executionIndex++;
         } catch (error) {
+            // ANNOTATED_SCREENSHOTS_ON_FAILURE: capture screenshot on action failure
+            if (process.env.ANNOTATED_SCREENSHOTS_ON_FAILURE === 'true' && action?.elements?.length) {
+                const shotPath = `/tmp/idx-failure-step-${this.executionIndex}-${Date.now()}.png`;
+                await this.annotationService.captureAnnotatedScreenshot(
+                    action.elements,
+                    shotPath,
+                    this.domSimplifier.xpaths
+                ).catch(() => {}); // non-fatal
+            }
+
             const alreadyAnnotated = error.message.includes('--- observability ---');
             const obs = alreadyAnnotated ? '' : this.observabilityBuffer.flush();
             const errMsg = alreadyAnnotated
@@ -782,6 +794,16 @@ export class Operations {
                 promptTokens: response.usage.promptTokens,
                 completionTokens: response.usage.completionTokens
             });
+
+            // --annotate mode: capture screenshot of found elements
+            if (this.annotateMode && elementCount > 0) {
+                const shotPath = `/tmp/idx-annotate-step-${this.executionIndex}-${Date.now()}.png`;
+                await this.annotationService.captureAnnotatedScreenshot(
+                    elements,
+                    shotPath,
+                    this.domSimplifier.xpaths
+                );
+            }
 
             return elements;
         } catch (error) {

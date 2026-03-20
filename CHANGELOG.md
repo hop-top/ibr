@@ -31,6 +31,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
     missing prompt, missing snap URL, bad `AI_TEMPERATURE`, malformed AI JSON,
     missing `--cookies` value.
 
+- **Annotated screenshots for visual debugging (T-0009)**
+  - `--annotate` / `-a` CLI flag: captures full-page PNG after each element-resolution
+    step; overlays show red bounding boxes labeled `@e1`/`@c1` etc.
+  - Output path: `/tmp/idx-annotate-step-<N>-<ts>.png`.
+  - `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` env var: auto-captures on any
+    action failure; path `/tmp/idx-failure-step-<N>-<ts>.png`; non-fatal.
+  - `src/services/AnnotationService.js` — pure DOM overlay injection via
+    `page.evaluate`; no image-library dep. Path validation (must be `/tmp` or
+    `cwd`). Bbox fetched in parallel batches ≤50. Cleanup always runs (finally).
+  - CSP errors caught + logged as warnings; execution continues without screenshot.
+  - Off-screen / hidden elements (null bbox) silently skipped.
+  - Story: `docs/stories/021-visual-debugging.md`; ACs also added to
+    `docs/stories/006-debug-observability.md`.
+
 - **Daemon mode — persistent browser for fast warm invocations (T-0012)**
   - Opt-in: `IDX_DAEMON=true` or `--daemon` flag; stateless flow unchanged by default.
   - `src/server.js` — Node.js HTTP daemon: Chromium + Operations stay alive 30 min;

@@ -14,6 +14,8 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Snapshot Diffing**: 85% token reduction in loops via incremental DOM diffs
 - **DOM Inspector**: `idx snap` subcommand for on-demand page inspection
 - **Daemon Mode**: Optional persistent browser server; warm invocations ~540ms vs ~3800ms cold
+- **Visual Debugging**: `--annotate` / `-a` flag captures annotated PNGs with labeled bounding boxes
+- **Failure Screenshots**: `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` auto-captures on action failure
 - **Comprehensive Logging**: Detailed execution logs for debugging
 
 ## Setup
@@ -235,6 +237,48 @@ falling back to dom mode: empty
 | `aria` | Modern semantic SPAs, accessible sites, form-heavy UIs |
 | `dom` | Canvas-heavy apps, legacy table-soup HTML, Shadow DOM, `aria-hidden`-heavy pages |
 | `auto` | Unknown sites; safe default — quality-checked per page |
+
+### Visual Debugging (`--annotate`)
+
+Capture annotated screenshots that show exactly which elements the AI resolved —
+useful when a flow behaves unexpectedly and you want visual confirmation.
+
+#### `--annotate` / `-a` flag
+
+```bash
+idx --annotate "url: https://example.com\ninstructions:\n  - click submit"
+idx -a "url: https://example.com\ninstructions:\n  - click submit"
+```
+
+After each element-resolution step that finds ≥1 element, idx captures a
+full-page PNG with red bounding-box overlays labeled `@e1`, `@e2`, etc.
+(DOM elements) or `@c1`, `@c2`, etc. (pseudo-buttons / cursor-interactive
+elements).
+
+Output path: `/tmp/idx-annotate-step-<N>-<timestamp>.png`
+
+#### `ANNOTATED_SCREENSHOTS_ON_FAILURE`
+
+```bash
+ANNOTATED_SCREENSHOTS_ON_FAILURE=true idx "url: https://example.com\n..."
+```
+
+When set to `true`, idx automatically captures an annotated screenshot
+whenever an action fails — without requiring `--annotate` on every run.
+
+Output path: `/tmp/idx-failure-step-<N>-<timestamp>.png`
+
+The screenshot is non-fatal: if capture fails (e.g. due to a Content
+Security Policy), execution continues and a warning is logged.
+
+#### Notes
+
+- Overlays are injected via `page.evaluate` (no image library dependency).
+- Off-screen / hidden elements are silently skipped (no overlay).
+- Overlay `<div>`s are always removed after screenshot (even on error).
+- Path validation: only `/tmp` and the current working directory are accepted.
+
+---
 
 ### Prompt Format
 
