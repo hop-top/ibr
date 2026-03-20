@@ -38,47 +38,47 @@ makeTaskDescriptionMessage("Go to example.com, click login, and extract the welc
 
 ## makeFindInstructionMessage
 
-Creates a prompt for finding elements on a web page based on user instructions.
+Prompt for finding elements; receives ARIA snapshot of current page.
 
 ### Parameters
-- `userPrompt` (string): The user's instruction for finding elements
-- `domTree` (object): Hierarchical tree representation of the page's DOM
+- `userPrompt` (string): instruction describing elements to find
+- `pageContext` (string): ARIA snapshot (or DomSimplifier JSON fallback)
 
 ### Returns
-An array of message objects with 'system' and 'user' roles.
+Array of message objects (`system` + `user` roles).
 
 ### Purpose
-- Helps identify DOM elements that match the user's search criteria
-- Works with the page's DOM tree structure
+- Identifies ARIA-addressable elements matching the user instruction
+- AI returns `[{role, name}]` descriptors; resolved by `resolveElement()`
 
 ### Example
 ```javascript
-// Input
-makeFindInstructionMessage("find all buttons", domTree);
+makeFindInstructionMessage("find all buttons", ariaSnapshotString);
+// AI response: [{"role": "button", "name": "Sign in"}]
 ```
 
 ## makeActionInstructionMessage
 
-Generates a prompt for performing actions on web page elements.
+Prompt for performing an action; receives ARIA snapshot of current page.
 
 ### Parameters
-- `userPrompt` (string): The user's instruction for the action
-- `domTree` (object): Hierarchical tree representation of the page's DOM
+- `userPrompt` (string): instruction describing the action
+- `pageContext` (string): ARIA snapshot (or DomSimplifier JSON fallback)
 
 ### Returns
-An array of message objects with 'system' and 'user' roles.
+Array of message objects (`system` + `user` roles).
 
 ### Supported Actions
-- `click`: Click on an element
-- `fill`: Fill a form field
-- `type`: Type into an input field
-- `press`: Press a key
-- `scroll`: Scroll the element (not implemented yet)
+- `click`: click an element
+- `fill`: fill a form field
+- `type`: type into an input
+- `press`: press a key
+- `scroll`: scroll (not yet implemented)
 
 ### Response Structure
 ```typescript
 {
-  elements: Array<Element>,
+  elements: Array<{role: string, name: string}>,
   type: 'click' | 'fill' | 'type' | 'press' | 'scroll',
   value?: string
 }
@@ -86,39 +86,56 @@ An array of message objects with 'system' and 'user' roles.
 
 ## makeExtractInstructionMessage
 
-Creates a prompt for extracting content from web page elements.
+Prompt for extracting content; receives ARIA snapshot of current page.
 
 ### Parameters
-- `userPrompt` (string): The user's extraction instructions
-- `domTree` (object): Hierarchical tree representation of the page's DOM
+- `userPrompt` (string): extraction instruction
+- `pageContext` (string): ARIA snapshot (or DomSimplifier JSON fallback)
 
 ### Returns
-An array of message objects with 'system' and 'user' roles.
+Array of message objects (`system` + `user` roles).
 
 ### Key Features
-- Extracts exact text content from DOM elements
-- Preserves all symbols, characters, and line breaks
-- Returns results as a JSON array
-- Returns an empty array if no matches are found
+- Extracts exact text from ARIA-visible content
+- Preserves symbols, characters, line breaks
+- Returns JSON array; empty array if nothing found
 
 ### Example
 ```javascript
-// Input
-makeExtractInstructionMessage("extract all product prices", domTree);
+makeExtractInstructionMessage("extract all product prices", ariaSnapshotString);
 ```
 
 ## Usage Notes
 
-1. All DOM tree representations follow this structure:
-   ```typescript
-   interface DOMNode {
-     n: string;      // tag name
-     t?: string;     // text content
-     a?: string[];   // list of attributes
-     c?: DOMNode[];  // child elements
-   }
-   ```
+### Page context format (primary — ARIA snapshot)
 
-2. When working with extracted content, always handle cases where the result might be an empty array.
+`pageContext` is the string returned by `getSnapshot()` from `ariaSimplifier.js`.
+Looks like:
 
-3. For complex automation tasks, combine multiple instruction types using the structured format from `makeTaskDescriptionMessage`.
+```
+- heading "Products" [level=1]
+- button "Add to cart"
+- link "Learn more"
+- textbox "Search"
+```
+
+### Page context format (fallback — DomSimplifier)
+
+When ARIA snapshot exceeds 50 000 chars, `pageContext` is compact JSON:
+
+```typescript
+interface DOMNode {
+  x: number;      // XPath index (for element resolution)
+  n: string;      // tag name
+  t?: string;     // text content
+  a?: object;     // filtered attributes
+  c?: DOMNode[];  // children
+}
+```
+
+In fallback mode, AI may return `{x: index}` descriptors; `Operations.js`
+resolves them via the XPath table maintained by `DomSimplifier`.
+
+2. Always handle cases where extracted result is an empty array.
+
+3. Combine instruction types using the structured format from `makeTaskDescriptionMessage`.

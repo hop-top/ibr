@@ -249,11 +249,44 @@ instructions:
 1. **Parse Instructions**: AI converts your natural language prompt into structured JSON
 2. **Navigate**: Opens the URL in a Playwright browser
 3. **Execute**: For each instruction:
-   - Simplifies the DOM for AI analysis
-   - Asks AI to find/locate the element
+   - Captures page as ARIA accessibility tree (semantic snapshot)
+   - Asks AI to identify elements by `{role, name}` ARIA descriptor
    - Performs the action (click, fill, extract, etc.)
    - Tracks token usage across all providers
 4. **Extract Data**: Returns extracted information from the page
+
+### Page Representation — ARIA Accessibility Tree
+
+idx uses Playwright's `ariaSnapshot()` to represent pages to the AI, instead of
+raw DOM/HTML. The ARIA snapshot is a hierarchical accessibility tree: roles, names,
+labels, and visible text — the same structure used by screen readers.
+
+**Why it matters:**
+- ~38x smaller context (e.g. 592 kB raw DOM → ~15 kB ARIA snapshot on large pages)
+- Semantically cleaner: no inline styles, script blocks, SVG noise
+- More reliable element targeting: AI returns `{role, name}` descriptors, which
+  Playwright resolves via `getByRole` / `getByLabel` / `getByText`
+
+**Fallback:** if the ARIA snapshot exceeds 50 000 chars, idx falls back to the
+`DomSimplifier` (XPath-indexed JSON tree). The fallback is transparent — no
+configuration needed.
+
+**Element descriptor format (ARIA path):**
+
+```json
+{"role": "button", "name": "Sign in"}
+{"role": "textbox", "name": "Email"}
+{"role": "link", "name": "Learn more"}
+```
+
+**Element descriptor format (DomSimplifier fallback):**
+
+```json
+{"x": 42}
+```
+
+The switch is internal; prompts you write are unaffected — keep describing
+elements in plain English as always.
 
 ## Debugging & Troubleshooting
 
