@@ -1,5 +1,6 @@
 import { makeTaskDescriptionMessage, makeFindInstructionMessage, makeActionInstructionMessage, makeExtractInstructionMessage } from "./utils/prompts.js";
 import { DomSimplifier } from './DomSimplifier.js';
+import { getSnapshot, resolveElement, SIZE_THRESHOLD } from './utils/ariaSimplifier.js';
 import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS } from "./utils/constants.js";
 import { generateAIResponse } from './ai/provider.js';
 import { validateTaskDescription, validateAndParseJSON, createParseErrorMessage, createErrorContext } from './utils/validation.js';
@@ -256,16 +257,15 @@ export class Operations {
 
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-            const domTree = await this.domSimplifier.simplify();
-            const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
+            const { context: pageContext } = await this.#getPageContext();
 
             // Note: For extraction, we always call AI for fresh data
             // Caching would require re-extracting from current DOM
-            const messages = makeExtractInstructionMessage(instruction.prompt, domTreeString);
+            const messages = makeExtractInstructionMessage(instruction.prompt, pageContext);
 
             logger.debug('Sending extract instruction to AI', {
                 promptLength: instruction.prompt.length,
-                domLength: domTreeString.length
+                contextLength: pageContext.length
             });
 
             const response = await generateAIResponse(
@@ -319,9 +319,8 @@ export class Operations {
 
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-            const domTree = await this.domSimplifier.simplify();
-            const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
-            const domSignature = createDomSignature(domTree);
+            const { context: pageContext, isAria } = await this.#getPageContext();
+            const domSignature = createDomSignature(pageContext);
 
             // Check cache first
             const cacheKey = this.cacheManager.generateKey(this.url, instruction.prompt, 'action');
@@ -331,11 +330,11 @@ export class Operations {
 
             if (cached && isDomCompatible(cached.metadata.lastDomSignature, domSignature)) {
                 try {
-                    // Try to apply cached schema
-                    const { elementIndices, actionType, actionValue } = cached.schema;
-                    if (elementIndices && elementIndices.length > 0) {
+                    // Try to apply cached schema (ARIA descriptors)
+                    const { elementDescriptors, actionType, actionValue } = cached.schema;
+                    if (elementDescriptors && elementDescriptors.length > 0) {
                         action = {
-                            elements: elementIndices.map(idx => ({ x: idx })),
+                            elements: elementDescriptors,
                             type: actionType,
                             value: actionValue
                         };
@@ -351,11 +350,12 @@ export class Operations {
 
             // Cache miss or invalid - call AI
             if (!action) {
-                const messages = makeActionInstructionMessage(instruction.prompt, domTreeString);
+                const messages = makeActionInstructionMessage(instruction.prompt, pageContext);
 
                 logger.debug('Sending action instruction to AI', {
                     promptLength: instruction.prompt.length,
-                    domLength: domTreeString.length
+                    contextLength: pageContext.length,
+                    isAria
                 });
 
                 const response = await generateAIResponse(
@@ -393,35 +393,46 @@ export class Operations {
             }
 
             if (action && action.elements && action.elements.length > 0) {
-                const elementIndex = action.elements[0].x;
-                const elementXPath = this.domSimplifier.xpaths[elementIndex];
+                const descriptor = action.elements[0];
+                const locator = isAria
+                    ? resolveElement(this.ctx.page, descriptor)
+                    : (() => {
+                        // DOM fallback: descriptor may still have {x} index
+                        if (typeof descriptor.x === 'number') {
+                            const xpath = this.domSimplifier.xpaths[descriptor.x];
+                            if (!xpath) throw new Error(`Invalid element index ${descriptor.x} - XPath not found.`);
+                            return this.ctx.page.locator(`xpath=${xpath}`);
+                        }
+                        // Also accept {role,name} even in fallback mode
+                        return resolveElement(this.ctx.page, descriptor);
+                    })();
 
-                if (!elementXPath) {
-                    throw new Error(`Invalid element index ${elementIndex} - XPath not found. DOM may have changed.`);
+                if (!locator) {
+                    throw new Error(`Unable to resolve element descriptor: ${JSON.stringify(descriptor)}`);
                 }
 
                 try {
-                    logger.debug(`Scrolling element into view`, { xpath: elementXPath });
-                    await this.ctx.page.locator(`xpath=${elementXPath}`).scrollIntoViewIfNeeded();
+                    logger.debug(`Scrolling element into view`, { descriptor });
+                    await locator.scrollIntoViewIfNeeded();
                     await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
 
                     const actionType = action.type?.toLowerCase();
                     switch (actionType) {
                         case 'click':
-                            logger.info(`${context}: Clicking element`, { xpath: elementXPath });
-                            await this.ctx.page.locator(`xpath=${elementXPath}`).click();
+                            logger.info(`${context}: Clicking element`, { descriptor });
+                            await locator.click();
                             break;
                         case 'fill':
-                            logger.info(`${context}: Filling element with text`, { xpath: elementXPath, valueLength: action.value?.length || 0 });
-                            await this.ctx.page.locator(`xpath=${elementXPath}`).fill(action.value);
+                            logger.info(`${context}: Filling element`, { descriptor, valueLength: action.value?.length || 0 });
+                            await locator.fill(action.value);
                             break;
                         case 'type':
-                            logger.info(`${context}: Typing into element`, { xpath: elementXPath, valueLength: action.value?.length || 0 });
-                            await this.ctx.page.locator(`xpath=${elementXPath}`).type(action.value);
+                            logger.info(`${context}: Typing into element`, { descriptor, valueLength: action.value?.length || 0 });
+                            await locator.type(action.value);
                             break;
                         case 'press':
-                            logger.info(`${context}: Pressing key`, { xpath: elementXPath, key: action.value });
-                            await this.ctx.page.locator(`xpath=${elementXPath}`).press(action.value);
+                            logger.info(`${context}: Pressing key`, { descriptor, key: action.value });
+                            await locator.press(action.value);
                             break;
                         default:
                             logger.warn(`${context}: Unknown action type`, { actionType });
@@ -430,7 +441,7 @@ export class Operations {
                     logger.info(`${context} executed successfully`, { actionType });
                 } catch (actionError) {
                     logger.error(`${context} execution failed`, {
-                        xpath: elementXPath,
+                        descriptor,
                         actionType: action.type,
                         error: actionError.message
                     });
@@ -448,6 +459,30 @@ export class Operations {
             });
             throw error;
         }
+    }
+
+    /**
+     * Get page context string for AI.
+     * Tries ariaSnapshot first; falls back to DomSimplifier when output > SIZE_THRESHOLD.
+     * Returns {context: string, domTree: Object|null, isAria: boolean}
+     */
+    async #getPageContext() {
+        const snapshot = await getSnapshot(this.ctx.page);
+        if (snapshot && snapshot.length <= SIZE_THRESHOLD) {
+            return { context: snapshot, domTree: null, isAria: true };
+        }
+
+        if (snapshot && snapshot.length > SIZE_THRESHOLD) {
+            logger.info('ariaSnapshot large, falling back to DOM simplifier', {
+                snapshotLength: snapshot.length,
+                threshold: SIZE_THRESHOLD
+            });
+        }
+
+        // Fallback: DomSimplifier
+        const domTree = await this.domSimplifier.simplify();
+        const context = this.domSimplifier.stringifySimplifiedDom(domTree);
+        return { context, domTree, isAria: false };
     }
 
     async #waitJitteredDelay(delay) {
@@ -481,9 +516,8 @@ export class Operations {
         logger.info(`${context}: ${userPrompt}`);
 
         try {
-            const domTree = await this.domSimplifier.simplify();
-            const domTreeString = this.domSimplifier.stringifySimplifiedDom(domTree);
-            const domSignature = createDomSignature(domTree);
+            const { context: pageContext, isAria } = await this.#getPageContext();
+            const domSignature = createDomSignature(pageContext);
 
             // Check cache first
             const cacheKey = this.cacheManager.generateKey(this.url, userPrompt, 'find');
@@ -491,16 +525,15 @@ export class Operations {
 
             if (cached && isDomCompatible(cached.metadata.lastDomSignature, domSignature)) {
                 try {
-                    // Try to apply cached schema
-                    const indices = cached.schema.elementIndices || [];
-                    const elements = indices.map(idx => ({ x: idx }));
+                    // Try to apply cached schema (ARIA descriptors)
+                    const descriptors = cached.schema.elementDescriptors || [];
 
-                    if (elements.length > 0) {
+                    if (descriptors.length > 0) {
                         await this.cacheManager.recordSuccess('find', cacheKey);
                         logger.info(`${context} completed (CACHE HIT)`, {
-                            elementCount: elements.length
+                            elementCount: descriptors.length
                         });
-                        return elements;
+                        return descriptors;
                     }
                 } catch (error) {
                     logger.debug('Cache application failed', { error: error.message });
@@ -509,11 +542,12 @@ export class Operations {
             }
 
             // Cache miss or invalid - call AI
-            const messages = makeFindInstructionMessage(userPrompt, domTreeString);
+            const messages = makeFindInstructionMessage(userPrompt, pageContext);
 
             logger.debug('Sending find instruction to AI', {
                 promptLength: userPrompt.length,
-                domLength: domTreeString.length
+                contextLength: pageContext.length,
+                isAria
             });
 
             const response = await generateAIResponse(

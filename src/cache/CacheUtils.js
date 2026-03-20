@@ -7,55 +7,33 @@ import crypto from 'crypto';
 import logger from '../utils/logger.js';
 
 /**
- * Create a structural signature of the DOM tree
- * Ignores dynamic content (text, timestamps) but preserves structure
+ * Create a structural signature from an ARIA snapshot string.
+ * Extracts only role/name lines to strip dynamic text values.
+ * Falls back to full hash when snapshot is null/undefined.
+ * @param {string} ariaSnapshot
+ * @returns {string|null}
  */
-export function createDomSignature(domTree) {
+export function createDomSignature(ariaSnapshot) {
   try {
-    const structure = extractStructure(domTree, 0);
-    const hash = crypto.createHash('sha256').update(JSON.stringify(structure)).digest('hex');
-    return hash;
+    if (!ariaSnapshot || typeof ariaSnapshot !== 'string') return null;
+
+    // Extract structural lines: lines starting with role tokens (role: name pattern)
+    // This strips dynamic values while preserving the structural skeleton.
+    const structuralLines = ariaSnapshot
+      .split('\n')
+      .map(line => {
+        // Keep indentation + role token only (drop the name part for stability)
+        const m = line.match(/^(\s*-\s+\w[\w-]*)/);
+        return m ? m[1] : line.match(/^\s*$/) ? null : line.replace(/:\s+.+$/, ':');
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    return crypto.createHash('sha256').update(structuralLines).digest('hex');
   } catch (error) {
-    logger.debug('Failed to create DOM signature', { error: error.message });
+    logger.debug('Failed to create ARIA signature', { error: error.message });
     return null;
   }
-}
-
-/**
- * Extract structural elements from DOM tree
- * Limits depth to 5 and only keeps stable attributes
- */
-function extractStructure(node, depth) {
-  if (!node || depth > 5) return null;
-
-  const structure = {
-    n: node.n // tag name
-  };
-
-  // Only include stable attributes
-  if (node.a) {
-    const stableAttrs = {};
-    ['id', 'name', 'aria-label', 'role', 'data-testid'].forEach(key => {
-      if (node.a[key]) stableAttrs[key] = node.a[key];
-    });
-    if (Object.keys(stableAttrs).length > 0) {
-      structure.a = stableAttrs;
-    }
-  }
-
-  // Include first 10 children (truncated for performance)
-  if (node.c && Array.isArray(node.c)) {
-    const children = node.c
-      .slice(0, 10)
-      .map(child => extractStructure(child, depth + 1))
-      .filter(Boolean);
-
-    if (children.length > 0) {
-      structure.c = children;
-    }
-  }
-
-  return structure;
 }
 
 /**
@@ -123,18 +101,23 @@ export function getValidator(type) {
 
 /**
  * Extract cached schema from AI response
+ * Uses {role, name} descriptors (ARIA-based) instead of numeric XPath indices.
  */
 export function extractSchema(type, result) {
   try {
     switch (type) {
       case 'find':
         return {
-          elementIndices: result.map(el => el.x).filter(x => typeof x === 'number')
+          elementDescriptors: result
+            .filter(el => el.role || el.name)
+            .map(el => ({ role: el.role, name: el.name }))
         };
 
       case 'action':
         return {
-          elementIndices: result.elements.map(el => el.x).filter(x => typeof x === 'number'),
+          elementDescriptors: result.elements
+            .filter(el => el.role || el.name)
+            .map(el => ({ role: el.role, name: el.name })),
           actionType: result.type,
           actionValue: result.value || null
         };
