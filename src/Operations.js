@@ -23,14 +23,24 @@ export class Operations {
         this.extracts = [];
         this.cacheManager = new CacheManager();
         this.observabilityBuffer = new ObservabilityBuffer();
+        this._requestStartTimes = new WeakMap();
 
         // Attach observability listeners
         const page = ctx.page;
         this._onConsole = (msg) => this.observabilityBuffer.addConsoleLog(msg.type(), msg.text());
-        this._onRequest = (req) => this.observabilityBuffer.addNetworkRequest(req.method(), req.url());
+        this._onRequest = (req) => {
+            this._requestStartTimes.set(req, Date.now());
+            this.observabilityBuffer.addNetworkRequest(req.method(), req.url());
+        };
         this._onResponse = (res) => {
             const req = res.request();
-            const duration = req ? (Date.now() - (req._startTime || Date.now())) : null;
+            let duration = null;
+            if (req) {
+                const startTime = this._requestStartTimes.get(req);
+                if (typeof startTime === 'number') {
+                    duration = Date.now() - startTime;
+                }
+            }
             this.observabilityBuffer.matchNetworkResponse(res.url(), res.status(), duration);
         };
         if (page?.on) {
@@ -102,7 +112,12 @@ export class Operations {
         await this.cacheManager.init();
         this.url = taskDescription.url;
 
-        // Reset observability buffer for this task run
+        // Reset observability buffer; set page origin for cross-origin detection
+        try {
+            this.observabilityBuffer.pageOriginHostname = new URL(taskDescription.url).hostname;
+        } catch {
+            this.observabilityBuffer.pageOriginHostname = null;
+        }
         this.observabilityBuffer.clear();
 
         try {
@@ -128,10 +143,10 @@ export class Operations {
             throw error;
         } finally {
             const page = this.ctx.page;
-            if (page?.removeAllListeners) {
-                page.removeAllListeners('console');
-                page.removeAllListeners('request');
-                page.removeAllListeners('response');
+            if (page?.off) {
+                page.off('console', this._onConsole);
+                page.off('request', this._onRequest);
+                page.off('response', this._onResponse);
             }
         }
     }
@@ -334,7 +349,7 @@ export class Operations {
                 error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw new Error(errMsg);
+            throw new Error(errMsg, { cause: error });
         }
     }
 
@@ -477,7 +492,7 @@ export class Operations {
                 error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw new Error(errMsg);
+            throw new Error(errMsg, { cause: error });
         }
     }
 
@@ -589,7 +604,7 @@ export class Operations {
                 error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw new Error(errMsg);
+            throw new Error(errMsg, { cause: error });
         }
     }
 }

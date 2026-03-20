@@ -11,9 +11,11 @@
  * then write that as JSON to stderr and call process.exit(1).
  */
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { resolve, dirname } from 'path';
 import { describe, it, expect } from 'vitest';
 
-const CWD = '/Users/jadb/.w/ideacrafterslabs/idx/hops/main';
+const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 function runIdx(args, env = {}) {
   return new Promise((resolve) => {

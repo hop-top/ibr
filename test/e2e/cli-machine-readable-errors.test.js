@@ -8,11 +8,13 @@
  * update assertions to parse JSON and check `error` + `code` fields.
  */
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { resolve, dirname } from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startFakeAIServerE2E } from '../helpers/fakeAIServerE2E.js';
 import { startStaticServer } from '../helpers/staticServer.js';
 
-const CWD = '/Users/jadb/.w/ideacrafterslabs/idx/hops/main';
+const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 function runIdx(args, env = {}) {
   return new Promise((resolve) => {

@@ -7,27 +7,18 @@ const SENSITIVE_PARAMS = ['token', 'key', 'password', 'api_key', 'secret'];
 
 /**
  * Strip sensitive query params from a URL string.
- * For cross-origin requests (hostname differs from page origin),
+ * For cross-origin requests (hostname differs from pageOriginHostname),
  * returns only the protocol+hostname (no path/query).
  * @param {string} rawUrl
+ * @param {string|null} pageOriginHostname - hostname of the page under test
  * @returns {string}
  */
-function sanitizeUrl(rawUrl) {
+function sanitizeUrl(rawUrl, pageOriginHostname = null) {
     let parsed;
     try {
         parsed = new URL(rawUrl);
     } catch {
         return rawUrl;
-    }
-
-    // Cross-origin guard: compare against page origin if available
-    let pageOriginHostname = null;
-    try {
-        if (typeof location !== 'undefined' && location.hostname) {
-            pageOriginHostname = location.hostname;
-        }
-    } catch {
-        // non-browser env — skip cross-origin check
     }
 
     if (pageOriginHostname && parsed.hostname !== pageOriginHostname) {
@@ -58,9 +49,11 @@ function sanitizeUrl(rawUrl) {
 export class ObservabilityBuffer {
     /**
      * @param {number} capacity - Max entries before oldest are dropped
+     * @param {string|null} pageOriginHostname - hostname of the page under test; used to identify cross-origin requests
      */
-    constructor(capacity = 100) {
+    constructor(capacity = 100, pageOriginHostname = null) {
         this.capacity = capacity;
+        this.pageOriginHostname = pageOriginHostname;
         this._buf = [];
         this.totalAdded = 0;
     }
@@ -84,7 +77,7 @@ export class ObservabilityBuffer {
         const entry = {
             type: 'network',
             method,
-            url: sanitizeUrl(url),
+            url: sanitizeUrl(url, this.pageOriginHostname),
             _rawUrl: url,
             status: null,
             duration: null,
