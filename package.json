@@ -32,9 +32,16 @@
     "@ai-sdk/openai": "^3.0.25",
     "@boundaryml/baml": "latest",
     "ai": "^6.0.67",
+    "better-sqlite3": "^12.8.0",
     "dotenv": "^16.5.0",
     "node-html-parser": "^7.0.1",
     "playwright": "^1.52.0",
     "winston": "^3.17.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }

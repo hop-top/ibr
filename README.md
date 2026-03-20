@@ -10,6 +10,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Data Extraction**: Extract structured data from web pages
 - **Conditional Logic**: If-then instructions for dynamic flows
 - **Loop Support**: Repeat actions until conditions are met
+- **Authenticated Sessions**: Inherit browser cookies via `--cookies` flag
 - **Comprehensive Logging**: Detailed execution logs for debugging
 
 ## Setup
@@ -69,6 +70,39 @@ instructions:
   - click the 'submit' button
   - extract page title"
 ```
+
+### Authenticated Sessions (`--cookies`)
+
+Inherit cookies from an installed Chromium-based browser to access pages that
+require a logged-in session. macOS only.
+
+```
+idx --cookies <browser>[:<domain1>,<domain2>] "<prompt>"
+```
+
+**Import all cookies from Chrome:**
+
+```bash
+idx --cookies chrome "url: https://github.com
+instructions:
+  - extract repository list"
+```
+
+**Import cookies for specific domains only:**
+
+```bash
+idx --cookies arc:github.com,linear.app "url: https://linear.app
+instructions:
+  - list my open issues"
+```
+
+**Supported browsers:** `chrome`, `arc`, `brave`, `edge`, `comet`
+
+Notes:
+- Reads directly from the browser's SQLite cookie DB on disk.
+- No domain filter = all non-expired cookies from that browser.
+- If the DB is locked (browser open), idx copies it to `/tmp` automatically.
+- macOS Keychain will prompt for permission on first run — click "Allow".
 
 ### Prompt Format
 
@@ -307,7 +341,7 @@ instructions:
 ## Limitations
 
 - Requires API key for selected AI provider
-- Can't handle login/authentication (design limitation)
+- `--cookies` flag requires macOS (no Windows/Linux)
 - May struggle with heavily JavaScript-rendered content
 - No built-in retry on transient failures (but logs indicate when/why to retry)
 - Browser automation is slower than direct API calls
