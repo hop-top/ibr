@@ -20,3 +20,6 @@ test-e2e-fast:
 
 test-coverage:
     npm run test:coverage
+
+judge-e2e:
+    npm run judge:e2e

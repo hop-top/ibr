@@ -14,7 +14,8 @@
     "test:integration": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/integration/",
     "test:e2e": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/e2e/fixtures.test.js",
     "test:e2e:fast": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js test/e2e/fixtures.test.js --reporter=verbose --grep @fast",
-    "test:coverage": "node --experimental-vm-modules node_modules/.bin/vitest run --coverage --config test/vitest.config.js"
+    "test:coverage": "node --experimental-vm-modules node_modules/.bin/vitest run --coverage --config test/vitest.config.js",
+    "judge:e2e": "node src/commands/judge-e2e.js"
   },
   "keywords": [
     "scraping",
