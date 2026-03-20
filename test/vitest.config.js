@@ -18,6 +18,14 @@ export default defineConfig({
       NODE_ENV: 'test',
       LOG_LEVEL: 'error',
     },
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*',
+      'test/e2e/**',
+    ],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.js'],
