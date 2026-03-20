@@ -6,6 +6,7 @@ import { validateEnvironmentVariables, validateBrowserConfig } from './utils/val
 import logger from './utils/logger.js';
 import { importCookies } from './utils/cookieImport.js';
 import { runDomCommand } from './commands/snap.js';
+import { wsmAdapter } from './services/WsmAdapter.js';
 
 // Load environment variables
 dotenv.config();
@@ -297,7 +298,16 @@ async function run() {
       // Create a new browser context and page
       const context = await browser.newContext();
 
-      // Import cookies into context if --cookies was specified
+      // WSM workspace-aware cookie injection: if no --cookies flag, check workspace metadata
+      if (!cookiesConfig) {
+        const wsmProfile = await wsmAdapter.getBrowserProfile();
+        if (wsmProfile) {
+          logger.info(`WSM workspace specifies browser_profile: ${wsmProfile} — using for cookie import`);
+          cookiesConfig = { browser: wsmProfile, domains: [] };
+        }
+      }
+
+      // Import cookies into context if --cookies was specified (or injected via WSM)
       if (cookiesConfig) {
         logger.info(`Importing cookies from ${cookiesConfig.browser}...`);
         try {
