@@ -1,0 +1,15 @@
+{
+  "description": "Basic click instruction on a login button",
+  "category": "instruction_types",
+  "prompt": "url: {SERVER_URL}/login\ninstructions:\n  - click the login button",
+  "expectedParsed": {
+    "url": "{SERVER_URL}/login",
+    "instructions": [
+      { "name": "click", "prompt": "the login button" }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["click"],
+  "tags": ["fast"],
+  "notes": "Simplest possible click fixture — one instruction, one element"
+}

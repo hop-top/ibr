@@ -1,0 +1,13 @@
+{
+  "description": "Edge case: empty instructions array — should fail validation",
+  "category": "edge_cases",
+  "prompt": "url: {SERVER_URL}/\ninstructions:",
+  "expectedParsed": {
+    "url": "{SERVER_URL}/",
+    "instructions": []
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": [],
+  "tags": ["fast"],
+  "notes": "Empty instructions list is invalid per Operations.js validation rules"
+}

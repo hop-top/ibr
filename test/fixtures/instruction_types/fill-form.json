@@ -1,0 +1,17 @@
+{
+  "description": "Fill form fields — username and password then submit",
+  "category": "instruction_types",
+  "prompt": "url: {SERVER_URL}/login\ninstructions:\n  - fill the username field with admin\n  - fill the password field with secret\n  - click the submit button",
+  "expectedParsed": {
+    "url": "{SERVER_URL}/login",
+    "instructions": [
+      { "name": "fill", "prompt": "the username field with admin" },
+      { "name": "fill", "prompt": "the password field with secret" },
+      { "name": "click", "prompt": "the submit button" }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["fill", "click"],
+  "tags": ["fast"],
+  "notes": "Multiple fill instructions followed by a click"
+}

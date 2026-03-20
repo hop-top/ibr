@@ -1,0 +1,15 @@
+{
+  "description": "Edge case: prompt missing the url: prefix line",
+  "category": "edge_cases",
+  "prompt": "click the login button on example.com",
+  "expectedParsed": {
+    "url": "",
+    "instructions": [
+      { "name": "click", "prompt": "the login button on example.com" }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["click"],
+  "tags": ["fast"],
+  "notes": "No url: line; parsePromptString returns empty string for url"
+}

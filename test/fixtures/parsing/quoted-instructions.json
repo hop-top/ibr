@@ -1,0 +1,17 @@
+{
+  "description": "Parsing: instructions with quoted values containing special characters",
+  "category": "parsing",
+  "prompt": "url: {SERVER_URL}/contact\ninstructions:\n  - fill the email field with \"user@example.com\"\n  - fill the message field with \"Hello, world!\"\n  - press Enter",
+  "expectedParsed": {
+    "url": "{SERVER_URL}/contact",
+    "instructions": [
+      { "name": "fill", "prompt": "the email field with \"user@example.com\"" },
+      { "name": "fill", "prompt": "the message field with \"Hello, world!\"" },
+      { "name": "press", "prompt": "Enter" }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["fill", "press"],
+  "tags": ["fast"],
+  "notes": "Quotes and punctuation in instruction prompts must be preserved verbatim"
+}

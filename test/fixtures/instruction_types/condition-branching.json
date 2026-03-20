@@ -1,0 +1,23 @@
+{
+  "description": "Condition branching — check login state and act accordingly",
+  "category": "instruction_types",
+  "prompt": "url: {SERVER_URL}/dashboard\ninstructions:\n  - if the user is logged in then extract the username else click the login link",
+  "expectedParsed": {
+    "url": "{SERVER_URL}/dashboard",
+    "instructions": [
+      {
+        "name": "condition",
+        "success_instructions": [
+          { "name": "extract", "prompt": "the username" }
+        ],
+        "failure_instructions": [
+          { "name": "click", "prompt": "the login link" }
+        ]
+      }
+    ]
+  },
+  "expectedExtracts": [],
+  "instructionCoverage": ["condition", "extract", "click"],
+  "tags": ["fast"],
+  "notes": "Condition may omit prompt field per spec; success/failure branches required"
+}
