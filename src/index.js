@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import dotenv from 'dotenv';
 import { createAIProvider } from './ai/provider.js';
 import { Operations } from './Operations.js';
-import { validateEnvironmentVariables, validateBrowserConfig, createErrorContext } from './utils/validation.js';
+import { validateEnvironmentVariables, validateBrowserConfig } from './utils/validation.js';
 import logger from './utils/logger.js';
 import { importCookies } from './utils/cookieImport.js';
 

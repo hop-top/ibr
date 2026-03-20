@@ -91,6 +91,17 @@ export class CookieImportError extends Error {
   }
 }
 
+// ─── Platform Guard ───────────────────────────────────────────────
+
+function assertMacOS() {
+  if (process.platform !== 'darwin') {
+    throw new CookieImportError(
+      `Cookie import is only supported on macOS (current platform: ${process.platform}).`,
+      'unsupported_platform',
+    );
+  }
+}
+
 // ─── Public API ──────────────────────────────────────────────────
 
 /**
@@ -98,6 +109,7 @@ export class CookieImportError extends Error {
  * @returns {Array<{name:string, dataDir:string, keychainService:string, aliases:string[]}>}
  */
 export function findInstalledBrowsers() {
+  assertMacOS();
   const appSupport = path.join(os.homedir(), 'Library', 'Application Support');
   return BROWSER_REGISTRY.filter(b => {
     const dbPath = path.join(appSupport, b.dataDir, 'Default', 'Cookies');
@@ -112,6 +124,7 @@ export function findInstalledBrowsers() {
  * @returns {{ domains: Array<{domain:string, count:number}>, browser: string }}
  */
 export function listDomains(browserName, profile = 'Default') {
+  assertMacOS();
   const browser = resolveBrowser(browserName);
   const dbPath = getCookieDbPath(browser, profile);
   const db = openDb(dbPath, browser.name);
@@ -140,8 +153,9 @@ export function listDomains(browserName, profile = 'Default') {
  * @returns {Promise<{cookies: Array, count: number, failed: number, domainCounts: Object}>}
  */
 export async function importCookies(browserName, domains, profile = 'Default') {
+  assertMacOS();
   const browser = resolveBrowser(browserName);
-  const derivedKey = await getDerivedKey(browser);
+  const derivedKey = getDerivedKey(browser);
   const dbPath = getCookieDbPath(browser, profile);
   const db = openDb(dbPath, browser.name);
 
@@ -161,7 +175,10 @@ export async function importCookies(browserName, domains, profile = 'Default') {
       );
       params = [now];
     } else {
-      const placeholders = domains.map(() => '?').join(',');
+      // Include both bare domain and leading-dot variant (Chromium stores domain
+      // cookies as ".github.com" but callers typically pass "github.com").
+      const expanded = domains.flatMap(d => [d, d.startsWith('.') ? d : `.${d}`]);
+      const placeholders = expanded.map(() => '?').join(',');
       stmt = db.prepare(
         `SELECT host_key, name, value, encrypted_value, path, expires_utc,
                 is_secure, is_httponly, has_expires, samesite
@@ -170,7 +187,7 @@ export async function importCookies(browserName, domains, profile = 'Default') {
            AND (has_expires = 0 OR expires_utc > ?)
          ORDER BY host_key, name`
       );
-      params = [...domains, now];
+      params = [...expanded, now];
     }
 
     const rows = stmt.all(...params);
@@ -286,11 +303,11 @@ function openDbFromCopy(dbPath, browserName) {
 
 // ─── Internal: Keychain Access ───────────────────────────────────
 
-async function getDerivedKey(browser) {
+function getDerivedKey(browser) {
   const cached = keyCache.get(browser.keychainService);
   if (cached) return cached;
 
-  const password = await getKeychainPassword(browser.keychainService);
+  const password = getKeychainPassword(browser.keychainService);
   const derived = crypto.pbkdf2Sync(
     Buffer.from(password, 'utf-8'),
     'saltysalt',
@@ -302,52 +319,44 @@ async function getDerivedKey(browser) {
   return derived;
 }
 
-async function getKeychainPassword(service) {
-  // execFileSync — safe: no shell, args are a static list, service is from BROWSER_REGISTRY
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new CookieImportError(
+function getKeychainPassword(service) {
+  // execFileSync — safe: no shell, args are a static list, service is from BROWSER_REGISTRY.
+  // Use execFileSync's built-in `timeout` so the OS-level kill fires even while the
+  // event loop is blocked (a JS setTimeout cannot fire while execFileSync blocks).
+  let stdout;
+  try {
+    stdout = execFileSync('security', [
+      'find-generic-password', '-s', service, '-w',
+    ], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 });
+  } catch (err) {
+    if (err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT') {
+      throw new CookieImportError(
         `macOS Keychain timeout. Look for a dialog asking to allow access to "${service}".`,
         'keychain_timeout',
         'retry',
-      ));
-    }, 10_000);
-
-    let stdout, exitErr;
-    try {
-      stdout = execFileSync('security', [
-        'find-generic-password', '-s', service, '-w',
-      ], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch (err) {
-      exitErr = err;
-    } finally {
-      clearTimeout(timer);
+      );
     }
-
-    if (exitErr) {
-      const errText = (exitErr.stderr || '').toLowerCase();
-      if (errText.includes('user canceled') || errText.includes('denied') || errText.includes('interaction not allowed')) {
-        return reject(new CookieImportError(
-          `Keychain access denied. Click "Allow" in the macOS dialog for "${service}".`,
-          'keychain_denied',
-          'retry',
-        ));
-      }
-      if (errText.includes('could not be found') || errText.includes('not found')) {
-        return reject(new CookieImportError(
-          `No Keychain entry for "${service}". Is this a Chromium-based browser?`,
-          'keychain_not_found',
-        ));
-      }
-      return reject(new CookieImportError(
-        `Could not read Keychain: ${(exitErr.stderr || exitErr.message || '').trim()}`,
-        'keychain_error',
+    const errText = (err.stderr || '').toLowerCase();
+    if (errText.includes('user canceled') || errText.includes('denied') || errText.includes('interaction not allowed')) {
+      throw new CookieImportError(
+        `Keychain access denied. Click "Allow" in the macOS dialog for "${service}".`,
+        'keychain_denied',
         'retry',
-      ));
+      );
     }
-
-    resolve(stdout.trim());
-  });
+    if (errText.includes('could not be found') || errText.includes('not found')) {
+      throw new CookieImportError(
+        `No Keychain entry for "${service}". Is this a Chromium-based browser?`,
+        'keychain_not_found',
+      );
+    }
+    throw new CookieImportError(
+      `Could not read Keychain: ${(err.stderr || err.message || '').trim()}`,
+      'keychain_error',
+      'retry',
+    );
+  }
+  return stdout.trim();
 }
 
 // ─── Internal: Cookie Decryption ────────────────────────────────

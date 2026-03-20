@@ -8,7 +8,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startFakeAIServerE2E } from '../helpers/fakeAIServerE2E.js';
 import { startStaticServer } from '../helpers/staticServer.js';
 
-const CWD = '/Users/jadb/.w/ideacrafterslabs/idx/hops/main';
+import { fileURLToPath } from 'url';
+const CWD = fileURLToPath(new URL('../../..', import.meta.url));
 
 function runIdx(args, env = {}) {
   return new Promise((resolve) => {

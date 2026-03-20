@@ -13,7 +13,8 @@
 import { spawn } from 'child_process';
 import { describe, it, expect } from 'vitest';
 
-const CWD = '/Users/jadb/.w/ideacrafterslabs/idx/hops/main';
+import { fileURLToPath } from 'url';
+const CWD = fileURLToPath(new URL('../../..', import.meta.url));
 
 function runIdx(args, env = {}) {
   return new Promise((resolve) => {
