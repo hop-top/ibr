@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
+    "server": "node src/server.js",
     "dev": "node --watch src/index.js",
     "browser:install": "npx playwright install",
     "test": "node --experimental-vm-modules node_modules/.bin/vitest run --config test/vitest.config.js",

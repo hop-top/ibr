@@ -133,12 +133,15 @@ function printUsage() {
   logger.info('');
   logger.info('Usage:');
   logger.info('  idx [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] "<user_prompt>"');
-  logger.info('  idx snap <url> [flags]        - inspect DOM at URL');
+  logger.info('  idx [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)');
+  logger.info('  idx snap <url> [flags]          - inspect DOM at URL');
   logger.info('');
   logger.info('Flags:');
+  logger.info('  --daemon                         Use persistent browser daemon (opt-in)');
   logger.info('  --cookies <browser>              Import all non-expired cookies from browser');
   logger.info('  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only');
   logger.info('  Supported browsers: chrome, arc, brave, edge, comet');
+  logger.info('  Note: --cookies and --mode are stateless-mode flags; not supported with --daemon');
   logger.info('  --mode aria   Force ARIA accessibility tree (ariaSnapshot)');
   logger.info('  --mode dom    Force DOM simplifier + XPath');
   logger.info('  --mode auto   Auto-select based on quality (default)');
@@ -163,6 +166,8 @@ function printUsage() {
   logger.info('  AI_TEMPERATURE   - AI temperature 0-2 [default: 0]');
   logger.info('  BROWSER_HEADLESS - Launch browser headless (true/false) [default: false]');
   logger.info('  BROWSER_SLOWMO   - Slow down browser actions (ms) [default: 100]');
+  logger.info('  IDX_DAEMON       - Enable daemon mode (true/false) [default: false]');
+  logger.info('  IDX_STATE_FILE   - Override daemon state file path [default: ~/.idx/server.json]');
   logger.info('');
   logger.info('See .env.example for all available configuration options');
 }
@@ -171,6 +176,26 @@ async function run() {
   logger.info('Starting idx (Intent Driven eXtractor)');
 
   try {
+    // Daemon mode routing — must come before any stateless setup
+    const rawArgs = process.argv.slice(2);
+    const daemonMode =
+      process.env.IDX_DAEMON === 'true' || rawArgs.includes('--daemon');
+
+    if (daemonMode) {
+      const filteredArgs = rawArgs.filter(a => a !== '--daemon');
+      const prompt = filteredArgs[0];
+
+      if (!prompt || prompt === '--help' || prompt === '-h') {
+        printUsage();
+        process.exit(prompt ? 0 : 1);
+      }
+
+      const { ensureServer, sendCommand } = await import('./daemon.js');
+      const { port, token } = await ensureServer();
+      await sendCommand(prompt, port, token);
+      return; // sendCommand calls process.exit internally
+    }
+
     // Parse --cookies before other args
     let cookiesConfig = null;
     try {

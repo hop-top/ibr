@@ -13,6 +13,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Authenticated Sessions**: Inherit browser cookies via `--cookies` flag
 - **Snapshot Diffing**: 85% token reduction in loops via incremental DOM diffs
 - **DOM Inspector**: `idx snap` subcommand for on-demand page inspection
+- **Daemon Mode**: Optional persistent browser server; warm invocations ~540ms vs ~3800ms cold
 - **Comprehensive Logging**: Detailed execution logs for debugging
 
 ## Setup
@@ -293,6 +294,65 @@ instructions:
   - navigate to first product
   - extract product details: description, reviews"
 ```
+
+## Daemon Mode (opt-in, fast warm invocations)
+
+By default every `idx` call spawns a new Chromium instance (~3800 ms cold-start).
+Daemon mode keeps a browser process alive in the background so subsequent calls
+connect to it instead (~540 ms warm).
+
+### Enable
+
+```bash
+# Per-session env var
+export IDX_DAEMON=true
+idx "url: https://example.com\ninstructions:\n  - extract title"
+
+# Per-invocation flag
+idx --daemon "url: https://example.com\ninstructions:\n  - extract title"
+
+# Start the server manually (optional — auto-started on first call)
+npm run server
+```
+
+### How It Works
+
+1. CLI checks `IDX_DAEMON=true` or `--daemon` flag.
+2. Reads `~/.idx/server.json` (pid, port, bearer token).
+3. Validates process is alive + `/health` responds OK.
+4. If stale/missing: spawns `src/server.js` detached and polls until ready (≤8 s).
+5. `POST /command` with Bearer token; server reuses the warm browser context.
+6. Server auto-shuts down after 30 min idle.
+
+### Security
+
+- Localhost-only (`127.0.0.1`); not accessible remotely.
+- Random OS-assigned port per startup.
+- Bearer token is a UUID, stored in `~/.idx/server.json` (mode `0600`).
+
+### State File
+
+`~/.idx/server.json` — written atomically; override path with `IDX_STATE_FILE`.
+
+```json
+{ "pid": 12345, "port": 51234, "token": "<uuid>", "startedAt": 1234567890 }
+```
+
+### Latency Breakdown
+
+| Mode | Time |
+|------|------|
+| Cold (stateless, default) | ~3800 ms |
+| Warm (daemon) | ~540 ms |
+
+### Disable / Stop
+
+```bash
+unset IDX_DAEMON           # revert to stateless for this session
+kill $(jq .pid ~/.idx/server.json)  # stop the daemon manually
+```
+
+---
 
 ## DOM Inspector (`idx snap`)
 
