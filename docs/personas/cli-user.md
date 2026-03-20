@@ -14,6 +14,7 @@ clear error messages; and observable execution (logs, browser window).
 - [004 - Loop / Paginated Scraping](../stories/004-loop-pagination.md)
 - [005 - AI Provider Selection](../stories/005-ai-provider-selection.md)
 - [006 - Debug & Observability](../stories/006-debug-observability.md)
+- [019 - Authenticated Session Cookies](../stories/019-authenticated-session-cookies.md)
 
 ## Related Stories
 
