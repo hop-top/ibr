@@ -211,20 +211,27 @@ scores its quality and picks the best mode automatically:
 - snapshot empty or errored → dom
 - otherwise → aria
 
+**Sparsity** = ratio of unnamed interactive elements to all interactive elements.
+An unnamed interactive element looks like `- button ""` or `- link ""` in the ARIA
+tree — no accessible name, so the AI cannot reliably target it. When more than 40%
+of buttons/links have no name, the snapshot is too sparse to be useful.
+
 Logs report the chosen mode and reason, e.g.:
 
 ```
 using aria mode
 falling back to dom mode: sparse (0.62)
 falling back to dom mode: size
+falling back to dom mode: empty
 ```
 
-**Site types where each mode excels:**
+**Site-type guidance:**
 
 | Mode | Works best on |
 |------|---------------|
-| aria | Modern semantic SPAs, accessible sites, form-heavy UIs |
-| dom | Canvas-heavy apps, legacy table-soup HTML, Shadow DOM, aria-hidden-heavy pages |
+| `aria` | Modern semantic SPAs, accessible sites, form-heavy UIs |
+| `dom` | Canvas-heavy apps, legacy table-soup HTML, Shadow DOM, `aria-hidden`-heavy pages |
+| `auto` | Unknown sites; safe default — quality-checked per page |
 
 ### Prompt Format
 
