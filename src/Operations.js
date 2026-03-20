@@ -22,6 +22,7 @@ import logger from './utils/logger.js';
 import { ObservabilityBuffer } from './observability/ObservabilityBuffer.js';
 import { AnnotationService } from './services/AnnotationService.js';
 import { streamer } from './observability/NdjsonStreamer.js';
+import { wsmAdapter } from './services/WsmAdapter.js';
 
 /** Strip query params from URL before emitting to NDJSON stream (avoid leaking tokens/keys). */
 function sanitizeUrlForStream(rawUrl) {
@@ -174,13 +175,37 @@ export class Operations {
         }
 
         try {
+            // WSM pre-flight: warn if domain has prior failures in workspace history
+            const priorFailures = await wsmAdapter.queryDomainFailureCount(taskDescription.url);
+            if (priorFailures > 0) {
+                logger.warn('WSM pre-flight: prior failures detected at this domain', {
+                    url: sanitizeUrlForStream(taskDescription.url),
+                    priorFailures,
+                });
+            }
+
             logger.debug('Navigating to URL', { url: taskDescription.url });
             this.snapshotDiffer.reset();
+            const navStart = Date.now();
             try {
                 await this.ctx.page.goto(taskDescription.url, { waitUntil: 'networkidle' });
                 streamer.navigation({ url: sanitizeUrlForStream(taskDescription.url), status: 'success' });
+                // WSM: record successful navigation
+                await wsmAdapter.recordToolCall(
+                    'navigate',
+                    { url: sanitizeUrlForStream(taskDescription.url) },
+                    { status: 'success' },
+                    Date.now() - navStart,
+                );
             } catch (err) {
                 streamer.navigation({ url: sanitizeUrlForStream(taskDescription.url), status: 'error', error: err.message });
+                // WSM: record navigation failure
+                await wsmAdapter.recordToolCall(
+                    'navigate',
+                    { url: sanitizeUrlForStream(taskDescription.url) },
+                    { status: 'error', error: err.message },
+                    Date.now() - navStart,
+                );
                 throw err;
             }
             await this.#waitJitteredDelay(PAGE_LOADING_DELAY_MS);
@@ -202,6 +227,9 @@ export class Operations {
                 error: error.message
             });
             streamer.taskEnd({ startMs: taskStartMs, status: 'error', error: error.message });
+            // WSM: persist diagnostic buffer on failure for auditing
+            const diagText = this.observabilityBuffer.flush();
+            await wsmAdapter.recordDiagnostics(diagText, sanitizeUrlForStream(taskDescription.url));
             throw error;
         } finally {
             const page = this.ctx.page;
@@ -425,6 +453,22 @@ export class Operations {
                 }
             }
 
+            // WSM: record extract result in workspace timeline
+            if (extract.length > 0) {
+                const totalFields = extract.reduce(
+                    (sum, item) => item && typeof item === 'object'
+                        ? sum + Object.keys(item).length
+                        : sum,
+                    0,
+                );
+                await wsmAdapter.recordToolCall(
+                    'extract',
+                    { prompt: instruction.prompt },
+                    { status: 'success', fields: totalFields },
+                    0,
+                );
+            }
+
             logger.info(`${context} completed`, {
                 extractedFields: Object.keys(extract).length,
                 promptTokens: response.usage.promptTokens,
@@ -456,6 +500,7 @@ export class Operations {
         logger.info(`${context}: ${instruction.prompt}`);
 
         let action;
+        const actionStartMs = Date.now();
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
             const { context: pageContext, isAria } = await this.#getPageContext();
@@ -595,6 +640,13 @@ export class Operations {
                         valueLength: action.value != null ? String(action.value).length : 0,
                         status: 'success',
                     });
+                    // WSM: record browser action in workspace timeline
+                    await wsmAdapter.recordToolCall(
+                        actionType || instruction.name,
+                        { selector: locatorDesc, prompt: instruction.prompt },
+                        { status: 'success' },
+                        Date.now() - actionStartMs,
+                    );
                     await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
                     // Reset snapshot after action so next #findElements gets fresh diff baseline
                     this.snapshotDiffer.reset();
@@ -612,6 +664,13 @@ export class Operations {
                         status: 'error',
                         error: actionError.message,
                     });
+                    // WSM: record action failure in workspace timeline
+                    await wsmAdapter.recordToolCall(
+                        action.type?.toLowerCase() || instruction.name,
+                        { selector: locatorDesc, prompt: instruction.prompt },
+                        { status: 'error', error: actionError.message },
+                        Date.now() - actionStartMs,
+                    );
                     throw new Error(
                         `Failed to execute "${action.type}" action on element ${locatorDesc}: ${actionError.message}. ` +
                         `The element was found but the action failed — it may be hidden, disabled, or covered by another element. ` +
@@ -637,6 +696,8 @@ export class Operations {
                     shotPath,
                     this.domSimplifier.xpaths
                 ).catch(() => {}); // non-fatal
+                // WSM: persist failure screenshot as artifact for visual evidence
+                await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
             }
 
             const alreadyAnnotated = error.message.includes('--- observability ---');
@@ -858,6 +919,8 @@ export class Operations {
                     shotPath,
                     this.domSimplifier.xpaths
                 );
+                // WSM: persist annotated screenshot as visual evidence artifact
+                await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
             }
 
             return elements;
