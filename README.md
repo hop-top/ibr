@@ -185,6 +185,47 @@ If the **DB is locked** (browser is open), idx automatically copies the DB and
 its WAL/SHM files to `/tmp` and reads from the copy — the original is never
 written to. The temp files are deleted when the import finishes.
 
+### `--mode` Flag
+
+Control which page-representation mode the AI receives:
+
+| Flag | Mode | When to use |
+|------|------|-------------|
+| _(none)_ | `auto` | Default — quality-based selection |
+| `--mode aria` | ARIA tree | Force ariaSnapshot (semantic, compact) |
+| `--mode dom` | DOM + XPath | Force DomSimplifier (raw structure) |
+
+```bash
+# Force ARIA mode
+idx --mode aria "url: https://example.com\ninstructions:\n  - click submit"
+
+# Force DOM mode — canvas apps, legacy table-soup, unlabelled SPAs
+idx --mode dom "url: https://canvas-app.example.com\ninstructions:\n  - click submit"
+```
+
+**Auto-selection logic** (default): after capturing the ARIA snapshot, idx
+scores its quality and picks the best mode automatically:
+
+- `sparsityRatio > 0.4` → dom (too many unlabelled interactive elements)
+- snapshot > 50 000 chars → dom (too large)
+- snapshot empty or errored → dom
+- otherwise → aria
+
+Logs report the chosen mode and reason, e.g.:
+
+```
+using aria mode
+falling back to dom mode: sparse (0.62)
+falling back to dom mode: size
+```
+
+**Site types where each mode excels:**
+
+| Mode | Works best on |
+|------|---------------|
+| aria | Modern semantic SPAs, accessible sites, form-heavy UIs |
+| dom | Canvas-heavy apps, legacy table-soup HTML, Shadow DOM, aria-hidden-heavy pages |
+
 ### Prompt Format
 
 Instructions use a YAML-like format:
@@ -267,9 +308,11 @@ labels, and visible text — the same structure used by screen readers.
 - More reliable element targeting: AI returns `{role, name}` descriptors, which
   Playwright resolves via `getByRole` / `getByLabel` / `getByText`
 
-**Fallback:** if the ARIA snapshot exceeds 50 000 chars, idx falls back to the
-`DomSimplifier` (XPath-indexed JSON tree). The fallback is transparent — no
-configuration needed.
+**Mode selection:** by default idx scores the ARIA snapshot quality (sparsity
+ratio of unlabelled interactive elements) and falls back to `DomSimplifier`
+(XPath-indexed JSON tree) when quality is too low, snapshot is too large, or
+snapshot is empty. Use `--mode aria|dom` to override. See the `--mode` section
+above for details.
 
 **Element descriptor format (ARIA path):**
 

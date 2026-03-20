@@ -1,11 +1,20 @@
 /**
  * ariaSimplifier — Playwright ariaSnapshot-based page representation
- * Replaces DomSimplifier for page context fed to AI.
+ * Includes quality assessment + mode selection logic.
  */
 
 import logger from './logger.js';
 
 export const SIZE_THRESHOLD = 50_000;
+export const SPARSITY_THRESHOLD = 0.4;
+
+// Roles considered interactive (must have a name to be useful)
+const INTERACTIVE_ROLES = new Set([
+  'button', 'link', 'textbox', 'checkbox', 'radio', 'combobox',
+  'listbox', 'menuitem', 'menuitemcheckbox', 'menuitemradio',
+  'option', 'searchbox', 'slider', 'spinbutton', 'switch', 'tab',
+  'treeitem', 'gridcell',
+]);
 
 /**
  * Get ARIA snapshot of current page body.
@@ -24,6 +33,71 @@ export async function getSnapshot(page) {
 }
 
 /**
+ * Assess quality of an ARIA snapshot.
+ * Parses role/name lines and counts unnamed interactive elements.
+ *
+ * @param {string|null} snapshot
+ * @returns {{ sparsityRatio: number, tooLarge: boolean, empty: boolean }}
+ */
+export function assessQuality(snapshot) {
+  if (!snapshot || snapshot.trim().length === 0) {
+    return { sparsityRatio: 0, tooLarge: false, empty: true };
+  }
+
+  if (snapshot.length > SIZE_THRESHOLD) {
+    return { sparsityRatio: 0, tooLarge: true, empty: false };
+  }
+
+  // Lines look like: `- button "Sign in"` or `- button`
+  // role pattern: starts with optional whitespace + `- <role>`
+  const lineRe = /^\s*-\s+(\w[\w-]*)(?:\s+"([^"]*)")?/;
+
+  let total = 0;
+  let unnamed = 0;
+
+  for (const line of snapshot.split('\n')) {
+    const m = line.match(lineRe);
+    if (!m) continue;
+    const role = m[1].toLowerCase();
+    if (!INTERACTIVE_ROLES.has(role)) continue;
+    total++;
+    // unnamed = no name capture OR empty string name
+    if (!m[2] || m[2].trim() === '') unnamed++;
+  }
+
+  const sparsityRatio = total === 0 ? 0 : unnamed / total;
+  return { sparsityRatio, tooLarge: false, empty: false };
+}
+
+/**
+ * Select aria or dom mode based on snapshot quality + optional forced mode.
+ *
+ * @param {string|null} snapshot
+ * @param {'aria'|'dom'|'auto'} [forcedMode='auto']
+ * @returns {{ mode: 'aria'|'dom', reason: string }}
+ */
+export function selectMode(snapshot, forcedMode = 'auto') {
+  if (forcedMode === 'aria') return { mode: 'aria', reason: 'forced' };
+  if (forcedMode === 'dom')  return { mode: 'dom',  reason: 'forced' };
+
+  // auto
+  if (!snapshot || snapshot.trim().length === 0) {
+    return { mode: 'dom', reason: 'empty' };
+  }
+
+  if (snapshot.length > SIZE_THRESHOLD) {
+    return { mode: 'dom', reason: 'size' };
+  }
+
+  const { sparsityRatio } = assessQuality(snapshot);
+  if (sparsityRatio > SPARSITY_THRESHOLD) {
+    return { mode: 'dom', reason: `sparse (${sparsityRatio.toFixed(2)})` };
+  }
+
+  return { mode: 'aria', reason: 'quality ok' };
+}
+
+/**
  * Resolve a descriptor {role, name} (or {text} / {label} / {placeholder}) to
  * a Playwright locator using the preferred ARIA locator chain.
  *
@@ -35,11 +109,6 @@ export async function getSnapshot(page) {
  *
  * @param {import('playwright').Page} page
  * @param {Object} descriptor
- * @param {string} [descriptor.role]
- * @param {string} [descriptor.name]
- * @param {string} [descriptor.text]
- * @param {string} [descriptor.label]
- * @param {string} [descriptor.placeholder]
  * @returns {import('playwright').Locator|null}
  */
 export function resolveElement(page, descriptor) {
@@ -47,37 +116,14 @@ export function resolveElement(page, descriptor) {
 
   const { role, name, text, label, placeholder } = descriptor;
 
-  // 1. role + name
-  if (role && name) {
-    return page.getByRole(role, { name });
-  }
-
-  // 2. role alone
-  if (role) {
-    return page.getByRole(role);
-  }
-
-  // 3. label
-  if (label) {
-    return page.getByLabel(label);
-  }
-
-  // 4. name as label (AI may return {name} without role)
-  if (name) {
-    return page.getByLabel(name);
-  }
-
-  // 5. visible text
-  if (text) {
-    return page.getByText(text);
-  }
-
-  // 6. placeholder
-  if (placeholder) {
-    return page.getByPlaceholder(placeholder);
-  }
+  if (role && name) return page.getByRole(role, { name });
+  if (role)         return page.getByRole(role);
+  if (label)        return page.getByLabel(label);
+  if (name)         return page.getByLabel(name);
+  if (text)         return page.getByText(text);
+  if (placeholder)  return page.getByPlaceholder(placeholder);
 
   return null;
 }
 
-export default { getSnapshot, resolveElement, SIZE_THRESHOLD };
+export default { getSnapshot, assessQuality, selectMode, resolveElement, SIZE_THRESHOLD, SPARSITY_THRESHOLD };

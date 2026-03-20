@@ -1,6 +1,14 @@
-import { makeTaskDescriptionMessage, makeFindInstructionMessage, makeActionInstructionMessage, makeExtractInstructionMessage } from "./utils/prompts.js";
+import {
+    makeTaskDescriptionMessage,
+    makeFindInstructionMessage,
+    makeActionInstructionMessage,
+    makeExtractInstructionMessage,
+    makeFindInstructionMessageDom,
+    makeActionInstructionMessageDom,
+    makeExtractInstructionMessageDom,
+} from "./utils/prompts.js";
 import { DomSimplifier } from './DomSimplifier.js';
-import { getSnapshot, resolveElement, SIZE_THRESHOLD } from './utils/ariaSimplifier.js';
+import { getSnapshot, resolveElement, selectMode } from './utils/ariaSimplifier.js';
 import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS } from "./utils/constants.js";
 import { generateAIResponse } from './ai/provider.js';
 import { validateTaskDescription, validateAndParseJSON, createParseErrorMessage, createErrorContext } from './utils/validation.js';
@@ -16,6 +24,7 @@ export class Operations {
      * @param {Page} ctx.page - The Playwright page instance
      * @param {Object} options - Configuration options
      * @param {number} options.temperature - AI temperature (0-2, default: 0)
+     * @param {'aria'|'dom'|'auto'} [options.mode='auto'] - Page context mode
      */
     constructor(ctx, options = {}) {
         this.ctx = ctx;
@@ -32,12 +41,14 @@ export class Operations {
 
         // Configuration
         this.temperature = Math.min(2, Math.max(0, options.temperature ?? 0));
+        this.mode = options.mode ?? 'auto';
         this.executionIndex = 0;
 
         logger.debug('Operations initialized', {
             provider: ctx.aiProvider.provider,
             model: ctx.aiProvider.model,
-            temperature: this.temperature
+            temperature: this.temperature,
+            mode: this.mode
         });
     }
 
@@ -257,11 +268,12 @@ export class Operations {
 
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-            const { context: pageContext } = await this.#getPageContext();
+            const { context: pageContext, isAria } = await this.#getPageContext();
 
             // Note: For extraction, we always call AI for fresh data
             // Caching would require re-extracting from current DOM
-            const messages = makeExtractInstructionMessage(instruction.prompt, pageContext);
+            const makeExtract = isAria ? makeExtractInstructionMessage : makeExtractInstructionMessageDom;
+            const messages = makeExtract(instruction.prompt, pageContext);
 
             logger.debug('Sending extract instruction to AI', {
                 promptLength: instruction.prompt.length,
@@ -350,7 +362,8 @@ export class Operations {
 
             // Cache miss or invalid - call AI
             if (!action) {
-                const messages = makeActionInstructionMessage(instruction.prompt, pageContext);
+                const makeAction = isAria ? makeActionInstructionMessage : makeActionInstructionMessageDom;
+                const messages = makeAction(instruction.prompt, pageContext);
 
                 logger.debug('Sending action instruction to AI', {
                     promptLength: instruction.prompt.length,
@@ -463,23 +476,19 @@ export class Operations {
 
     /**
      * Get page context string for AI.
-     * Tries ariaSnapshot first; falls back to DomSimplifier when output > SIZE_THRESHOLD.
+     * Uses quality-based mode selection (aria/dom) with optional forced mode.
      * Returns {context: string, domTree: Object|null, isAria: boolean}
      */
     async #getPageContext() {
         const snapshot = await getSnapshot(this.ctx.page);
-        if (snapshot && snapshot.length <= SIZE_THRESHOLD) {
+        const { mode, reason } = selectMode(snapshot, this.mode);
+
+        if (mode === 'aria') {
+            logger.info('using aria mode', { reason });
             return { context: snapshot, domTree: null, isAria: true };
         }
 
-        if (snapshot && snapshot.length > SIZE_THRESHOLD) {
-            logger.info('ariaSnapshot large, falling back to DOM simplifier', {
-                snapshotLength: snapshot.length,
-                threshold: SIZE_THRESHOLD
-            });
-        }
-
-        // Fallback: DomSimplifier
+        logger.info(`falling back to dom mode: ${reason}`);
         const domTree = await this.domSimplifier.simplify();
         const context = this.domSimplifier.stringifySimplifiedDom(domTree);
         return { context, domTree, isAria: false };
@@ -542,7 +551,8 @@ export class Operations {
             }
 
             // Cache miss or invalid - call AI
-            const messages = makeFindInstructionMessage(userPrompt, pageContext);
+            const makeFind = isAria ? makeFindInstructionMessage : makeFindInstructionMessageDom;
+            const messages = makeFind(userPrompt, pageContext);
 
             logger.debug('Sending find instruction to AI', {
                 promptLength: userPrompt.length,
