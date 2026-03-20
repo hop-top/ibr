@@ -19,6 +19,21 @@ function makePage(html) {
   return { content: vi.fn().mockResolvedValue(html) };
 }
 
+/**
+ * Build a mock page that simulates a selector-scoped call.
+ * page.evaluate() is called by DomSimplifier.simplify() when selector is set;
+ * it returns { html, xpath } for the scoped root.
+ *
+ * @param {string} scopedHtml   - outerHTML of the scoped element
+ * @param {string} absoluteXPath - absolute XPath of the scoped element
+ */
+function makeScopedPage(scopedHtml, absoluteXPath) {
+  return {
+    content: vi.fn(),  // not called when selector present
+    evaluate: vi.fn().mockResolvedValue({ html: scopedHtml, xpath: absoluteXPath }),
+  };
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function collectTagNames(node, acc = []) {
@@ -107,6 +122,18 @@ describe('DomSimplifier', () => {
       const btn = findNode(result, 'BUTTON');
       expect(btn.a).toMatchObject({ 'aria-label': 'Close dialog' });
       expect(btn.a).not.toHaveProperty('onclick');
+    });
+
+    it('keeps role attribute (regression: role added to allowed list)', async () => {
+      const html = `<html><head></head>
+        <body><div role="navigation" class="nav" data-v="1">nav</div></body></html>`;
+      const ds = new DomSimplifier(makePage(html));
+      const result = await ds.simplify();
+      const div = findNode(result, 'DIV');
+      expect(div.a).toHaveProperty('role', 'navigation');
+      // non-allowed attrs must still be stripped
+      expect(div.a).not.toHaveProperty('class');
+      expect(div.a).not.toHaveProperty('data-v');
     });
 
     it('keeps name and content attributes', async () => {
@@ -221,6 +248,61 @@ describe('DomSimplifier', () => {
       const a = findNode(parsed, 'A');
       expect(a.a).toMatchObject({ id: 'nav', href: '/home' });
       expect(a.t).toBe('Home');
+    });
+  });
+
+  // ── selector-scoped (-s) XPath absolute paths ──────────────────────────────
+
+  describe('simplify() with selector (-s) — XPaths are document-absolute', () => {
+    it('XPaths start with the absolute prefix of the scoped root, not "/"', async () => {
+      // Scoped root lives at /HTML/BODY/NAV in the live document.
+      // DomSimplifier strips the root tag from the live xpath to get parentXPath
+      // (/HTML/BODY), then generateElementXPath appends /NAV.
+      // Result must start with /HTML/BODY/NAV, not just /NAV.
+      const scopedHtml = `<nav><a href="/home">Home</a></nav>`;
+      const absoluteXPath = '/HTML/BODY/NAV';
+      const page = makeScopedPage(scopedHtml, absoluteXPath);
+
+      const ds = new DomSimplifier(page, { selector: 'nav' });
+      await ds.simplify();
+
+      // Every generated XPath must begin with the document-absolute prefix
+      expect(ds.xpaths.length).toBeGreaterThan(0);
+      for (const xp of ds.xpaths) {
+        expect(xp).toMatch(/^\/HTML\/BODY\//);
+      }
+    });
+
+    it('XPaths are usable with document.evaluate (start with /HTML)', async () => {
+      const scopedHtml = `<section id="main"><p>text</p></section>`;
+      const absoluteXPath = '/HTML/BODY/MAIN/SECTION';
+      const page = makeScopedPage(scopedHtml, absoluteXPath);
+
+      const ds = new DomSimplifier(page, { selector: '#main' });
+      await ds.simplify();
+
+      // Must begin with /HTML (document-absolute, not relative)
+      for (const xp of ds.xpaths) {
+        expect(xp.startsWith('/HTML')).toBe(true);
+      }
+    });
+
+    it('regression: without the fix XPaths would start with empty prefix (/NAV instead of /HTML/BODY/NAV)', async () => {
+      // Simulate the broken state: if parentXPath were '' (no absolute prefix),
+      // the root node XPath would be just '/NAV'.
+      // With the fix applied, it must be '/HTML/BODY/NAV'.
+      const scopedHtml = `<nav role="navigation"><ul><li>item</li></ul></nav>`;
+      const absoluteXPath = '/HTML/BODY/NAV';
+      const page = makeScopedPage(scopedHtml, absoluteXPath);
+
+      const ds = new DomSimplifier(page, { selector: 'nav' });
+      await ds.simplify();
+
+      const navXpath = ds.xpaths.find(x => x.endsWith('/NAV'));
+      expect(navXpath).toBeDefined();
+      // Must NOT be bare '/NAV' — must have document-absolute parent prefix
+      expect(navXpath).not.toBe('/NAV');
+      expect(navXpath).toContain('/HTML/BODY/NAV');
     });
   });
 });
