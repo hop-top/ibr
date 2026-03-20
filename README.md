@@ -10,6 +10,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Data Extraction**: Extract structured data from web pages
 - **Conditional Logic**: If-then instructions for dynamic flows
 - **Loop Support**: Repeat actions until conditions are met
+- **Authenticated Sessions**: Inherit browser cookies via `--cookies` flag
 - **Comprehensive Logging**: Detailed execution logs for debugging
 
 ## Setup
@@ -69,6 +70,120 @@ instructions:
   - click the 'submit' button
   - extract page title"
 ```
+
+### Authenticated Sessions (`--cookies`)
+
+Import real browser cookies so idx can reach pages that require a logged-in
+session. **macOS only.** Reads directly from the browser's on-disk SQLite
+cookie database; no proxy, no extension, no manual export needed.
+
+**Requires:** `better-sqlite3` (native addon, already listed in `package.json`)
+and macOS Keychain access for the target browser.
+
+#### Syntax
+
+```
+idx --cookies <browser>[:<domain1>,<domain2>,...] "<prompt>"
+```
+
+| Part | Description |
+|------|-------------|
+| `<browser>` | Browser alias (see table below) |
+| `:<domain1>,<domain2>` | Optional domain filter — import only these host keys |
+
+#### Supported Browsers
+
+| Alias | Browser |
+|-------|---------|
+| `comet` | Comet (Perplexity) |
+| `chrome` | Google Chrome |
+| `arc` | Arc |
+| `brave` | Brave |
+| `edge` | Microsoft Edge |
+
+#### Examples
+
+**All cookies from Chrome — access any auth-gated page:**
+
+```bash
+idx --cookies chrome "url: https://github.com
+instructions:
+  - extract repository list"
+```
+
+**Comet cookies for a single domain:**
+
+```bash
+idx --cookies comet:reddit.com "url: https://www.reddit.com/r/programming
+instructions:
+  - extract top 5 post titles"
+```
+
+**Arc cookies scoped to two domains:**
+
+```bash
+idx --cookies arc:github.com,linear.app "url: https://linear.app
+instructions:
+  - list my open issues"
+```
+
+**Brave with no domain filter (all non-expired cookies):**
+
+```bash
+idx --cookies brave "url: https://app.example.com
+instructions:
+  - click 'Dashboard'"
+```
+
+**Edge for a specific domain:**
+
+```bash
+idx --cookies edge:outlook.com "url: https://outlook.com
+instructions:
+  - extract unread message subjects"
+```
+
+#### Domain Filtering
+
+- `--cookies arc:github.com,linear.app` — import only cookies whose `host_key`
+  matches `github.com` or `linear.app`.
+- `--cookies chrome` (no filter) — import **all non-expired** cookies from
+  Chrome's Default profile.
+- Expired cookies are always excluded regardless of filter.
+
+#### How It Works
+
+1. Resolves the browser's cookie DB path under
+   `~/Library/Application Support/<browser>/Default/Cookies`.
+2. Calls `security find-generic-password` to retrieve the Safe Storage key from
+   macOS Keychain — **a permission dialog appears on first run; click "Allow"**.
+3. Derives a 16-byte AES key via PBKDF2 (SHA-1, 1003 iterations, salt
+   `saltysalt`).
+4. Decrypts each `v10`-prefixed cookie value with AES-128-CBC.
+5. Injects resulting cookies into the Playwright browser context via
+   `context.addCookies()` before any navigation.
+
+#### Limitations
+
+- **macOS only** — no Windows or Linux support.
+- Reads the **Default** profile only; named profiles not yet supported.
+- Keychain key is cached per-process; subsequent calls for the same browser
+  skip the dialog.
+
+#### Error Cases
+
+| Error code | Cause | Action |
+|------------|-------|--------|
+| `not_installed` | Browser cookie DB not found on disk | Install the browser or check the alias spelling |
+| `keychain_denied` | User clicked "Deny" in the macOS dialog | Re-run and click "Allow" |
+| `keychain_timeout` | Keychain dialog not answered within 10 s | Re-run and respond to the dialog promptly |
+| `keychain_not_found` | No Keychain entry for that browser | Browser may not be a Chromium build; check alias |
+| `db_locked` | DB still locked after copy attempt | Close the browser and retry |
+| `db_corrupt` | SQLite DB is corrupt | Reinstall or reset the browser profile |
+
+If the **DB is locked** (browser is open), idx automatically copies the DB and
+its WAL/SHM files to `/tmp` and reads from the copy — the original is never
+written to. The temp files are deleted when the import finishes.
 
 ### Prompt Format
 
@@ -307,7 +422,7 @@ instructions:
 ## Limitations
 
 - Requires API key for selected AI provider
-- Can't handle login/authentication (design limitation)
+- `--cookies` flag requires macOS (no Windows/Linux)
 - May struggle with heavily JavaScript-rendered content
 - No built-in retry on transient failures (but logs indicate when/why to retry)
 - Browser automation is slower than direct API calls

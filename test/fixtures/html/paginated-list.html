@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Paginated List</title></head>
+<body>
+  <ul id="items">
+    <li>Item 1</li>
+    <li>Item 2</li>
+    <li>Item 3</li>
+  </ul>
+  <button id="load-more" aria-label="Load more">Load More</button>
+  <script>
+    var clicks = 0;
+    var MAX_CLICKS = 3;
+    document.getElementById('load-more').addEventListener('click', function () {
+      clicks++;
+      var list = document.getElementById('items');
+      var base = list.children.length;
+      for (var i = 1; i <= 3; i++) {
+        var li = document.createElement('li');
+        li.textContent = 'Item ' + (base + i);
+        list.appendChild(li);
+      }
+      if (clicks >= MAX_CLICKS) {
+        document.getElementById('load-more').style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>

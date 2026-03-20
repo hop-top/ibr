@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="description" content="Product listing page">
+  <title>Products</title>
+</head>
+<body>
+  <div id="product-list">
+    <div class="product" data-id="1">
+      <h2>Widget A</h2>
+      <span class="price">$9.99</span>
+      <a href="/products/1" title="Widget A details">View</a>
+    </div>
+    <div class="product" data-id="2">
+      <h2>Widget B</h2>
+      <span class="price">$19.99</span>
+      <a href="/products/2" title="Widget B details">View</a>
+    </div>
+    <div class="product" data-id="3">
+      <h2>Widget C</h2>
+      <span class="price">$29.99</span>
+      <a href="/products/3" title="Widget C details">View</a>
+    </div>
+  </div>
+  <nav id="pagination">
+    <a href="/products?page=1">1</a>
+    <a href="/products?page=2">2</a>
+    <a href="/products?page=3">3</a>
+  </nav>
+</body>
+</html>

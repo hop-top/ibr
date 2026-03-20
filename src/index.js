@@ -2,11 +2,67 @@ import { chromium } from 'playwright';
 import dotenv from 'dotenv';
 import { createAIProvider } from './ai/provider.js';
 import { Operations } from './Operations.js';
-import { validateEnvironmentVariables, validateBrowserConfig, createErrorContext } from './utils/validation.js';
+import { validateEnvironmentVariables, validateBrowserConfig } from './utils/validation.js';
 import logger from './utils/logger.js';
+import { importCookies } from './utils/cookieImport.js';
 
 // Load environment variables
 dotenv.config();
+
+/**
+ * Parse --cookies flag from argv.
+ *
+ * Forms:
+ *   --cookies chrome              → { browser: 'chrome', domains: [] }
+ *   --cookies arc:github.com,linear.app → { browser: 'arc', domains: ['github.com','linear.app'] }
+ *
+ * Returns null if flag not present.
+ *
+ * @param {string[]} argv  process.argv
+ * @returns {{ browser: string, domains: string[] } | null}
+ */
+function parseCookiesFlag(argv) {
+  const idx = argv.indexOf('--cookies');
+  if (idx === -1) return null;
+
+  const raw = argv[idx + 1];
+  if (!raw || raw.startsWith('--')) {
+    throw new Error('--cookies requires a value: --cookies <browser>[:<domain,...>]');
+  }
+
+  const colonIdx = raw.indexOf(':');
+  if (colonIdx === -1) {
+    return { browser: raw, domains: [] };
+  }
+
+  const browser = raw.slice(0, colonIdx);
+  const domainsRaw = raw.slice(colonIdx + 1);
+  const domains = domainsRaw
+    .split(',')
+    .map(d => d.trim())
+    .filter(Boolean);
+
+  return { browser, domains };
+}
+
+/**
+ * Strip --cookies <value> from argv, returning the remaining args.
+ * @param {string[]} argv
+ * @returns {string[]}
+ */
+function stripCookiesFlag(argv) {
+  const result = [];
+  let i = 0;
+  while (i < argv.length) {
+    if (argv[i] === '--cookies') {
+      i += 2; // skip flag + value
+    } else {
+      result.push(argv[i]);
+      i++;
+    }
+  }
+  return result;
+}
 
 /**
  * Get browser configuration from environment or use defaults
@@ -45,10 +101,17 @@ function getOperationOptions() {
 function printUsage() {
   logger.info('idx - Intent Driven eXtractor');
   logger.info('');
-  logger.info('Usage: idx "<user_prompt>"');
+  logger.info('Usage: idx [--cookies <browser>[:<domain,...>]] "<user_prompt>"');
   logger.info('');
-  logger.info('Example:');
-  logger.info('idx "url: https://example.com\ninstructions:\n  - click submit button"');
+  logger.info('Examples:');
+  logger.info('  idx "url: https://example.com\\ninstructions:\\n  - click submit button"');
+  logger.info('  idx --cookies chrome "url: https://github.com\\ninstructions:\\n  - get repo list"');
+  logger.info('  idx --cookies arc:github.com,linear.app "url: https://linear.app\\ninstructions:\\n  - list issues"');
+  logger.info('');
+  logger.info('Cookie flag:');
+  logger.info('  --cookies <browser>              Import all non-expired cookies from browser');
+  logger.info('  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only');
+  logger.info('  Supported browsers: chrome, arc, brave, edge, comet');
   logger.info('');
   logger.info('Configuration:');
   logger.info('  AI_PROVIDER      - AI provider (openai, anthropic, google) [default: openai]');
@@ -63,6 +126,19 @@ async function run() {
   logger.info('Starting idx (Intent Driven eXtractor)');
 
   try {
+    // Parse --cookies before other args
+    let cookiesConfig = null;
+    try {
+      cookiesConfig = parseCookiesFlag(process.argv);
+    } catch (err) {
+      logger.error(err.message);
+      printUsage();
+      process.exit(1);
+    }
+
+    // Strip --cookies flag to get effective argv for prompt detection
+    const effectiveArgv = stripCookiesFlag(process.argv);
+
     // Validate required environment variables based on provider
     const provider = (process.env.AI_PROVIDER || 'openai').toLowerCase();
     const apiKeyMap = {
@@ -76,14 +152,14 @@ async function run() {
       validateEnvironmentVariables([requiredApiKey]);
     }
 
-    // Validate command line arguments
-    if (!process.argv[2]) {
+    // Validate command line arguments (after stripping --cookies)
+    if (!effectiveArgv[2]) {
       logger.error('No user prompt provided');
       printUsage();
       process.exit(1);
     }
 
-    if (process.argv[2] === '--help' || process.argv[2] === '-h') {
+    if (effectiveArgv[2] === '--help' || effectiveArgv[2] === '-h') {
       printUsage();
       process.exit(0);
     }
@@ -107,6 +183,29 @@ async function run() {
     try {
       // Create a new browser context and page
       const context = await browser.newContext();
+
+      // Import cookies into context if --cookies was specified
+      if (cookiesConfig) {
+        logger.info(`Importing cookies from ${cookiesConfig.browser}...`);
+        try {
+          const result = await importCookies(cookiesConfig.browser, cookiesConfig.domains);
+          if (result.count > 0) {
+            await context.addCookies(result.cookies);
+            logger.info(`Loaded ${result.count} cookies from ${cookiesConfig.browser}`, {
+              domains: Object.keys(result.domainCounts).length,
+              failed: result.failed,
+            });
+          } else {
+            logger.warn(`No cookies found for ${cookiesConfig.browser}`, {
+              domains: cookiesConfig.domains,
+            });
+          }
+        } catch (err) {
+          logger.error(`Cookie import failed: ${err.message}`, { code: err.code });
+          // Non-fatal — continue without session cookies
+        }
+      }
+
       const page = await context.newPage();
 
       // Create Operations instance with context and options
@@ -118,8 +217,8 @@ async function run() {
         operationOptions
       );
 
-      // Get user prompt from command line arguments
-      const userPrompt = process.argv[2];
+      // Get user prompt from effective argv (prompt is always the first non-flag arg after node/script)
+      const userPrompt = effectiveArgv[2];
 
       // Parse task description
       logger.info('Parsing task description');

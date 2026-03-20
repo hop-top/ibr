@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Infinite List</title></head>
+<body>
+  <ul id="items">
+    <li>Item 1</li>
+    <li>Item 2</li>
+    <li>Item 3</li>
+  </ul>
+  <button id="load-more" aria-label="Load more">Load More</button>
+  <script>
+    document.getElementById('load-more').addEventListener('click', function () {
+      var list = document.getElementById('items');
+      var base = list.children.length;
+      for (var i = 1; i <= 3; i++) {
+        var li = document.createElement('li');
+        li.textContent = 'Item ' + (base + i);
+        list.appendChild(li);
+      }
+    });
+  </script>
+</body>
+</html>
