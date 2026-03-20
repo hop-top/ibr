@@ -92,12 +92,13 @@ const VALID_MODES = new Set(['aria', 'dom', 'auto']);
 /**
  * Parse CLI flags from argv.
  * Strips recognised flags and returns remaining positional args + parsed options.
- * @returns {{ args: string[], mode: 'aria'|'dom'|'auto' }}
+ * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean }}
  */
 function parseCliFlags() {
   const argv = process.argv.slice(2);
   const remaining = [];
   let mode = 'auto';
+  let annotate = false;
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--mode' && argv[i + 1]) {
@@ -110,20 +111,23 @@ function parseCliFlags() {
         process.exit(1);
       }
       mode = val;
+    } else if (argv[i] === '--annotate' || argv[i] === '-a') {
+      annotate = true;
     } else {
       remaining.push(argv[i]);
     }
   }
 
-  return { args: remaining, mode };
+  return { args: remaining, mode, annotate };
 }
 
 /**
  * Get operation options from environment + CLI flags
  * @param {string} mode - mode from CLI flags
+ * @param {boolean} annotate - annotate mode from CLI flags
  * @returns {Object} Operation options
  */
-export function getOperationOptions(mode) {
+export function getOperationOptions(mode, annotate = false) {
   const temperature = parseFloat(process.env.AI_TEMPERATURE || '0');
 
   if (isNaN(temperature) || temperature < 0 || temperature > 2) {
@@ -134,7 +138,7 @@ export function getOperationOptions(mode) {
     );
   }
 
-  return { temperature, mode };
+  return { temperature, mode, annotate };
 }
 
 /**
@@ -144,7 +148,7 @@ function printUsage() {
   logger.info('idx - Intent Driven eXtractor');
   logger.info('');
   logger.info('Usage:');
-  logger.info('  idx [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] "<user_prompt>"');
+  logger.info('  idx [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"');
   logger.info('  idx [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)');
   logger.info('  idx snap <url> [flags]          - inspect DOM at URL');
   logger.info('');
@@ -154,9 +158,11 @@ function printUsage() {
   logger.info('  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only');
   logger.info('  Supported browsers: chrome, arc, brave, edge, comet');
   logger.info('  Note: --cookies and --mode are stateless-mode flags; not supported with --daemon');
+  logger.info('  --annotate, -a               Capture annotated screenshots after each find step');
   logger.info('  --mode aria   Force ARIA accessibility tree (ariaSnapshot)');
   logger.info('  --mode dom    Force DOM simplifier + XPath');
   logger.info('  --mode auto   Auto-select based on quality (default)');
+  logger.info('  ANNOTATED_SCREENSHOTS_ON_FAILURE=true  Auto-capture on action failure');
   logger.info('');
   logger.info('snap subcommand flags:');
   logger.info('  --aria                        - show ariaSnapshot (ARIA YAML) instead of DOM JSON');
@@ -225,7 +231,7 @@ async function run() {
     // parseCliFlags reads process.argv, so we temporarily shadow it
     const savedArgv = process.argv;
     process.argv = ['node', 'src/index.js', ...effectiveArgv.slice(2)];
-    const { args, mode } = parseCliFlags();
+    const { args, mode, annotate } = parseCliFlags();
     process.argv = savedArgv;
 
     // Validate command line arguments (after stripping --cookies and --mode)
@@ -278,7 +284,7 @@ async function run() {
     // Get browser and operation configuration
     logger.debug('Loading configuration');
     const browserConfig = getBrowserConfig();
-    const operationOptions = getOperationOptions(mode);
+    const operationOptions = getOperationOptions(mode, annotate);
 
     logger.debug('Browser configuration', { ...browserConfig, channel: browserConfig.channel || 'default' });
     logger.debug('Operation options', operationOptions);
