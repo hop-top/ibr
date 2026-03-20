@@ -33,9 +33,11 @@ export class Operations {
             const duration = req ? (Date.now() - (req._startTime || Date.now())) : null;
             this.observabilityBuffer.matchNetworkResponse(res.url(), res.status(), duration);
         };
-        page.on('console', this._onConsole);
-        page.on('request', this._onRequest);
-        page.on('response', this._onResponse);
+        if (page?.on) {
+            page.on('console', this._onConsole);
+            page.on('request', this._onRequest);
+            page.on('response', this._onResponse);
+        }
 
         // Improved token tracking
         this.tokenUsage = {
@@ -126,9 +128,11 @@ export class Operations {
             throw error;
         } finally {
             const page = this.ctx.page;
-            page.removeAllListeners('console');
-            page.removeAllListeners('request');
-            page.removeAllListeners('response');
+            if (page?.removeAllListeners) {
+                page.removeAllListeners('console');
+                page.removeAllListeners('request');
+                page.removeAllListeners('response');
+            }
         }
     }
 
