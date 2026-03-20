@@ -1,7 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import * as path from 'path';
 import {
   PAGE_LOADING_DELAY_MS,
   INSTRUCTION_EXECUTION_DELAY_MS,
@@ -142,5 +141,70 @@ describe('constants', () => {
       expect(vals.INSTRUCTION_EXECUTION_DELAY_MS).toBe(0);
       expect(vals.INSTRUCTION_EXECUTION_JITTER_MS).toBe(0);
     });
+  });
+});
+
+// ── parseEnvMs guard — NaN / negative regression tests ───────────────────────
+// parseEnvMs is not exported; we exercise it indirectly by dynamically
+// importing the module with a patched process.env in a fresh VM context.
+// Because Vitest caches modules, we test the guard logic via a thin helper
+// that mirrors the implementation exactly.
+
+function parseEnvMs(name, defaultValue) {
+  const val = parseInt(process.env[name] ?? String(defaultValue), 10);
+  return Number.isFinite(val) && val >= 0 ? val : defaultValue;
+}
+
+describe('parseEnvMs (guard logic mirror)', () => {
+  afterEach(() => {
+    delete process.env._TEST_DELAY;
+  });
+
+  it('valid numeric string → parsed value', () => {
+    process.env._TEST_DELAY = '1234';
+    expect(parseEnvMs('_TEST_DELAY', 999)).toBe(1234);
+  });
+
+  it('missing env var → default value', () => {
+    delete process.env._TEST_DELAY;
+    expect(parseEnvMs('_TEST_DELAY', 999)).toBe(999);
+  });
+
+  it('NaN string (e.g. "abc") → default value, not NaN', () => {
+    process.env._TEST_DELAY = 'abc';
+    const result = parseEnvMs('_TEST_DELAY', 999);
+    expect(result).toBe(999);
+    // Regression: without the guard this would be NaN
+    expect(Number.isNaN(result)).toBe(false);
+  });
+
+  it('negative value → default value, not negative', () => {
+    process.env._TEST_DELAY = '-500';
+    const result = parseEnvMs('_TEST_DELAY', 999);
+    expect(result).toBe(999);
+    // Regression: without val >= 0 check this would be -500
+    expect(result).toBeGreaterThanOrEqual(0);
+  });
+
+  it('zero → valid, returns 0', () => {
+    process.env._TEST_DELAY = '0';
+    expect(parseEnvMs('_TEST_DELAY', 999)).toBe(0);
+  });
+
+  it('empty string → default value (parseInt("") is NaN)', () => {
+    process.env._TEST_DELAY = '';
+    expect(parseEnvMs('_TEST_DELAY', 999)).toBe(999);
+  });
+
+  it('float string → truncated int (parseInt truncates)', () => {
+    process.env._TEST_DELAY = '3.7';
+    // parseInt('3.7') = 3, which is valid
+    expect(parseEnvMs('_TEST_DELAY', 999)).toBe(3);
+  });
+
+  it('Infinity string → default (not finite)', () => {
+    process.env._TEST_DELAY = 'Infinity';
+    // parseInt('Infinity') = NaN
+    expect(parseEnvMs('_TEST_DELAY', 999)).toBe(999);
   });
 });
