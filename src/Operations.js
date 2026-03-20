@@ -7,6 +7,7 @@ import { parseTaskDescriptionResponse, parseFindElementsResponse, parseActionIns
 import { CacheManager } from './cache/CacheManager.js';
 import { createDomSignature, isDomCompatible, getValidator, extractSchema } from './cache/CacheUtils.js';
 import logger from './utils/logger.js';
+import { ObservabilityBuffer } from './observability/ObservabilityBuffer.js';
 
 export class Operations {
     /**
@@ -21,6 +22,20 @@ export class Operations {
         this.domSimplifier = new DomSimplifier(ctx.page);
         this.extracts = [];
         this.cacheManager = new CacheManager();
+        this.observabilityBuffer = new ObservabilityBuffer();
+
+        // Attach observability listeners
+        const page = ctx.page;
+        this._onConsole = (msg) => this.observabilityBuffer.addConsoleLog(msg.type(), msg.text());
+        this._onRequest = (req) => this.observabilityBuffer.addNetworkRequest(req.method(), req.url());
+        this._onResponse = (res) => {
+            const req = res.request();
+            const duration = req ? (Date.now() - (req._startTime || Date.now())) : null;
+            this.observabilityBuffer.matchNetworkResponse(res.url(), res.status(), duration);
+        };
+        page.on('console', this._onConsole);
+        page.on('request', this._onRequest);
+        page.on('response', this._onResponse);
 
         // Improved token tracking
         this.tokenUsage = {
@@ -85,6 +100,9 @@ export class Operations {
         await this.cacheManager.init();
         this.url = taskDescription.url;
 
+        // Reset observability buffer for this task run
+        this.observabilityBuffer.clear();
+
         try {
             logger.debug('Navigating to URL', { url: taskDescription.url });
             await this.ctx.page.goto(taskDescription.url, { waitUntil: 'networkidle' });
@@ -106,6 +124,11 @@ export class Operations {
                 error: error.message
             });
             throw error;
+        } finally {
+            const page = this.ctx.page;
+            page.removeAllListeners('console');
+            page.removeAllListeners('request');
+            page.removeAllListeners('response');
         }
     }
 
@@ -301,11 +324,13 @@ export class Operations {
 
             this.executionIndex++;
         } catch (error) {
+            const obs = this.observabilityBuffer.flush();
+            const errMsg = `${error.message}\n--- observability ---\n${obs}`;
             logger.error(`${context} failed`, {
-                error: error.message,
+                error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw error;
+            throw new Error(errMsg);
         }
     }
 
@@ -442,11 +467,13 @@ export class Operations {
 
             this.executionIndex++;
         } catch (error) {
+            const obs = this.observabilityBuffer.flush();
+            const errMsg = `${error.message}\n--- observability ---\n${obs}`;
             logger.error(`${context} failed`, {
-                error: error.message,
+                error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw error;
+            throw new Error(errMsg);
         }
     }
 
@@ -552,11 +579,13 @@ export class Operations {
 
             return elements;
         } catch (error) {
+            const obs = this.observabilityBuffer.flush();
+            const errMsg = `${error.message}\n--- observability ---\n${obs}`;
             logger.error(`${context} failed`, {
-                error: error.message,
+                error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw error;
+            throw new Error(errMsg);
         }
     }
 }
