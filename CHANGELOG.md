@@ -7,6 +7,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 
 ## [Unreleased]
 
+### test
+
+- **Tier 2 E2E AI-agent fixture testing (T-0015)**
+  - `test/e2e/fixtures.test.js` — runs all fixtures through real Playwright + real AI.
+  - `test/e2e/helpers/structuralMatcher.js` — shape comparison with 10% number tolerance.
+  - `test/e2e/helpers/resultRecorder.js` — per-fixture result JSON writer.
+  - `test/unit/e2e/structuralMatcher.test.js`, `resultRecorder.test.js` — 24 unit tests.
+  - `package.json`: `test:e2e` (all) + `test:e2e:fast` (@fast subset) scripts.
+  - Result files in `test/results/e2e/<category>-<name>.json` for T-0016 LLM judge.
+  - Story: `docs/stories/023-e2e-fixture-testing.md`.
+
 ### refactor
 
 - **Removed dead `validateAIResponse` function (T-0027)**
