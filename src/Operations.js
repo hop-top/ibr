@@ -1,7 +1,6 @@
 import {
     makeTaskDescriptionMessage,
     makeFindInstructionMessage,
-    makeFindInstructionWithDiffMessage,
     makeActionInstructionMessage,
     makeExtractInstructionMessage,
     makeFindInstructionMessageDom,
@@ -9,7 +8,6 @@ import {
     makeExtractInstructionMessageDom,
 } from "./utils/prompts.js";
 import { DomSimplifier } from './DomSimplifier.js';
-import { SnapshotDiffer } from './utils/SnapshotDiffer.js';
 import { getSnapshot, resolveElement, selectMode } from './utils/ariaSimplifier.js';
 import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS } from "./utils/constants.js";
 import { generateAIResponse } from './ai/provider.js';
@@ -33,7 +31,6 @@ export class Operations {
         this.domSimplifier = new DomSimplifier(ctx.page);
         this.extracts = [];
         this.cacheManager = new CacheManager();
-        this.snapshotDiffer = new SnapshotDiffer();
 
         // Improved token tracking
         this.tokenUsage = {
@@ -102,7 +99,6 @@ export class Operations {
 
         try {
             logger.debug('Navigating to URL', { url: taskDescription.url });
-            this.snapshotDiffer.reset();
             await this.ctx.page.goto(taskDescription.url, { waitUntil: 'networkidle' });
             await this.#waitJitteredDelay(PAGE_LOADING_DELAY_MS);
 
@@ -455,8 +451,6 @@ export class Operations {
                             logger.warn(`${context}: Unknown action type`, { actionType });
                     }
                     await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-                    // Reset snapshot after action so next #findElements gets fresh diff baseline
-                    this.snapshotDiffer.reset();
                     logger.info(`${context} executed successfully`, { actionType });
                 } catch (actionError) {
                     logger.error(`${context} execution failed`, {
@@ -562,43 +556,14 @@ export class Operations {
                 }
             }
 
-            // Cache miss or invalid - call AI; prefer diff when available (dom mode only)
-            let messages;
-            let usedDiff = false;
-            let diff = null;
-
-            if (!isAria && this.snapshotDiffer.shouldUseDiff()) {
-                diff = this.snapshotDiffer.computeDiff(domTree, this.domSimplifier.xpaths);
-                if (!diff.largeChange) {
-                    messages = makeFindInstructionWithDiffMessage(userPrompt, diff, pageContext);
-                    usedDiff = true;
-                    const diffSize = diff.added.length + diff.removed.length + diff.modified.length;
-                    const estimatedSavedTokens = Math.max(0, pageContext.length - JSON.stringify(diff).length);
-                    logger.debug('Using diff snapshot for AI find', {
-                        diffSize,
-                        estimatedSavedTokens,
-                        summary: diff.summary,
-                    });
-                } else {
-                    logger.debug('Diff too large (>50% nodes changed), falling back to full snapshot');
-                    messages = makeFindInstructionMessageDom(userPrompt, pageContext);
-                }
-            } else if (!isAria) {
-                messages = makeFindInstructionMessageDom(userPrompt, pageContext);
-            } else {
-                messages = makeFindInstructionMessage(userPrompt, pageContext);
-            }
-
-            // Store snapshot after deciding which path to use (dom mode only)
-            if (!isAria && domTree) {
-                this.snapshotDiffer.captureSnapshot(domTree, this.domSimplifier.xpaths);
-            }
+            // Cache miss or invalid - call AI
+            const makeFind = isAria ? makeFindInstructionMessage : makeFindInstructionMessageDom;
+            const messages = makeFind(userPrompt, pageContext);
 
             logger.debug('Sending find instruction to AI', {
                 promptLength: userPrompt.length,
                 contextLength: pageContext.length,
-                isAria,
-                usedDiff,
+                isAria
             });
 
             const response = await generateAIResponse(
@@ -631,8 +596,6 @@ export class Operations {
             const elementCount = Array.isArray(elements) ? elements.length : 0;
             logger.info(`${context} completed`, {
                 elementCount,
-                usedDiff,
-                ...(usedDiff && diff ? { diffSummary: diff.summary } : {}),
                 promptTokens: response.usage.promptTokens,
                 completionTokens: response.usage.completionTokens
             });

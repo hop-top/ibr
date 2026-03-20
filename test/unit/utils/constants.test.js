@@ -33,7 +33,6 @@ function evalConstants(env) {
   return JSON.parse(out);
 }
 
-
 describe('constants', () => {
   describe('PAGE_LOADING_DELAY_MS', () => {
     it('is exported', () => {

@@ -5,7 +5,6 @@ import { Operations } from './Operations.js';
 import { validateEnvironmentVariables, validateBrowserConfig } from './utils/validation.js';
 import logger from './utils/logger.js';
 import { importCookies } from './utils/cookieImport.js';
-import { runDomCommand } from './commands/snap.js';
 
 // Load environment variables
 dotenv.config();
@@ -131,9 +130,7 @@ function getOperationOptions(mode) {
 function printUsage() {
   logger.info('idx - Intent Driven eXtractor');
   logger.info('');
-  logger.info('Usage:');
-  logger.info('  idx [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] "<user_prompt>"');
-  logger.info('  idx snap <url> [flags]        - inspect DOM at URL');
+  logger.info('Usage: idx [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] "<user_prompt>"');
   logger.info('');
   logger.info('Flags:');
   logger.info('  --cookies <browser>              Import all non-expired cookies from browser');
@@ -143,20 +140,10 @@ function printUsage() {
   logger.info('  --mode dom    Force DOM simplifier + XPath');
   logger.info('  --mode auto   Auto-select based on quality (default)');
   logger.info('');
-  logger.info('snap subcommand flags:');
-  logger.info('  --aria                        - show ariaSnapshot (ARIA YAML) instead of DOM JSON');
-  logger.info('  -i                            - interactive elements only');
-  logger.info('  -a                            - annotated screenshot → /tmp/idx-dom-annotated.png');
-  logger.info('  -d <N>                        - depth limit (dom mode only)');
-  logger.info('  -s <selector>                 - scope to CSS selector subtree (dom mode only)');
-  logger.info('');
   logger.info('Examples:');
   logger.info('  idx "url: https://example.com\\ninstructions:\\n  - click submit button"');
   logger.info('  idx --cookies chrome "url: https://github.com\\ninstructions:\\n  - get repo list"');
   logger.info('  idx --mode dom "url: https://canvas-app.example.com\\ninstructions:\\n  - click submit"');
-  logger.info('  idx snap https://example.com -i -d 5');
-  logger.info('  idx snap --aria https://example.com');
-  logger.info('  idx snap --aria -i https://example.com');
   logger.info('');
   logger.info('Configuration:');
   logger.info('  AI_PROVIDER      - AI provider (openai, anthropic, google) [default: openai]');
@@ -184,6 +171,19 @@ async function run() {
     // Strip --cookies flag to get effective argv for prompt detection
     const effectiveArgv = stripCookiesFlag(process.argv);
 
+    // Validate required environment variables based on provider
+    const provider = (process.env.AI_PROVIDER || 'openai').toLowerCase();
+    const apiKeyMap = {
+      'openai': 'OPENAI_API_KEY',
+      'anthropic': 'ANTHROPIC_API_KEY',
+      'google': 'GOOGLE_GENERATIVE_AI_API_KEY'
+    };
+    const requiredApiKey = apiKeyMap[provider];
+
+    if (requiredApiKey) {
+      validateEnvironmentVariables([requiredApiKey]);
+    }
+
     // Parse CLI flags (--mode) from the already-stripped argv (no --cookies)
     // parseCliFlags reads process.argv, so we temporarily shadow it
     const savedArgv = process.argv;
@@ -201,32 +201,6 @@ async function run() {
     if (args[0] === '--help' || args[0] === '-h') {
       printUsage();
       process.exit(0);
-    }
-
-    // Subcommand: idx snap <url> [flags] — no AI provider needed; dispatch early
-    if (process.argv[2] === 'snap') {
-      const domArgs = process.argv.slice(3);
-      try {
-        const browserConfig = getBrowserConfig();
-        await runDomCommand(domArgs, browserConfig);
-      } catch (err) {
-        logger.error('snap subcommand failed', { error: err.message });
-        process.exit(1);
-      }
-      return;
-    }
-
-    // Validate required environment variables based on provider
-    const provider = (process.env.AI_PROVIDER || 'openai').toLowerCase();
-    const apiKeyMap = {
-      'openai': 'OPENAI_API_KEY',
-      'anthropic': 'ANTHROPIC_API_KEY',
-      'google': 'GOOGLE_GENERATIVE_AI_API_KEY'
-    };
-    const requiredApiKey = apiKeyMap[provider];
-
-    if (requiredApiKey) {
-      validateEnvironmentVariables([requiredApiKey]);
     }
 
     // Initialize AI provider

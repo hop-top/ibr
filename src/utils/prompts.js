@@ -203,41 +203,6 @@ Return valid JSON array ONLY. Nothing else.`;
   ];
 }
 
-/**
- * Build a find-instruction message using a DOM diff instead of the full tree.
- * Falls back to makeFindInstructionMessageDom when diff is null/unavailable.
- *
- * @param {string} userPrompt
- * @param {Object|null} diff - result of SnapshotDiffer.computeDiff()
- * @param {string} fullDomTree - stringified full DOM (used as fallback context)
- * @returns {Array<{role:string, content:string}>}
- */
-function makeFindInstructionWithDiffMessage(userPrompt, diff, fullDomTree) {
-  if (!diff) {
-    return makeFindInstructionMessage(userPrompt, fullDomTree);
-  }
-
-  const systemPrompt = `You are helping the user automate the browser by finding elements based on what the user wants to find in the page.
-
-Scope your search to what recently changed on the page. You will be given:
-1. An instruction of elements to find
-2. A JSON diff showing only what changed: added nodes, removed nodes, and modified nodes
-   - added: new nodes (with x index, n tag, a attrs, t text, path)
-   - removed: deleted nodes (with x index, path)
-   - modified: nodes whose text or ARIA attributes changed (with x index, changes)
-
-You MUST return ONLY a valid JSON array of elements that match the instruction if they exist,
-otherwise return an empty array. Do not include any other text, explanation, or markdown formatting.
-Return ONLY the JSON array.`;
-
-  const diffJson = JSON.stringify(diff, null, 0);
-
-  return [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: `User Instructions: ${userPrompt}\nDiff: ${diffJson}` }
-  ];
-}
-
 export {
   makeTaskDescriptionMessage,
   // aria mode
@@ -248,6 +213,4 @@ export {
   makeFindInstructionMessageDom,
   makeActionInstructionMessageDom,
   makeExtractInstructionMessageDom,
-  // diff mode
-  makeFindInstructionWithDiffMessage,
 };
