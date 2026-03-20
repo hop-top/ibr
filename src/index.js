@@ -63,6 +63,30 @@ async function run() {
   logger.info('Starting idx (Intent Driven eXtractor)');
 
   try {
+    // Collect raw args (skip node + script path)
+    const rawArgs = process.argv.slice(2);
+
+    // Check for daemon mode before anything else
+    const daemonMode =
+      process.env.IDX_DAEMON === 'true' || rawArgs.includes('--daemon');
+
+    if (daemonMode) {
+      // Filter --daemon from args; remaining first item is the prompt
+      const filteredArgs = rawArgs.filter(a => a !== '--daemon');
+      const prompt = filteredArgs[0];
+
+      if (!prompt || prompt === '--help' || prompt === '-h') {
+        printUsage();
+        process.exit(prompt ? 0 : 1);
+      }
+
+      const { ensureServer, sendCommand } = await import('./daemon.js');
+      const { port, token } = await ensureServer();
+      await sendCommand(prompt, port, token);
+      // sendCommand calls process.exit internally; belt-and-suspenders:
+      return;
+    }
+
     // Validate required environment variables based on provider
     const provider = (process.env.AI_PROVIDER || 'openai').toLowerCase();
     const apiKeyMap = {
