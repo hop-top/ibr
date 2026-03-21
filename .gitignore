@@ -50,6 +50,10 @@ test/results/
 # Cache
 .idx-cache/
 
+# SEA build artifacts
+dist/
+sea-config.json
+
 # Optional npm cache directory
 .npm
 

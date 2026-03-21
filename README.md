@@ -736,6 +736,16 @@ Writes `<runId>-quality.json` and `<runId>-summary.md` to the output dir.
 Exits 0 when mean score ≥ threshold; exits 1 when below.
 Fixtures without `expectedExtracts` are skipped — CI does not fail.
 
+## Building
+
+Requires Node >=20. Run once to produce `dist/idx` and `dist/idx-server`:
+
+    just build
+
+Binaries are self-contained (no Node runtime needed). Native deps (Playwright,
+better-sqlite3, @boundaryml/baml) must still exist in `node_modules` alongside
+the binary; they cannot be embedded in the SEA blob.
+
 ## License
 
 ISC

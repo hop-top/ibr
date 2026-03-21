@@ -23,3 +23,12 @@ test-coverage:
 
 judge-e2e:
     npm run judge:e2e
+
+build:
+    node scripts/build.mjs && node scripts/sea.mjs
+
+build-bundle:
+    node scripts/build.mjs
+
+build-sea:
+    node scripts/sea.mjs

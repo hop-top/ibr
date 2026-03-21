@@ -1,9 +1,6 @@
 import winston from 'winston';
 import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { mkdirSync, existsSync } from 'fs';
 
 // Define log levels
 const levels = {
@@ -41,6 +38,12 @@ const fileFormat = winston.format.combine(
   winston.format.json()
 );
 
+// Create logs directory before File transports open their streams
+const logsDir = path.join(process.cwd(), 'logs');
+if (!existsSync(logsDir)) {
+  mkdirSync(logsDir, { recursive: true });
+}
+
 // Create logger instance
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -58,35 +61,26 @@ const logger = winston.createLogger({
     }),
     // File transport for errors
     new winston.transports.File({
-      filename: path.join(__dirname, '../../logs/error.log'),
+      filename: path.join(process.cwd(), 'logs/error.log'),
       level: 'error',
       format: fileFormat,
     }),
     // File transport for all logs
     new winston.transports.File({
-      filename: path.join(__dirname, '../../logs/combined.log'),
+      filename: path.join(process.cwd(), 'logs/combined.log'),
       format: fileFormat,
     }),
   ],
   exceptionHandlers: [
     new winston.transports.File({
-      filename: path.join(__dirname, '../../logs/exceptions.log'),
+      filename: path.join(process.cwd(), 'logs/exceptions.log'),
     }),
   ],
   rejectionHandlers: [
     new winston.transports.File({
-      filename: path.join(__dirname, '../../logs/rejections.log'),
+      filename: path.join(process.cwd(), 'logs/rejections.log'),
     }),
   ],
 });
-
-// Create logs directory if it doesn't exist
-import { mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-
-const logsDir = path.join(process.cwd(), 'logs');
-if (!existsSync(logsDir)) {
-  await mkdir(logsDir, { recursive: true });
-}
 
 export default logger;
