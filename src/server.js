@@ -9,7 +9,6 @@ import { createHash, randomUUID } from 'crypto';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
 import { chromium } from 'playwright';
@@ -31,7 +30,6 @@ const STATE_DIR = path.dirname(_stateFile);
 const STATE_FILE = _stateFile;
 const IDLE_CHECK_INTERVAL_MS = 60_000;
 const IDLE_TIMEOUT_MS = 30 * 60_000; // 30 min
-const __filename = fileURLToPath(import.meta.url);
 
 // ---------------------------------------------------------------------------
 // State
@@ -78,7 +76,7 @@ async function writeStateFile(port) {
     port,
     token: serverToken,
     startedAt,
-    serverPath: __filename,
+    serverPath: process.argv[1],
   };
   // Atomic write: temp file then rename
   const tmp = STATE_FILE + '.tmp.' + process.pid;

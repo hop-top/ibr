@@ -3,12 +3,13 @@ import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import logger from '../utils/logger.js';
 import { judgeFixtureExtraction } from '../judge/QualityJudge.js';
 import { generateQualityReport, formatMarkdownReport } from '../judge/ReportGenerator.js';
 import { loadAllFixtures } from '../../test/unit/fixtures/fixture-loader.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RESULTS_DIR = resolve(__dirname, '../../test/results/e2e');
 
 const { values: args } = parseArgs({
