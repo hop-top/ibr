@@ -75,8 +75,8 @@ function makeSeaBinary({ name, entry, nodeBin }) {
 }
 
 const nodeBin = getSeaNodeBin();
-makeSeaBinary({ name: 'idx',        entry: 'dist/idx-sea.cjs',        nodeBin });
-makeSeaBinary({ name: 'idx-server', entry: 'dist/idx-server-sea.cjs', nodeBin });
+makeSeaBinary({ name: 'ibr',        entry: 'dist/ibr-sea.cjs',        nodeBin });
+makeSeaBinary({ name: 'ibr-server', entry: 'dist/ibr-server-sea.cjs', nodeBin });
 
 // Ensure dist/node_modules symlink exists so _seaRequire(process.execPath)
 // can resolve external packages (better-sqlite3 etc.) at runtime.

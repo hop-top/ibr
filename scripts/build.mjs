@@ -14,10 +14,10 @@ const shared = {
   sourcemap: false,
 };
 
-// Regular bundles — used for `node dist/idx.cjs` invocation.
-await build({ ...shared, entryPoints: ['src/index.js'],  outfile: 'dist/idx.cjs' });
-await build({ ...shared, entryPoints: ['src/server.js'], outfile: 'dist/idx-server.cjs' });
-console.log('esbuild done -> dist/idx.cjs, dist/idx-server.cjs');
+// Regular bundles — used for `node dist/ibr.cjs` invocation.
+await build({ ...shared, entryPoints: ['src/index.js'],  outfile: 'dist/ibr.cjs' });
+await build({ ...shared, entryPoints: ['src/server.js'], outfile: 'dist/ibr-server.cjs' });
+console.log('esbuild done -> dist/ibr.cjs, dist/ibr-server.cjs');
 
 // ---------------------------------------------------------------------------
 // SEA bundles — self-contained for Node Single Executable Application.
@@ -41,7 +41,7 @@ console.log('esbuild done -> dist/idx.cjs, dist/idx-server.cjs');
 //      then post-process the output to replace remaining external require()
 //      calls with _seaRequire() — so they use filesystem resolution.
 //
-// Deployment: ship dist/idx alongside dist/node_modules -> ../node_modules
+// Deployment: ship dist/ibr alongside dist/node_modules -> ../node_modules
 // (symlink created by sea.mjs). createRequire(execPath) then finds packages.
 // ---------------------------------------------------------------------------
 
@@ -148,6 +148,6 @@ async function buildSea(entryPoint, outfile) {
   console.log(`[sea-patch] rewrote external requires -> _seaRequire() in ${outfile}`);
 }
 
-await buildSea('src/index.js',  'dist/idx-sea.cjs');
-await buildSea('src/server.js', 'dist/idx-server-sea.cjs');
-console.log('esbuild done -> dist/idx-sea.cjs, dist/idx-server-sea.cjs');
+await buildSea('src/index.js',  'dist/ibr-sea.cjs');
+await buildSea('src/server.js', 'dist/ibr-server-sea.cjs');
+console.log('esbuild done -> dist/ibr-sea.cjs, dist/ibr-server-sea.cjs');
