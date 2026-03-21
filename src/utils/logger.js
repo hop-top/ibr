@@ -53,7 +53,7 @@ const logger = winston.createLogger({
     winston.format.splat(),
     winston.format.json()
   ),
-  defaultMeta: { service: 'idx' },
+  defaultMeta: { service: 'ibr' },
   transports: [
     // Console transport
     new winston.transports.Console({

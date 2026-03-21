@@ -107,7 +107,7 @@ function parseCliFlags() {
       if (!VALID_MODES.has(val)) {
         logger.error(
           `Invalid --mode value: "${val}". Must be one of: aria, dom, auto. ` +
-          `Use "aria" to force accessibility tree, "dom" for XPath-based DOM, or "auto" (default) to let idx choose based on page quality.`
+          `Use "aria" to force accessibility tree, "dom" for XPath-based DOM, or "auto" (default) to let ibr choose based on page quality.`
         );
         process.exit(1);
       }
@@ -146,12 +146,12 @@ export function getOperationOptions(mode, annotate = false) {
  * Print usage information
  */
 function printUsage() {
-  logger.info('idx - Intent Driven eXtractor');
+  logger.info('ibr - Intent Browser Runtime');
   logger.info('');
   logger.info('Usage:');
-  logger.info('  idx [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"');
-  logger.info('  idx [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)');
-  logger.info('  idx snap <url> [flags]          - inspect DOM at URL');
+  logger.info('  ibr [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"');
+  logger.info('  ibr [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)');
+  logger.info('  ibr snap <url> [flags]          - inspect DOM at URL');
   logger.info('');
   logger.info('Flags:');
   logger.info('  --daemon                         Use persistent browser daemon (opt-in)');
@@ -168,37 +168,37 @@ function printUsage() {
   logger.info('snap subcommand flags:');
   logger.info('  --aria                        - show ariaSnapshot (ARIA YAML) instead of DOM JSON');
   logger.info('  -i                            - interactive elements only');
-  logger.info('  -a                            - annotated screenshot → /tmp/idx-dom-annotated.png');
+  logger.info('  -a                            - annotated screenshot → /tmp/ibr-dom-annotated.png');
   logger.info('  -d <N>                        - depth limit (dom mode only)');
   logger.info('  -s <selector>                 - scope to CSS selector subtree (dom mode only)');
   logger.info('');
   logger.info('Examples:');
-  logger.info('  idx "url: https://example.com\\ninstructions:\\n  - click submit button"');
-  logger.info('  idx --cookies chrome "url: https://github.com\\ninstructions:\\n  - get repo list"');
-  logger.info('  idx --mode dom "url: https://canvas-app.example.com\\ninstructions:\\n  - click submit"');
-  logger.info('  idx snap https://example.com -i -d 5');
-  logger.info('  idx snap --aria https://example.com');
-  logger.info('  idx snap --aria -i https://example.com');
+  logger.info('  ibr "url: https://example.com\\ninstructions:\\n  - click submit button"');
+  logger.info('  ibr --cookies chrome "url: https://github.com\\ninstructions:\\n  - get repo list"');
+  logger.info('  ibr --mode dom "url: https://canvas-app.example.com\\ninstructions:\\n  - click submit"');
+  logger.info('  ibr snap https://example.com -i -d 5');
+  logger.info('  ibr snap --aria https://example.com');
+  logger.info('  ibr snap --aria -i https://example.com');
   logger.info('');
   logger.info('Configuration:');
   logger.info('  AI_PROVIDER      - AI provider (openai, anthropic, google) [default: openai]');
   logger.info('  AI_TEMPERATURE   - AI temperature 0-2 [default: 0]');
   logger.info('  BROWSER_HEADLESS - Launch browser headless (true/false) [default: false]');
   logger.info('  BROWSER_SLOWMO   - Slow down browser actions (ms) [default: 100]');
-  logger.info('  IDX_DAEMON       - Enable daemon mode (true/false) [default: false]');
-  logger.info('  IDX_STATE_FILE   - Override daemon state file path [default: ~/.idx/server.json]');
+  logger.info('  IBR_DAEMON       - Enable daemon mode (true/false) [default: false]');
+  logger.info('  IBR_STATE_FILE   - Override daemon state file path [default: ~/.ibr/server.json]');
   logger.info('');
   logger.info('See .env.example for all available configuration options');
 }
 
 async function run() {
-  logger.info('Starting idx (Intent Driven eXtractor)');
+  logger.info('Starting ibr (Intent Browser Runtime)');
 
   try {
     // Daemon mode routing — must come before any stateless setup
     const rawArgs = process.argv.slice(2);
     const daemonMode =
-      process.env.IDX_DAEMON === 'true' || rawArgs.includes('--daemon');
+      process.env.IBR_DAEMON === 'true' || rawArgs.includes('--daemon');
 
     if (daemonMode) {
       const filteredArgs = rawArgs.filter(a => a !== '--daemon');
@@ -235,31 +235,36 @@ async function run() {
     const { args, mode, annotate } = parseCliFlags();
     process.argv = savedArgv;
 
+    // The prompt is the first remaining positional argument
+    const prompt = args[0];
+
     // Validate command line arguments (after stripping --cookies and --mode)
-    if (!args[0]) {
+    if (!prompt) {
       logger.error(
         'No user prompt provided. ' +
-        'Pass a task description as the first argument, e.g.: idx "url: https://example.com\\ninstructions:\\n  - click the login button". ' +
-        'Run "idx --help" for full usage.'
+        'Pass a task description as the first argument, e.g.: ibr "url: https://example.com\\ninstructions:\\n  - click the login button". ' +
+        'Run "ibr --help" for full usage.'
       );
       printUsage();
       process.exit(1);
     }
 
-    if (args[0] === '--help' || args[0] === '-h') {
+    if (prompt === '--help' || prompt === '-h') {
       printUsage();
       process.exit(0);
     }
 
-    // Subcommand: idx snap <url> [flags] — no AI provider needed; dispatch early
+    // Subcommand: ibr snap <url> [flags] — no AI provider needed; dispatch early
     if (process.argv[2] === 'snap') {
       const domArgs = process.argv.slice(3);
       try {
+        // Parse args early to catch missing URL/invalid flags before launching browser
+        const snapOpts = await import('./commands/snap.js').then(m => m.parseDomArgs(domArgs));
         const browserConfig = getBrowserConfig();
         await runDomCommand(domArgs, browserConfig);
       } catch (err) {
-        logger.error('snap subcommand failed. Check the URL is reachable and Playwright is installed. ' +
-          'Run "idx snap --help" for flag reference.', { error: err.message });
+        // Only log the message, not the full stack for usage errors
+        logger.error(err.message);
         process.exit(1);
       }
       return;
@@ -284,8 +289,15 @@ async function run() {
 
     // Get browser and operation configuration
     logger.debug('Loading configuration');
-    const browserConfig = getBrowserConfig();
-    const operationOptions = getOperationOptions(mode, annotate);
+    let browserConfig;
+    let operationOptions;
+    try {
+      browserConfig = getBrowserConfig();
+      operationOptions = getOperationOptions(mode, annotate);
+    } catch (err) {
+      logger.error(err.message);
+      process.exit(1);
+    }
 
     logger.debug('Browser configuration', { ...browserConfig, channel: browserConfig.channel || 'default' });
     logger.debug('Operation options', operationOptions);
@@ -345,15 +357,12 @@ async function run() {
         operationOptions
       );
 
-      // Get user prompt from remaining CLI args (after stripping --cookies and --mode)
-      const userPrompt = args[0];
-
       // Parse task description
       logger.info('Parsing task description');
       let taskDescription;
 
       try {
-        taskDescription = await operations.parseTaskDescription(userPrompt);
+        taskDescription = await operations.parseTaskDescription(prompt);
       } catch (error) {
         logger.error('Failed to parse task description. ' +
           'Ensure the prompt includes a "url:" field and an "instructions:" list. ' +
@@ -384,7 +393,7 @@ async function run() {
       } catch (error) {
         logger.error('Task execution failed. ' +
           'Review the error above for the failing instruction index and observability context. ' +
-          'Run "idx snap <url> -i" to inspect the page state before retrying.', {
+          'Run "ibr snap <url> -i" to inspect the page state before retrying.', {
           error: error.message,
           stage: 'task execution'
         });

@@ -2,12 +2,12 @@
 
 ## Goal
 
-Run idx tasks end-to-end (real browser + real AI provider) against shared fixtures.
+Run ibr tasks end-to-end (real browser + real AI provider) against shared fixtures.
 Produce per-fixture result JSON for T-0016 LLM judge to score.
 
 ## User Value
 
-Validates that the full idx pipeline (parse → navigate → execute) produces
+Validates that the full ibr pipeline (parse → navigate → execute) produces
 structurally correct outputs against a curated fixture suite, using real
 AI without mocking.
 

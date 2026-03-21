@@ -4,13 +4,13 @@
 
 ## Goal
 
-Global wall-clock timeout prevents runaway idx processes from blocking
+Global wall-clock timeout prevents runaway ibr processes from blocking
 scheduled pipelines indefinitely.
 
 ## Stories
 
 - As an automated workflow, I set `EXECUTION_TIMEOUT_MS` to cap total run
-  time; idx exits with a timeout error if exceeded.
+  time; ibr exits with a timeout error if exceeded.
 - As an automated workflow, per-action timeouts (`BROWSER_TIMEOUT`) are
   distinct from the global timeout.
 

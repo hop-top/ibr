@@ -197,7 +197,7 @@ describe('Operations instruction dispatch', () => {
   // ── high-precision error messages (T-0013) ───────────────────────────────────
 
   describe('Unable to resolve element descriptor — high-precision error', () => {
-    it('throws with idx snap suggestion when resolveElement returns null', async () => {
+    it('throws with ibr snap suggestion when resolveElement returns null', async () => {
       // AI returns a role-based descriptor (aria mode path: resolveElement called)
       const actionResp = JSON.stringify({
         elements: [{ role: 'button', name: 'Ghost' }],
@@ -212,7 +212,7 @@ describe('Operations instruction dispatch', () => {
       ).rejects.toThrow('Unable to resolve element descriptor');
     });
 
-    it('includes idx snap -i hint in the error', async () => {
+    it('includes ibr snap -i hint in the error', async () => {
       const actionResp = JSON.stringify({
         elements: [{ role: 'button', name: 'Ghost' }],
         type: 'click',
@@ -222,7 +222,7 @@ describe('Operations instruction dispatch', () => {
 
       await expect(
         ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'ghost btn' }] })
-      ).rejects.toThrow('idx snap <url> -i');
+      ).rejects.toThrow('ibr snap <url> -i');
     });
 
     it('error mentions inspecting @refs', async () => {
@@ -262,7 +262,7 @@ describe('Operations instruction dispatch', () => {
       ).rejects.toThrow('hidden, disabled, or covered by another element');
     });
 
-    it('includes idx snap page state hint in action failure', async () => {
+    it('includes ibr snap page state hint in action failure', async () => {
       const actionResp = JSON.stringify({
         elements: [{ role: 'button', name: 'Submit' }],
         type: 'click',
@@ -280,7 +280,7 @@ describe('Operations instruction dispatch', () => {
 
       await expect(
         ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
-      ).rejects.toThrow('idx snap <url> -i');
+      ).rejects.toThrow('ibr snap <url> -i');
     });
   });
 });

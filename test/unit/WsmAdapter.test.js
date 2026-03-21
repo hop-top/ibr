@@ -49,10 +49,10 @@ import { WsmAdapter, findWsmBin } from '../../src/services/WsmAdapter.js';
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function makeExecFile(responses = []) {
-    let callIdx = 0;
+    let callIbr = 0;
     return vi.fn((_bin, _args, _opts, callback) => {
-        const resp = responses[callIdx] ?? { stdout: '', stderr: '' };
-        callIdx++;
+        const resp = responses[callIbr] ?? { stdout: '', stderr: '' };
+        callIbr++;
         if (resp instanceof Error) {
             callback(resp);
         } else {
@@ -232,7 +232,7 @@ describe('WsmAdapter.recordToolCall', () => {
         expect(args).toContain('add');
         expect(args).toContain('test-ws');
         expect(args).toContain('interaction.tool_call');
-        expect(args).toContain('idx.click');
+        expect(args).toContain('ibr.click');
         expect(args).toContain('success');
     });
 
@@ -268,7 +268,7 @@ describe('WsmAdapter.recordDiagnostics', () => {
         await adapter.recordDiagnostics('404 network error\n403 forbidden', 'https://example.com');
         const [_bin, args] = childProcess.execFile.mock.calls[0];
         expect(args).toContain('interaction.tool_call');
-        expect(args).toContain('idx.diagnostics');
+        expect(args).toContain('ibr.diagnostics');
         expect(args).toContain('error');
     });
 
@@ -304,8 +304,8 @@ describe('WsmAdapter.recordArtifact', () => {
         const adapter = new WsmAdapter('/fake/wsm');
         await adapter.recordArtifact('/tmp/diff.png');
         const [_bin, args] = childProcess.execFile.mock.calls[0];
-        const dataIdx = args.indexOf('--data');
-        const dataJson = JSON.parse(args[dataIdx + 1]);
+        const dataIbr = args.indexOf('--data');
+        const dataJson = JSON.parse(args[dataIbr + 1]);
         expect(dataJson.type).toBe('screenshot');
     });
 
@@ -364,21 +364,21 @@ describe('WsmAdapter.queryDomainFailureCount', () => {
         const events = [
             {
                 data: JSON.stringify({
-                    tool_name: 'idx.navigate',
+                    tool_name: 'ibr.navigate',
                     input: JSON.stringify({ url: 'https://example.com/page' }),
                     status: 'error',
                 }),
             },
             {
                 data: JSON.stringify({
-                    tool_name: 'idx.navigate',
+                    tool_name: 'ibr.navigate',
                     input: JSON.stringify({ url: 'https://example.com/other' }),
                     status: 'success',
                 }),
             },
             {
                 data: JSON.stringify({
-                    tool_name: 'idx.navigate',
+                    tool_name: 'ibr.navigate',
                     input: JSON.stringify({ url: 'https://other.com/page' }),
                     status: 'error',
                 }),

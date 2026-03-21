@@ -132,13 +132,13 @@ export class WsmAdapter {
         const ws = await this.resolveWorkspace();
         if (!ws) return;
 
-        const inputJson = JSON.stringify({ tool: 'idx', action: actionType, ...input });
+        const inputJson = JSON.stringify({ tool: 'ibr', action: actionType, ...input });
         const outputJson = JSON.stringify(output);
         const status = output?.error ? 'error' : 'success';
 
         await this._execNoThrow([
             'event', 'add', ws, 'interaction.tool_call',
-            '--tool-name', `idx.${actionType}`,
+            '--tool-name', `ibr.${actionType}`,
             '--input', inputJson,
             '--output', outputJson,
             '--status', status,
@@ -161,12 +161,12 @@ export class WsmAdapter {
         const ws = await this.resolveWorkspace();
         if (!ws) return;
 
-        const inputJson = JSON.stringify({ tool: 'idx', action: 'diagnostics', url: taskUrl || null });
+        const inputJson = JSON.stringify({ tool: 'ibr', action: 'diagnostics', url: taskUrl || null });
         const outputJson = JSON.stringify({ log: diagnosticText });
 
         await this._execNoThrow([
             'event', 'add', ws, 'interaction.tool_call',
-            '--tool-name', 'idx.diagnostics',
+            '--tool-name', 'ibr.diagnostics',
             '--input', inputJson,
             '--output', outputJson,
             '--status', 'error',

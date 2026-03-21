@@ -23,7 +23,7 @@ const INDEX = path.resolve(__dirname, '../../src/index.js');
 const NODE = process.execPath;
 
 // Helper: run index.js with given argv and env, capture stdout/stderr + exit code
-function runIdx(args = [], env = {}) {
+function runIbr(args = [], env = {}) {
   try {
     const stdout = execFileSync(NODE, [INDEX, ...args], {
       env: { ...process.env, ...env },
@@ -33,6 +33,14 @@ function runIdx(args = [], env = {}) {
     });
     return { stdout, stderr: '', code: 0 };
   } catch (err) {
+    // If it's a SpawnSyncReturns with status 0, it's not actually an error
+    if (err.status === 0) {
+      return {
+        stdout: err.stdout || '',
+        stderr: err.stderr || '',
+        code: 0,
+      };
+    }
     return {
       stdout: err.stdout || '',
       stderr: err.stderr || '',
@@ -42,33 +50,33 @@ function runIdx(args = [], env = {}) {
 }
 
 describe('index.js daemon routing', () => {
-  it('exits 1 with no prompt in daemon mode (IDX_DAEMON=true)', () => {
-    const { code, stderr } = runIdx([], { IDX_DAEMON: 'true' });
+  it('exits 1 with no prompt in daemon mode (IBR_DAEMON=true)', () => {
+    const { code, stderr } = runIbr([], { IBR_DAEMON: 'true' });
     expect(code).toBe(1);
   });
 
   it('exits 0 and shows usage with --daemon --help', () => {
-    const { code, stderr, stdout } = runIdx(['--daemon', '--help']);
+    const { code, stderr, stdout } = runIbr(['--daemon', '--help']);
     expect(code).toBe(0);
     // Usage output goes through logger (stderr in default config)
     const out = stdout + stderr;
-    expect(out).toMatch(/idx/i);
+    expect(out).toMatch(/ibr/i);
     expect(out).toMatch(/daemon/i);
   });
 
   it('exits 0 and shows usage with --daemon -h', () => {
-    const { code } = runIdx(['--daemon', '-h']);
+    const { code } = runIbr(['--daemon', '-h']);
     expect(code).toBe(0);
   });
 
-  it('enters daemon mode with IDX_DAEMON=true and a prompt (fails on ensureServer, not on routing)', () => {
+  it('enters daemon mode with IBR_DAEMON=true and a prompt (fails on ensureServer, not on routing)', () => {
     // Server won't start in test env (no actual daemon), so it will time out or
     // fail connecting — but the important thing is it does NOT run the stateless
     // browser launch path. We verify it tried to connect (not launch Chromium).
-    const { code, stderr } = runIdx([], {
-      IDX_DAEMON: 'true',
+    const { code, stderr } = runIbr([], {
+      IBR_DAEMON: 'true',
       // Point state file to a non-existent path so ensureServer fails fast
-      IDX_STATE_FILE: '/tmp/idx-test-nonexistent-state-' + Date.now() + '.json',
+      IBR_STATE_FILE: '/tmp/ibr-test-nonexistent-state-' + Date.now() + '.json',
     });
     // Should fail (no daemon running), but stderr should mention daemon/restart
     // not a Chromium launch message
@@ -76,9 +84,9 @@ describe('index.js daemon routing', () => {
     expect(stderr).not.toMatch(/Launching browser/i);
   });
 
-  it('enters daemon mode with --daemon flag (same behavior as IDX_DAEMON=true)', () => {
-    const { code, stderr } = runIdx(['--daemon', 'some prompt'], {
-      IDX_STATE_FILE: '/tmp/idx-test-nonexistent-state-' + Date.now() + '.json',
+  it('enters daemon mode with --daemon flag (same behavior as IBR_DAEMON=true)', () => {
+    const { code, stderr } = runIbr(['--daemon', 'some prompt'], {
+      IBR_STATE_FILE: '/tmp/ibr-test-nonexistent-state-' + Date.now() + '.json',
     });
     expect(code).not.toBe(0);
     expect(stderr).not.toMatch(/Launching browser/i);

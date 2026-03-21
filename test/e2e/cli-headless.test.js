@@ -11,7 +11,7 @@ import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-function runIdx(args, env = {}) {
+function runIbr(args, env = {}) {
   return new Promise((resolve) => {
     const proc = spawn('node', ['src/index.js', ...args], {
       env: { ...process.env, ...env },
@@ -46,7 +46,7 @@ describe('cli headless mode (story 014)', () => {
   });
 
   it('completes with BROWSER_HEADLESS=true and exits 0', async () => {
-    const result = await runIdx(
+    const result = await runIbr(
       [`go to ${web.baseUrl}/product-page.html and get the price`],
       {
         OPENAI_API_KEY: 'test-key',
@@ -73,7 +73,7 @@ describe('cli headless mode (story 014)', () => {
       JSON.stringify([{ text: '4.5 stars' }]),
     ]);
 
-    const result = await runIdx(
+    const result = await runIbr(
       [`visit ${web.baseUrl}/product-page.html and get rating`],
       {
         OPENAI_API_KEY: 'test-key',

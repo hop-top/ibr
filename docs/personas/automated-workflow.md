@@ -3,7 +3,7 @@
 ## Description
 
 Scheduled or event-driven process (cron job, CI step, n8n node, Make scenario,
-etc.) running idx unattended. Cares about reliable exit codes, idempotent
+etc.) running ibr unattended. Cares about reliable exit codes, idempotent
 execution, timeout control, and no dependency on a display server.
 
 ## Stories

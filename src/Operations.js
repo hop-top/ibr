@@ -53,7 +53,7 @@ export class Operations {
         this.observabilityBuffer = new ObservabilityBuffer();
         this._requestStartTimes = new WeakMap();
         this.annotationService = new AnnotationService(ctx.page);
-        this.annotateMode = options.annotate || false;
+        this.annotateMode = !!options.annotate;
         this.dialogManager = new DialogManager(ctx.page, {
             autoAccept: DIALOG_AUTO_ACCEPT,
             defaultPromptText: DIALOG_DEFAULT_PROMPT_TEXT,
@@ -101,7 +101,9 @@ export class Operations {
             provider: ctx.aiProvider.provider,
             model: ctx.aiProvider.model,
             temperature: this.temperature,
-            mode: this.mode
+            mode: this.mode,
+            annotate: this.annotateMode,
+            options
         });
     }
 
@@ -140,11 +142,13 @@ export class Operations {
 
     async #executeInstructions(instructions) {
         for (const instruction of instructions) {
+            this.executionIndex++;
             await this.#executeInstruction(instruction);
         }
     }
 
     async executeTask(taskDescription) {
+        this.executionIndex = 0;
         logger.info('Executing task', {
             url: taskDescription.url,
             instructionCount: taskDescription.instructions.length
@@ -311,6 +315,7 @@ export class Operations {
 
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+            const { isAria } = await this.#getPageContext();
             const elements = await this.#findElements(instruction.prompt);
 
             if (elements.length > 0) {
@@ -327,7 +332,18 @@ export class Operations {
             }
 
             logger.info(`${context} completed`);
-            this.executionIndex++;
+
+            // --annotate mode: capture screenshot after condition evaluation
+            if (this.annotateMode && elements?.length > 0) {
+                const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
+                await this.annotationService.captureAnnotatedScreenshot(
+                    elements || [],
+                    shotPath,
+                    isAria ? null : this.domSimplifier.xpaths
+                ).catch(() => {}); // non-fatal
+                // WSM: record artifact
+                await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
+            }
         } catch (error) {
             const alreadyAnnotated = error.message.includes('--- observability ---');
             const obs = alreadyAnnotated ? '' : this.observabilityBuffer.flush();
@@ -475,7 +491,13 @@ export class Operations {
                 completionTokens: response.usage.completionTokens
             });
 
-            this.executionIndex++;
+            // --annotate mode: capture screenshot of page during extraction
+            if (this.annotateMode) {
+                const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
+                await this.ctx.page.screenshot({ path: shotPath }).catch(() => {}); // non-fatal
+                // WSM: record artifact
+                await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
+            }
         } catch (error) {
             const alreadyAnnotated = error.message.includes('--- observability ---');
             const obs = alreadyAnnotated ? '' : this.observabilityBuffer.flush();
@@ -584,7 +606,7 @@ export class Operations {
                 let locatorDesc;
                 if (!isAria && refStr.startsWith('c') && this.pseudoButtonRefs[refStr]) {
                     locator = this.#resolvePseudoButtonRef(refStr);
-                    locatorDesc = `data-idx-ref=${refStr}`;
+                    locatorDesc = `data-ibr-ref=${refStr}`;
                 } else if (!isAria && refStr) {
                     const xpath = this.domSimplifier.xpaths[elementRef];
                     if (xpath) {
@@ -603,7 +625,7 @@ export class Operations {
                     throw new Error(
                         `Unable to resolve element descriptor: ${JSON.stringify(descriptor)}. ` +
                         `The AI returned a reference that could not be matched to a page element. ` +
-                        `Run "idx snap <url> -i" to inspect available interactive elements and their @refs, ` +
+                        `Run "ibr snap <url> -i" to inspect available interactive elements and their @refs, ` +
                         `then retry with a more specific prompt.`
                     );
                 }
@@ -651,6 +673,18 @@ export class Operations {
                     // Reset snapshot after action so next #findElements gets fresh diff baseline
                     this.snapshotDiffer.reset();
                     logger.info(`${context} executed successfully`, { actionType });
+
+                    // --annotate mode: capture screenshot after action
+                    if (this.annotateMode) {
+                        const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
+                        await this.annotationService.captureAnnotatedScreenshot(
+                            action.elements || [],
+                            shotPath,
+                            isAria ? null : this.domSimplifier.xpaths
+                        ).catch(() => {}); // non-fatal
+                        // WSM: record artifact
+                        await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
+                    }
                 } catch (actionError) {
                     logger.error(`${context} execution failed`, {
                         locator: locatorDesc,
@@ -674,23 +708,21 @@ export class Operations {
                     throw new Error(
                         `Failed to execute "${action.type}" action on element ${locatorDesc}: ${actionError.message}. ` +
                         `The element was found but the action failed — it may be hidden, disabled, or covered by another element. ` +
-                        `Run "idx snap <url> -i" to inspect the page state.`
+                        `Run "ibr snap <url> -i" to inspect the page state.`
                     );
                 } finally {
                     // Clean up injected refs after action
                     await this.ctx.page.evaluate(() =>
-                        document.querySelectorAll('[data-idx-ref]').forEach(el => el.removeAttribute('data-idx-ref'))
+                        document.querySelectorAll('[data-ibr-ref]').forEach(el => el.removeAttribute('data-ibr-ref'))
                     ).catch(() => {});
                 }
             } else {
                 logger.info(`${context}: No matching elements found, skipping action`);
             }
-
-            this.executionIndex++;
         } catch (error) {
             // ANNOTATED_SCREENSHOTS_ON_FAILURE: capture screenshot on action failure
             if (process.env.ANNOTATED_SCREENSHOTS_ON_FAILURE === 'true' && action?.elements?.length) {
-                const shotPath = `/tmp/idx-failure-step-${this.executionIndex}-${Date.now()}.png`;
+                const shotPath = `/tmp/ibr-failure-step-${this.executionIndex}-${Date.now()}.png`;
                 await this.annotationService.captureAnnotatedScreenshot(
                     action.elements,
                     shotPath,
@@ -735,6 +767,7 @@ export class Operations {
 
         logger.info(`falling back to dom mode: ${reason}`);
         const domTree = await this.domSimplifier.simplify();
+        await this.domSimplifier.injectAttributes(this.ctx.page, this.domSimplifier.xpaths);
         const pseudoButtons = await this.domSimplifier.extractPseudoButtons(this.ctx.page);
         await this.#injectPseudoButtonRefs(pseudoButtons);
         const rawContext = this.domSimplifier.stringifySimplifiedDom(domTree);
@@ -743,7 +776,7 @@ export class Operations {
     }
 
     /**
-     * Injects data-idx-ref attributes onto pseudo-button elements.
+     * Injects data-ibr-ref attributes onto pseudo-button elements.
      * @param {Array} pseudoButtons - Result from extractPseudoButtons
      */
     async #injectPseudoButtonRefs(pseudoButtons) {
@@ -755,7 +788,7 @@ export class Operations {
                     const ref = `c${i + 1}`;
                     try {
                         const el = document.querySelector(btn.selector);
-                        if (el) el.setAttribute('data-idx-ref', ref);
+                        if (el) el.setAttribute('data-ibr-ref', ref);
                     } catch {
                         // skip individual failures
                     }
@@ -777,7 +810,7 @@ export class Operations {
      * @returns {import('playwright').Locator}
      */
     #resolvePseudoButtonRef(ref) {
-        return this.ctx.page.locator(`[data-idx-ref="${ref}"]`);
+        return this.ctx.page.locator(`[data-ibr-ref="${ref}"]`);
     }
 
     async #waitJitteredDelay(delay) {
@@ -913,7 +946,7 @@ export class Operations {
 
             // --annotate mode: capture screenshot of found elements
             if (this.annotateMode && elementCount > 0) {
-                const shotPath = `/tmp/idx-annotate-step-${this.executionIndex}-${Date.now()}.png`;
+                const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
                 await this.annotationService.captureAnnotatedScreenshot(
                     elements,
                     shotPath,

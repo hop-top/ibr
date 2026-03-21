@@ -1,7 +1,7 @@
 /**
  * E2E tests — high-precision actionable error messages (T-0013)
  *
- * Validates that when idx encounters error conditions, the stderr / stdout
+ * Validates that when ibr encounters error conditions, the stderr / stdout
  * output contains the new AI-actionable message strings (not vague legacy text).
  */
 
@@ -14,7 +14,7 @@ import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-function runIdx(args, env = {}) {
+function runIbr(args, env = {}) {
   return new Promise((resolve) => {
     const proc = spawn('node', ['src/index.js', ...args], {
       env: { ...process.env, ...env },
@@ -53,33 +53,33 @@ describe('cli-errors — high-precision actionable messages (T-0013)', () => {
   // ── No prompt — actionable message ──────────────────────────────────────────
 
   it('no-prompt error includes task description example', async () => {
-    const result = await runIdx([], {
+    const result = await runIbr([], {
       ...BASE_ENV,
       OPENAI_API_KEY: 'test-key',
     });
     expect(result.code).not.toBe(0);
     const combined = result.stderr + result.stdout;
     // New high-precision message includes example prompt format
-    expect(combined).toMatch(/idx.*--help|instructions:|url:/i);
+    expect(combined).toMatch(/ibr.*--help|instructions:|url:/i);
   }, 15000);
 
   // ── snap: no URL — actionable message ──────────────────────────────────────
 
   it('snap with no URL emits high-precision error with Usage + Example', async () => {
-    const result = await runIdx(['snap'], {
+    const result = await runIbr(['snap'], {
       ...BASE_ENV,
       OPENAI_API_KEY: 'test-key',
     });
     expect(result.code).not.toBe(0);
     const combined = result.stderr + result.stdout;
     expect(combined).toMatch(/snap subcommand requires a URL argument/i);
-    expect(combined).toMatch(/Usage: idx snap/i);
+    expect(combined).toMatch(/Usage: ibr snap/i);
   }, 15000);
 
   // ── Invalid AI_TEMPERATURE — actionable message ──────────────────────────────
 
   it('invalid AI_TEMPERATURE emits high-precision error with got: value', async () => {
-    const result = await runIdx(
+    const result = await runIbr(
       [`url: ${web.baseUrl}/product-page.html\ninstructions:\n  - click submit`],
       {
         ...BASE_ENV,
@@ -97,7 +97,7 @@ describe('cli-errors — high-precision actionable messages (T-0013)', () => {
 
   it('malformed AI JSON error includes run with lower AI_TEMPERATURE hint', async () => {
     const ai = await startFakeAIServerE2E(['THIS IS NOT JSON {{{']);
-    const result = await runIdx(
+    const result = await runIbr(
       [`go to ${web.baseUrl}/product-page.html and extract the title`],
       {
         ...BASE_ENV,
@@ -116,7 +116,7 @@ describe('cli-errors — high-precision actionable messages (T-0013)', () => {
   // ── --cookies missing value — actionable message ─────────────────────────────
 
   it('--cookies with no value emits high-precision error with Usage + Example', async () => {
-    const result = await runIdx(
+    const result = await runIbr(
       ['--cookies', `url: ${web.baseUrl}/product-page.html\ninstructions:\n  - click ok`],
       {
         ...BASE_ENV,
@@ -127,7 +127,7 @@ describe('cli-errors — high-precision actionable messages (T-0013)', () => {
     // The error may or may not fire depending on flag parsing order; at minimum check non-zero
     // if --cookies consumes the next arg as the browser value (no throw), test still passes
     // We assert the message when --cookies has '--' as next:
-    const result2 = await runIdx(
+    const result2 = await runIbr(
       ['--cookies'],
       {
         ...BASE_ENV,

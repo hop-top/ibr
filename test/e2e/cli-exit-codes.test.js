@@ -12,7 +12,7 @@ import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-function runIdx(args, env = {}) {
+function runIbr(args, env = {}) {
   return new Promise((resolve) => {
     const proc = spawn('node', ['src/index.js', ...args], {
       env: { ...process.env, ...env },
@@ -48,7 +48,7 @@ describe('cli exit codes (story 017)', () => {
   });
 
   it('exits non-zero when no prompt argument supplied', async () => {
-    const result = await runIdx([], {
+    const result = await runIbr([], {
       OPENAI_API_KEY: 'test-key',
       OPENAI_BASE_URL: 'http://127.0.0.1:1', // not used — should fail before AI call
       BROWSER_HEADLESS: 'true',
@@ -64,7 +64,7 @@ describe('cli exit codes (story 017)', () => {
     delete env.ANTHROPIC_API_KEY;
     delete env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    const result = await runIdx(['go to example.com and extract title'], {
+    const result = await runIbr(['go to example.com and extract title'], {
       ...env,
       OPENAI_API_KEY: '',
       BROWSER_HEADLESS: 'true',
@@ -78,7 +78,7 @@ describe('cli exit codes (story 017)', () => {
   }, 15000);
 
   it('exits 0 on valid run with fake AI + local fixture', async () => {
-    const result = await runIdx(
+    const result = await runIbr(
       [`navigate to ${web.baseUrl}/product-page.html and extract the title`],
       {
         OPENAI_API_KEY: 'test-key',
@@ -96,17 +96,17 @@ describe('cli exit codes (story 017)', () => {
     expect(result.code).toBe(0);
   }, 30000);
 
-  // ── idx snap dispatches before API key validation (regression fix) ──────────
-  // Fix: `idx snap` must exit 0 and produce DOM output even when no API key is
+  // ── ibr snap dispatches before API key validation (regression fix) ──────────
+  // Fix: `ibr snap` must exit 0 and produce DOM output even when no API key is
   // set, because it is a pure browser-inspection command that does not use AI.
 
-  it('idx snap exits 0 without any API key set', async () => {
+  it('ibr snap exits 0 without any API key set', async () => {
     const env = { ...process.env };
     delete env.OPENAI_API_KEY;
     delete env.ANTHROPIC_API_KEY;
     delete env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    const result = await runIdx(
+    const result = await runIbr(
       ['snap', `${web.baseUrl}/product-page.html`],
       {
         ...env,
@@ -122,13 +122,13 @@ describe('cli exit codes (story 017)', () => {
     expect(result.code).toBe(0);
   }, 30000);
 
-  it('idx snap outputs DOM Tree header without API key', async () => {
+  it('ibr snap outputs DOM Tree header without API key', async () => {
     const env = { ...process.env };
     delete env.OPENAI_API_KEY;
     delete env.ANTHROPIC_API_KEY;
     delete env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    const result = await runIdx(
+    const result = await runIbr(
       ['snap', `${web.baseUrl}/product-page.html`],
       {
         ...env,

@@ -35,7 +35,7 @@ function makePage({ evaluateResult = undefined, screenshotError = null } = {}) {
     };
 }
 
-const SAFE_PATH = '/tmp/idx-test-annotation.png';
+const SAFE_PATH = '/tmp/ibr-test-annotation.png';
 const UNSAFE_PATH = '/etc/passwd';
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ describe('AnnotationService', () => {
         });
 
         it('accepts paths in cwd', async () => {
-            const cwdPath = path.join(process.cwd(), 'idx-test.png');
+            const cwdPath = path.join(process.cwd(), 'ibr-test.png');
             const result = await service.captureAnnotatedScreenshot(
                 [{ x: 1 }],
                 cwdPath,
@@ -146,7 +146,7 @@ describe('AnnotationService', () => {
             await service.captureAnnotatedScreenshot(
                 [{ x: 'c3' }],
                 SAFE_PATH,
-                { c3: '//div[@data-idx-ref="c3"]' }
+                { c3: '//div[@data-ibr-ref="c3"]' }
             );
             const evaluateBoxArg = page.evaluate.mock.calls[0][1];
             expect(evaluateBoxArg.boxes[0].ref).toBe('@c3');

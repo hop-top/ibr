@@ -19,5 +19,5 @@ field names.
 
 - Scalar extraction returns a JSON object with requested keys.
 - List extraction (`extract all …`) returns a JSON array.
-- Missing fields return `null`; idx does not throw.
+- Missing fields return `null`; ibr does not throw.
 - Output is valid JSON on stdout.

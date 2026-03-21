@@ -64,7 +64,7 @@ export class DomSimplifier {
     });
 
     const filteredAttributes = Object.keys(element.attributes).reduce((acc, key) => {
-      if (["id", "href", "src", "alt", "title", "aria-label", "role", "name", "content", "data-idx-ref"].includes(key)) {
+      if (["id", "href", "src", "alt", "title", "aria-label", "role", "name", "content", "data-ibr-ref"].includes(key)) {
         acc[key] = element.attributes[key];
       }
       return acc;
@@ -79,6 +79,13 @@ export class DomSimplifier {
 
     const xPath = generateElementXPath(parentXPath, element);
     const xPathIdx = this.xpaths.push(xPath) - 1;
+
+    // Inject data-ibr-ref into standard interactive elements during tree walk
+    // (Note: this modifies the input HTMLElement if it's from node-html-parser,
+    // but simplified DOM works on its own objects).
+    if (STANDARD_INTERACTIVE_TAGS.includes(element.tagName)) {
+      element.setAttribute('data-ibr-ref', String(xPathIdx));
+    }
 
     // Respect maxDepth: stop recursing children beyond limit
     const atLimit = this.maxDepth !== null && depth >= this.maxDepth;
@@ -109,6 +116,32 @@ export class DomSimplifier {
       .replaceAll(/,+"t":""/g, "")
       .replaceAll(/,+"c":\[\]/g, "")
       .replaceAll(/,+"a":\{\}/g, "");
+  }
+
+  /**
+   * Injects data-ibr-ref attributes onto standard interactive elements.
+   * This allows AnnotationService to resolve them even if they are not pseudo-buttons.
+   * @param {Page} page - Playwright page instance
+   * @param {string[]} xpaths - The list of xpaths generated during simplify()
+   */
+  async injectAttributes(page, xpaths) {
+    try {
+      await page.evaluate(({ xpaths, standardTags }) => {
+        xpaths.forEach((xpath, i) => {
+          try {
+            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            const el = result.singleNodeValue;
+            if (el && el.nodeType === 1 && standardTags.includes(el.tagName)) {
+              el.setAttribute('data-ibr-ref', String(i));
+            }
+          } catch {
+            // skip invalid xpaths or missing elements
+          }
+        });
+      }, { xpaths, standardTags: STANDARD_INTERACTIVE_TAGS });
+    } catch (err) {
+      // non-fatal
+    }
   }
 
   /**

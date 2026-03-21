@@ -10,7 +10,7 @@ without code changes.
 ## Stories
 
 - As a CLI user, I set `AI_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` to
-  switch idx to Claude without modifying any source files.
+  switch ibr to Claude without modifying any source files.
 - As a CLI user, I override the default model with `AI_MODEL` when I need
   a specific version.
 - As a CLI user, missing or invalid provider config produces a clear startup

@@ -1,4 +1,4 @@
-// BAML Schema for idx response parsing
+// BAML Schema for ibr response parsing
 // Handles structured output from AI models, with flexible parsing for markdown/JSON variations
 //
 // NOTE: This schema defines expected output structures only.

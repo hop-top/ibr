@@ -15,7 +15,7 @@ import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-function runIdx(args, env = {}, stdinData = null) {
+function runIbr(args, env = {}, stdinData = null) {
   return new Promise((resolve) => {
     const proc = spawn('node', ['src/index.js', ...args], {
       env: { ...process.env, ...env },
@@ -72,7 +72,7 @@ describe('cli non-interactive mode (story 016)', () => {
     async () => {
       const prompt =
         `go to ${web.baseUrl}/product-page.html and extract the title\n`;
-      const result = await runIdx(
+      const result = await runIbr(
         [],
         {
           ...BASE_ENV,
@@ -91,7 +91,7 @@ describe('cli non-interactive mode (story 016)', () => {
     delete env.ANTHROPIC_API_KEY;
     delete env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    const result = await runIdx(
+    const result = await runIbr(
       ['go to example.com and extract title'],
       {
         ...env,
@@ -109,7 +109,7 @@ describe('cli non-interactive mode (story 016)', () => {
     const env = { ...process.env };
     delete env.OPENAI_API_KEY;
 
-    const result = await runIdx(
+    const result = await runIbr(
       ['some prompt'],
       {
         ...env,
@@ -129,7 +129,7 @@ describe('cli non-interactive mode (story 016)', () => {
       }),
       JSON.stringify([{ text: '4.5 stars' }]),
     ]);
-    const result = await runIdx(
+    const result = await runIbr(
       [`visit ${web.baseUrl}/product-page.html and get rating`],
       {
         ...BASE_ENV,

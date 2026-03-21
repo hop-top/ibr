@@ -17,7 +17,7 @@ import { describe, it, expect } from 'vitest';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-function runIdx(args, env = {}) {
+function runIbr(args, env = {}) {
   return new Promise((resolve) => {
     const proc = spawn('node', ['src/index.js', ...args], {
       env: { ...process.env, ...env },
@@ -38,7 +38,7 @@ describe('cli timeout (story 018)', () => {
     async () => {
       // slow-page.html delivers its dynamic content after 3 s;
       // 1000 ms global timeout should fire first.
-      const result = await runIdx(
+      const result = await runIbr(
         ['go to http://127.0.0.1:PORT/slow-page.html and extract dynamic content'],
         {
           OPENAI_API_KEY: 'test-key',
@@ -62,7 +62,7 @@ describe('cli timeout (story 018)', () => {
     'stderr contains JSON error with code: "TIMEOUT" — ' +
     'EXECUTION_TIMEOUT_MS not yet implemented in src/index.js',
     async () => {
-      const result = await runIdx(
+      const result = await runIbr(
         ['go to http://127.0.0.1:PORT/slow-page.html and extract dynamic content'],
         {
           OPENAI_API_KEY: 'test-key',
@@ -87,7 +87,7 @@ describe('cli timeout (story 018)', () => {
     async () => {
       // With a generous EXECUTION_TIMEOUT_MS and a tight BROWSER_TIMEOUT,
       // the run may fail with an element-not-found error but NOT a TIMEOUT code.
-      const result = await runIdx(
+      const result = await runIbr(
         ['go to http://127.0.0.1:PORT/slow-page.html and extract dynamic content'],
         {
           OPENAI_API_KEY: 'test-key',

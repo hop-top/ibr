@@ -24,7 +24,7 @@ function getCacheDir() {
 
   // XDG Base Directory
   if (process.env.XDG_CACHE_HOME) {
-    return path.join(process.env.XDG_CACHE_HOME, 'idx');
+    return path.join(process.env.XDG_CACHE_HOME, 'ibr');
   }
 
   // OS defaults
@@ -33,13 +33,13 @@ function getCacheDir() {
 
   if (platform === 'darwin') {
     // macOS: ~/Library/Caches
-    return path.join(home, 'Library', 'Caches', 'idx');
+    return path.join(home, 'Library', 'Caches', 'ibr');
   } else if (platform === 'win32') {
     // Windows: %LOCALAPPDATA%
-    return path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'idx', 'cache');
+    return path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'ibr', 'cache');
   } else {
     // Linux/Unix: ~/.cache
-    return path.join(home, '.cache', 'idx');
+    return path.join(home, '.cache', 'ibr');
   }
 }
 

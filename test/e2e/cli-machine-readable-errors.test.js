@@ -16,7 +16,7 @@ import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-function runIdx(args, env = {}) {
+function runIbr(args, env = {}) {
   return new Promise((resolve) => {
     const proc = spawn('node', ['src/index.js', ...args], {
       env: { ...process.env, ...env },
@@ -55,7 +55,7 @@ describe('cli machine-readable errors (story 015)', () => {
   it('stderr contains error info when AI returns malformed JSON for task parse', async () => {
     // First AI response (parseTaskDescription) is garbage JSON
     const ai = await startFakeAIServerE2E(['THIS IS NOT JSON {{{']);
-    const result = await runIdx(
+    const result = await runIbr(
       [`go to ${web.baseUrl}/product-page.html and extract the title`],
       {
         ...BASE_ENV,
@@ -73,7 +73,7 @@ describe('cli machine-readable errors (story 015)', () => {
 
   it('stdout does not contain raw error stack traces', async () => {
     const ai = await startFakeAIServerE2E(['TOTALLY INVALID']);
-    const result = await runIdx(
+    const result = await runIbr(
       [`go to ${web.baseUrl}/product-page.html and extract price`],
       {
         ...BASE_ENV,

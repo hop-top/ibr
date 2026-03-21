@@ -1,6 +1,6 @@
 /**
  * Daemon client helpers.
- * Used by index.js when IDX_DAEMON=true or --daemon flag is set.
+ * Used by index.js when IBR_DAEMON=true or --daemon flag is set.
  * No new dependencies — uses built-in http, child_process, fs, path, crypto.
  */
 
@@ -12,8 +12,8 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE =
-  process.env.IDX_STATE_FILE ||
-  path.join(os.homedir(), '.idx', 'server.json');
+  process.env.IBR_STATE_FILE ||
+  path.join(os.homedir(), '.ibr', 'server.json');
 const POLL_INTERVAL_MS = 100;
 const POLL_TIMEOUT_MS = 8_000;
 const HEALTH_TIMEOUT_MS = 2_000;
@@ -24,7 +24,7 @@ const COMMAND_TIMEOUT_MS = 30_000;
 // ---------------------------------------------------------------------------
 
 /**
- * Read and parse ~/.idx/server.json.
+ * Read and parse ~/.ibr/server.json.
  * Returns null on any error (missing, corrupt, etc.).
  * @returns {Promise<{pid:number, port:number, token:string}|null>}
  */
@@ -108,7 +108,7 @@ export async function startServer() {
   }
 
   throw new Error(
-    `idx daemon did not start within ${POLL_TIMEOUT_MS / 1000}s. ` +
+    `ibr daemon did not start within ${POLL_TIMEOUT_MS / 1000}s. ` +
     `The daemon process may have crashed during startup. ` +
     `Check for errors in the process log, verify env vars (AI_PROVIDER, API key) are set, ` +
     `and confirm Playwright browsers are installed (npx playwright install chromium). ` +
@@ -175,19 +175,19 @@ export async function sendCommand(prompt, port, token, retries = 0) {
 
     if (isAbort) {
       process.stderr.write(
-        `idx: command timed out after ${COMMAND_TIMEOUT_MS / 1000}s\n`
+        `ibr: command timed out after ${COMMAND_TIMEOUT_MS / 1000}s\n`
       );
       process.exit(1);
     }
 
     if (isConnRefused && retries === 0) {
-      process.stderr.write('idx: daemon unreachable; restarting…\n');
+      process.stderr.write('ibr: daemon unreachable; restarting…\n');
       const { port: newPort, token: newToken } = await ensureServer();
       return sendCommand(prompt, newPort, newToken, 1);
     }
 
     // Unexpected error
-    process.stderr.write(`idx: fetch error: ${err.message}\n`);
+    process.stderr.write(`ibr: fetch error: ${err.message}\n`);
     process.exit(1);
   } finally {
     clearTimeout(timer);
@@ -200,9 +200,9 @@ export async function sendCommand(prompt, port, token, retries = 0) {
     try {
       const obj = JSON.parse(text);
       hint = obj.hint ? `\nHint: ${obj.hint}` : '';
-      process.stderr.write(`idx: server error ${res.status}: ${obj.error}${hint}\n`);
+      process.stderr.write(`ibr: server error ${res.status}: ${obj.error}${hint}\n`);
     } catch {
-      process.stderr.write(`idx: server error ${res.status}: ${text}\n`);
+      process.stderr.write(`ibr: server error ${res.status}: ${text}\n`);
     }
     process.exit(1);
   }

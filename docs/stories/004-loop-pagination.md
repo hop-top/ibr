@@ -21,4 +21,4 @@ or lazy-loaded content without manual iteration.
   finds no element (loop-exit signal).
 - Hard iteration cap (100) prevents runaway loops.
 - Extracted data accumulates across iterations.
-- Cap reached: idx logs warning and continues to result output.
+- Cap reached: ibr logs warning and continues to result output.

@@ -1,4 +1,4 @@
-# idx justfile
+# ibr justfile
 
 test:
     npm test

@@ -4,13 +4,13 @@
 
 ## Goal
 
-Import real browser cookies into idx so it can access pages that require a
+Import real browser cookies into ibr so it can access pages that require a
 logged-in session, without re-entering credentials.
 
 ## Stories
 
 - As a CLI user, I pass `--cookies <browser>` to inherit all non-expired cookies
-  from that browser's default profile so idx can reach auth-gated pages.
+  from that browser's default profile so ibr can reach auth-gated pages.
 - As a CLI user, I pass `--cookies <browser>:<d1>,<d2>` to limit import to
   specific domains, avoiding unrelated cookie noise.
 - As a CLI user, macOS Keychain prompts me once per browser; after I click
@@ -23,7 +23,7 @@ logged-in session, without re-entering credentials.
 
 - `--cookies chrome` imports all non-expired cookies from Chrome Default profile.
 - `--cookies arc:github.com,linear.app` imports only cookies for those domains.
-- DB locked (browser open): idx copies DB to `/tmp` automatically; no error.
+- DB locked (browser open): ibr copies DB to `/tmp` automatically; no error.
 - Browser not found: `CookieImportError` with `code: 'not_installed'`.
 - Keychain denied: `CookieImportError` with `code: 'keychain_denied'`, hint to
   click "Allow".

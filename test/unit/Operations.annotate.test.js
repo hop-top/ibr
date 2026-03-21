@@ -139,7 +139,7 @@ describe('Operations annotate-mode (T-0009)', () => {
 
             expect(mockCaptureAnnotated).toHaveBeenCalled();
             const [, shotPath] = mockCaptureAnnotated.mock.calls[0];
-            expect(shotPath).toMatch(/^\/tmp\/idx-annotate-step-/);
+            expect(shotPath).toMatch(/^\/tmp\/ibr-annotate-step-/);
             expect(shotPath).toMatch(/\.png$/);
         });
 
@@ -200,7 +200,7 @@ describe('Operations annotate-mode (T-0009)', () => {
 
             expect(mockCaptureAnnotated).toHaveBeenCalled();
             const [, shotPath] = mockCaptureAnnotated.mock.calls[0];
-            expect(shotPath).toMatch(/^\/tmp\/idx-failure-step-/);
+            expect(shotPath).toMatch(/^\/tmp\/ibr-failure-step-/);
             expect(shotPath).toMatch(/\.png$/);
         });
 

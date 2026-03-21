@@ -1,4 +1,4 @@
-# idx - Intent Driven eXtractor
+# ibr - Intent Browser Runtime
 
 An AI-powered instruction parser that converts human-readable instructions into automated web interactions. Powered by Playwright for browser automation and Vercel AI SDK for multi-provider AI support.
 
@@ -12,7 +12,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Loop Support**: Repeat actions until conditions are met
 - **Authenticated Sessions**: Inherit browser cookies via `--cookies` flag
 - **Snapshot Diffing**: 85% token reduction in loops via incremental DOM diffs
-- **DOM Inspector**: `idx snap` subcommand for on-demand page inspection
+- **DOM Inspector**: `ibr snap` subcommand for on-demand page inspection
 - **Daemon Mode**: Optional persistent browser server; warm invocations ~540ms vs ~3800ms cold
 - **Visual Debugging**: `--annotate` / `-a` flag captures annotated PNGs with labeled bounding boxes
 - **Failure Screenshots**: `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` auto-captures on action failure
@@ -25,7 +25,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 ### 1. Clone and Install
 
 ```bash
-npm install @hop/idx
+npm install @hop/ibr
 npm run browser:install
 ```
 
@@ -72,7 +72,7 @@ AI_MODEL=gpt-4-mini            # Override default model (optional)
 ### Basic Example
 
 ```bash
-idx "url: https://example.com
+ibr "url: https://example.com
 instructions:
   - click the 'submit' button
   - extract page title"
@@ -80,7 +80,7 @@ instructions:
 
 ### Authenticated Sessions (`--cookies`)
 
-Import real browser cookies so idx can reach pages that require a logged-in
+Import real browser cookies so ibr can reach pages that require a logged-in
 session. **macOS only.** Reads directly from the browser's on-disk SQLite
 cookie database; no proxy, no extension, no manual export needed.
 
@@ -90,7 +90,7 @@ and macOS Keychain access for the target browser.
 #### Syntax
 
 ```
-idx --cookies <browser>[:<domain1>,<domain2>,...] "<prompt>"
+ibr --cookies <browser>[:<domain1>,<domain2>,...] "<prompt>"
 ```
 
 | Part | Description |
@@ -113,7 +113,7 @@ idx --cookies <browser>[:<domain1>,<domain2>,...] "<prompt>"
 **All cookies from Chrome — access any auth-gated page:**
 
 ```bash
-idx --cookies chrome "url: https://github.com
+ibr --cookies chrome "url: https://github.com
 instructions:
   - extract repository list"
 ```
@@ -121,7 +121,7 @@ instructions:
 **Comet cookies for a single domain:**
 
 ```bash
-idx --cookies comet:reddit.com "url: https://www.reddit.com/r/programming
+ibr --cookies comet:reddit.com "url: https://www.reddit.com/r/programming
 instructions:
   - extract top 5 post titles"
 ```
@@ -129,7 +129,7 @@ instructions:
 **Arc cookies scoped to two domains:**
 
 ```bash
-idx --cookies arc:github.com,linear.app "url: https://linear.app
+ibr --cookies arc:github.com,linear.app "url: https://linear.app
 instructions:
   - list my open issues"
 ```
@@ -137,7 +137,7 @@ instructions:
 **Brave with no domain filter (all non-expired cookies):**
 
 ```bash
-idx --cookies brave "url: https://app.example.com
+ibr --cookies brave "url: https://app.example.com
 instructions:
   - click 'Dashboard'"
 ```
@@ -145,7 +145,7 @@ instructions:
 **Edge for a specific domain:**
 
 ```bash
-idx --cookies edge:outlook.com "url: https://outlook.com
+ibr --cookies edge:outlook.com "url: https://outlook.com
 instructions:
   - extract unread message subjects"
 ```
@@ -188,7 +188,7 @@ instructions:
 | `db_locked` | DB still locked after copy attempt | Close the browser and retry |
 | `db_corrupt` | SQLite DB is corrupt | Reinstall or reset the browser profile |
 
-If the **DB is locked** (browser is open), idx automatically copies the DB and
+If the **DB is locked** (browser is open), ibr automatically copies the DB and
 its WAL/SHM files to `/tmp` and reads from the copy — the original is never
 written to. The temp files are deleted when the import finishes.
 
@@ -204,13 +204,13 @@ Control which page-representation mode the AI receives:
 
 ```bash
 # Force ARIA mode
-idx --mode aria "url: https://example.com\ninstructions:\n  - click submit"
+ibr --mode aria "url: https://example.com\ninstructions:\n  - click submit"
 
 # Force DOM mode — canvas apps, legacy table-soup, unlabelled SPAs
-idx --mode dom "url: https://canvas-app.example.com\ninstructions:\n  - click submit"
+ibr --mode dom "url: https://canvas-app.example.com\ninstructions:\n  - click submit"
 ```
 
-**Auto-selection logic** (default): after capturing the ARIA snapshot, idx
+**Auto-selection logic** (default): after capturing the ARIA snapshot, ibr
 scores its quality and picks the best mode automatically:
 
 - `sparsityRatio > 0.4` → dom (too many unlabelled interactive elements)
@@ -248,27 +248,27 @@ useful when a flow behaves unexpectedly and you want visual confirmation.
 #### `--annotate` / `-a` flag
 
 ```bash
-idx --annotate "url: https://example.com\ninstructions:\n  - click submit"
-idx -a "url: https://example.com\ninstructions:\n  - click submit"
+ibr --annotate "url: https://example.com\ninstructions:\n  - click submit"
+ibr -a "url: https://example.com\ninstructions:\n  - click submit"
 ```
 
-After each element-resolution step that finds ≥1 element, idx captures a
+After each element-resolution step that finds ≥1 element, ibr captures a
 full-page PNG with red bounding-box overlays labeled `@e1`, `@e2`, etc.
 (DOM elements) or `@c1`, `@c2`, etc. (pseudo-buttons / cursor-interactive
 elements).
 
-Output path: `/tmp/idx-annotate-step-<N>-<timestamp>.png`
+Output path: `/tmp/ibr-annotate-step-<N>-<timestamp>.png`
 
 #### `ANNOTATED_SCREENSHOTS_ON_FAILURE`
 
 ```bash
-ANNOTATED_SCREENSHOTS_ON_FAILURE=true idx "url: https://example.com\n..."
+ANNOTATED_SCREENSHOTS_ON_FAILURE=true ibr "url: https://example.com\n..."
 ```
 
-When set to `true`, idx automatically captures an annotated screenshot
+When set to `true`, ibr automatically captures an annotated screenshot
 whenever an action fails — without requiring `--annotate` on every run.
 
-Output path: `/tmp/idx-failure-step-<N>-<timestamp>.png`
+Output path: `/tmp/ibr-failure-step-<N>-<timestamp>.png`
 
 The screenshot is non-fatal: if capture fails (e.g. due to a Content
 Security Policy), execution continues and a warning is logged.
@@ -329,7 +329,7 @@ instructions:
 ### Real-World Example
 
 ```bash
-idx "url: https://www.example.com/products
+ibr "url: https://www.example.com/products
 instructions:
   - close 'cookie banner' if found
   - scroll to bottom of page
@@ -343,7 +343,7 @@ instructions:
 
 ## Daemon Mode (opt-in, fast warm invocations)
 
-By default every `idx` call spawns a new Chromium instance (~3800 ms cold-start).
+By default every `ibr` call spawns a new Chromium instance (~3800 ms cold-start).
 Daemon mode keeps a browser process alive in the background so subsequent calls
 connect to it instead (~540 ms warm).
 
@@ -351,11 +351,11 @@ connect to it instead (~540 ms warm).
 
 ```bash
 # Per-session env var
-export IDX_DAEMON=true
-idx "url: https://example.com\ninstructions:\n  - extract title"
+export IBR_DAEMON=true
+ibr "url: https://example.com\ninstructions:\n  - extract title"
 
 # Per-invocation flag
-idx --daemon "url: https://example.com\ninstructions:\n  - extract title"
+ibr --daemon "url: https://example.com\ninstructions:\n  - extract title"
 
 # Start the server manually (optional — auto-started on first call)
 npm run server
@@ -363,8 +363,8 @@ npm run server
 
 ### How It Works
 
-1. CLI checks `IDX_DAEMON=true` or `--daemon` flag.
-2. Reads `~/.idx/server.json` (pid, port, bearer token).
+1. CLI checks `IBR_DAEMON=true` or `--daemon` flag.
+2. Reads `~/.ibr/server.json` (pid, port, bearer token).
 3. Validates process is alive + `/health` responds OK.
 4. If stale/missing: spawns `src/server.js` detached and polls until ready (≤8 s).
 5. `POST /command` with Bearer token; server reuses the warm browser context.
@@ -374,11 +374,11 @@ npm run server
 
 - Localhost-only (`127.0.0.1`); not accessible remotely.
 - Random OS-assigned port per startup.
-- Bearer token is a UUID, stored in `~/.idx/server.json` (mode `0600`).
+- Bearer token is a UUID, stored in `~/.ibr/server.json` (mode `0600`).
 
 ### State File
 
-`~/.idx/server.json` — written atomically; override path with `IDX_STATE_FILE`.
+`~/.ibr/server.json` — written atomically; override path with `IBR_STATE_FILE`.
 
 ```json
 { "pid": 12345, "port": 51234, "token": "<uuid>", "startedAt": 1234567890 }
@@ -394,20 +394,20 @@ npm run server
 ### Disable / Stop
 
 ```bash
-unset IDX_DAEMON           # revert to stateless for this session
-kill $(jq .pid ~/.idx/server.json)  # stop the daemon manually
+unset IBR_DAEMON           # revert to stateless for this session
+kill $(jq .pid ~/.ibr/server.json)  # stop the daemon manually
 ```
 
 ---
 
-## DOM Inspector (`idx snap`)
+## DOM Inspector (`ibr snap`)
 
 Inspect the live DOM of any page without writing a full task. Outputs simplified DOM JSON
 to stdout; useful for debugging selectors, auditing interactive elements, or feeding
 context to other tools.
 
 ```
-idx snap <url> [flags]
+ibr snap <url> [flags]
 ```
 
 ### Flags
@@ -416,7 +416,7 @@ idx snap <url> [flags]
 |------|-------------|
 | `--aria` | Show ariaSnapshot (ARIA YAML tree) instead of DOM JSON |
 | `-i` | Interactive only: dom → xpath-indexed nodes; aria → role+name lines |
-| `-a` | Annotated screenshot → `/tmp/idx-dom-annotated.png` (dom mode only) |
+| `-a` | Annotated screenshot → `/tmp/ibr-dom-annotated.png` (dom mode only) |
 | `-d <N>` | Depth limit — truncate tree at depth N (dom mode only) |
 | `-s <selector>` | Scope output to a CSS selector subtree (dom mode only) |
 
@@ -431,28 +431,28 @@ Use `--aria` to verify what the AI reasons over when running with `--mode aria`.
 
 ```bash
 # Full DOM of a page (dom mode representation)
-idx snap https://example.com
+ibr snap https://example.com
 
 # ARIA snapshot (aria mode representation)
-idx snap --aria https://example.com
+ibr snap --aria https://example.com
 
 # ARIA snapshot — interactive elements only (role + name present)
-idx snap --aria -i https://example.com
+ibr snap --aria -i https://example.com
 
 # DOM: interactive elements only (reduces noise)
-idx snap https://example.com -i
+ibr snap https://example.com -i
 
 # DOM: annotated screenshot highlighting all interactive elements
-idx snap https://example.com -a
+ibr snap https://example.com -a
 
 # DOM: limit tree depth to 4 levels
-idx snap https://example.com -d 4
+ibr snap https://example.com -d 4
 
 # DOM: scope to the navigation bar only
-idx snap https://example.com -s "nav"
+ibr snap https://example.com -s "nav"
 
 # DOM: interactive elements in sidebar, depth 3, with screenshot
-idx snap https://example.com -i -s "#sidebar" -d 3 -a
+ibr snap https://example.com -i -s "#sidebar" -d 3 -a
 ```
 
 DOM mode outputs JSON on stdout with header `=== DOM Tree ===`.
@@ -461,8 +461,8 @@ With `-a` (dom), the screenshot path is printed to stderr:
 
 ```bash
 # Capture DOM JSON and screenshot in one shot
-idx snap https://example.com -i -a > dom.json
-# → stderr: Annotated screenshot: /tmp/idx-dom-annotated.png
+ibr snap https://example.com -i -a > dom.json
+# → stderr: Annotated screenshot: /tmp/ibr-dom-annotated.png
 ```
 
 ---
@@ -471,7 +471,7 @@ idx snap https://example.com -i -a > dom.json
 
 **Internal optimization — no user action required.**
 
-In loops and multi-step tasks, idx tracks snapshots between actions. Instead of
+In loops and multi-step tasks, ibr tracks snapshots between actions. Instead of
 sending the full page representation to the AI on every step, it sends only what changed.
 
 - **~85% token reduction** in typical loop workflows
@@ -501,7 +501,7 @@ call (`usedDiff`, `diffSummary`).
 
 ### Page Representation — ARIA Accessibility Tree
 
-idx uses Playwright's `ariaSnapshot()` to represent pages to the AI, instead of
+ibr uses Playwright's `ariaSnapshot()` to represent pages to the AI, instead of
 raw DOM/HTML. The ARIA snapshot is a hierarchical accessibility tree: roles, names,
 labels, and visible text — the same structure used by screen readers.
 
@@ -511,7 +511,7 @@ labels, and visible text — the same structure used by screen readers.
 - More reliable element targeting: AI returns `{role, name}` descriptors, which
   Playwright resolves via `getByRole` / `getByLabel` / `getByText`
 
-**Mode selection:** by default idx scores the ARIA snapshot quality (sparsity
+**Mode selection:** by default ibr scores the ARIA snapshot quality (sparsity
 ratio of unlabelled interactive elements) and falls back to `DomSimplifier`
 (XPath-indexed JSON tree) when quality is too low, snapshot is too large, or
 snapshot is empty. Use `--mode aria|dom` to override. See the `--mode` section
@@ -547,7 +547,7 @@ elements in plain English as always.
 - Use `BROWSER_SLOWMO` to slow down and observe
 
 ```bash
-BROWSER_SLOWMO=500 idx "..."
+BROWSER_SLOWMO=500 ibr "..."
 ```
 
 ### Issue: Element Not Found
@@ -556,7 +556,7 @@ BROWSER_SLOWMO=500 idx "..."
 mentioning `hidden, disabled, or covered by another element`
 
 **Solutions**:
-- Run `idx snap <url> -i` to list interactive elements and their `@refs`
+- Run `ibr snap <url> -i` to list interactive elements and their `@refs`
 - Use the exact role/name from the snapshot in your prompt
 - If the element is a pseudo-button (no ARIA role), use `--mode dom` and
   reference its index
@@ -588,7 +588,7 @@ mentioning `hidden, disabled, or covered by another element`
 See what's happening at each step:
 
 ```bash
-DEBUG=* idx "..."
+DEBUG=* ibr "..."
 ```
 
 Logs show:
@@ -603,7 +603,7 @@ Logs show:
 Keep the browser visible and slow it down:
 
 ```bash
-BROWSER_HEADLESS=false BROWSER_SLOWMO=500 idx "..."
+BROWSER_HEADLESS=false BROWSER_SLOWMO=500 ibr "..."
 ```
 
 Now you can watch exactly what the script is doing and see where it fails.

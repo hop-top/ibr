@@ -6,13 +6,13 @@
 
 ## User Story
 
-As an agent using idx in a WSM-managed workspace, I want browser actions
+As an agent using ibr in a WSM-managed workspace, I want browser actions
 recorded in the workspace timeline so I can audit, replay, and debug
 web interactions alongside other workspace events.
 
 ## Acceptance Criteria
 
-1. When WSM is absent (no binary on PATH), idx behaves identically to
+1. When WSM is absent (no binary on PATH), ibr behaves identically to
    before — zero functional regression.
 2. When WSM is present and a workspace is active, every browser action
    (navigate, click, fill, etc.) appears as `interaction.tool_call` in
@@ -21,9 +21,9 @@ web interactions alongside other workspace events.
    persisted as a WSM event for auditing.
 4. Annotated screenshots and failure screenshots are recorded as
    `mutation.artifact` events pointing to the file path.
-5. If the WSM workspace metadata contains `browser_profile`, idx uses
+5. If the WSM workspace metadata contains `browser_profile`, ibr uses
    that profile for cookie import (unless `--cookies` flag overrides).
-6. Before navigating to a URL, idx queries WSM for prior failure events
+6. Before navigating to a URL, ibr queries WSM for prior failure events
    at the same domain and emits a warning if failures exist.
 
 ## Implementation Notes

@@ -272,7 +272,7 @@ function openDb(dbPath, browserName) {
 }
 
 function openDbFromCopy(dbPath, browserName) {
-  const tmpPath = `/tmp/idx-cookies-${browserName.toLowerCase()}-${crypto.randomUUID()}.db`;
+  const tmpPath = `/tmp/ibr-cookies-${browserName.toLowerCase()}-${crypto.randomUUID()}.db`;
   try {
     fs.copyFileSync(dbPath, tmpPath);
     // Copy WAL + SHM for consistent reads

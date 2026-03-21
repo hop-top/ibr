@@ -5,14 +5,14 @@
 
 ## Goal
 
-Run idx without a display server or interactive window; suitable for
+Run ibr without a display server or interactive window; suitable for
 CI environments, Docker containers, and agent subprocesses.
 
 ## Stories
 
-- As an AI coding assistant, I invoke idx with `BROWSER_HEADLESS=true` (or
+- As an AI coding assistant, I invoke ibr with `BROWSER_HEADLESS=true` (or
   default) so it runs silently without opening a visible window.
-- As an automated workflow, idx works inside a headless Linux container with
+- As an automated workflow, ibr works inside a headless Linux container with
   no `DISPLAY` env var set.
 
 ## Acceptance Criteria

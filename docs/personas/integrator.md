@@ -2,7 +2,7 @@
 
 ## Description
 
-Developer embedding `idx` as a Node.js library inside automated pipelines,
+Developer embedding `ibr` as a Node.js library inside automated pipelines,
 CI scripts, or agent workflows. Cares about a clean programmatic API,
 structured return values, error propagation, and token-usage reporting.
 
