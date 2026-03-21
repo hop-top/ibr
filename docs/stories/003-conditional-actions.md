@@ -9,7 +9,7 @@ elements (banners, modals, cookie notices).
 
 ## Stories
 
-- As a CLI user, I suffix any action with `if found` so idx skips it when
+- As a CLI user, I suffix any action with `if found` so ibr skips it when
   the element is not present rather than erroring.
 - As a CLI user, I handle cookie banners with `click 'Accept' if found`
   without branching logic.

@@ -149,7 +149,7 @@ export function parseTaskDescriptionResponse(response) {
     if (!parsed.url) {
       throw new Error(
         'Task description missing required field: "url". ' +
-        'The prompt must specify a URL for idx to navigate to. ' +
+        'The prompt must specify a URL for ibr to navigate to. ' +
         'Example prompt: "url: https://example.com\\ninstructions:\\n  - click submit".'
       );
     }
@@ -217,7 +217,7 @@ export function parseActionInstructionResponse(response) {
     throw new Error(
       `Failed to parse action instruction: ${error.message} ` +
       `Expected response format: {"elements":[...],"type":"click|fill|type|press","value":"..."}. ` +
-      `Run "idx snap <url> -i" to see available elements and retry with a more specific prompt.`
+      `Run "ibr snap <url> -i" to see available elements and retry with a more specific prompt.`
     );
   }
 }

@@ -13,11 +13,11 @@ describe('parseDomArgs — high-precision errors', () => {
   });
 
   it('missing URL error includes Usage hint', () => {
-    expect(() => parseDomArgs([])).toThrow('Usage: idx snap <url> [flags]');
+    expect(() => parseDomArgs([])).toThrow('Usage: ibr snap <url> [flags]');
   });
 
   it('missing URL error includes Example', () => {
-    expect(() => parseDomArgs([])).toThrow('Example: idx snap https://example.com -i');
+    expect(() => parseDomArgs([])).toThrow('Example: ibr snap https://example.com -i');
   });
 
   // ── -d flag ────────────────────────────────────────────────────────────────

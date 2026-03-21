@@ -124,13 +124,13 @@ describe('DomSimplifier', () => {
       expect(btn.a).not.toHaveProperty('onclick');
     });
 
-    it('keeps data-idx-ref and role attributes; strips non-allowed attrs', async () => {
+    it('keeps data-ibr-ref and role attributes; strips non-allowed attrs', async () => {
       const html = `<html><head></head>
-        <body><div role="navigation" data-idx-ref="c1" class="nav" data-v="1">nav</div></body></html>`;
+        <body><div role="navigation" data-ibr-ref="c1" class="nav" data-v="1">nav</div></body></html>`;
       const ds = new DomSimplifier(makePage(html));
       const result = await ds.simplify();
       const div = findNode(result, 'DIV');
-      expect(div.a).toHaveProperty('data-idx-ref', 'c1');
+      expect(div.a).toHaveProperty('data-ibr-ref', 'c1');
       expect(div.a).toHaveProperty('role', 'navigation');
       expect(div.a).not.toHaveProperty('class');
       expect(div.a).not.toHaveProperty('data-v');

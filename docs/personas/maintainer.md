@@ -2,7 +2,7 @@
 
 ## Description
 
-Developer writing and running automated tests for the idx project to ensure
+Developer writing and running automated tests for the ibr project to ensure
 correctness across changes. Cares about test coverage, regression prevention,
 DOM simplification fidelity, and AI prompt stability.
 

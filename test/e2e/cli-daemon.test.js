@@ -1,10 +1,10 @@
 /**
  * Story 020 — Daemon mode
  *
- * Tests: IDX_DAEMON=true / --daemon flag starts a background server, serves
+ * Tests: IBR_DAEMON=true / --daemon flag starts a background server, serves
  * commands via HTTP, and reuses the same process across invocations.
  *
- * Isolation: each test suite uses a unique IDX_STATE_FILE under /tmp so tests
+ * Isolation: each test suite uses a unique IBR_STATE_FILE under /tmp so tests
  * don't interfere with each other or a developer's live daemon.
  */
 
@@ -24,11 +24,11 @@ const NODE = process.execPath;
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function tmpStateFile() {
-  return `/tmp/idx-e2e-daemon-${Date.now()}-${Math.random().toString(36).slice(2)}.json`;
+  return `/tmp/ibr-e2e-daemon-${Date.now()}-${Math.random().toString(36).slice(2)}.json`;
 }
 
-/** Run idx (src/index.js) and return a promise resolving to { code, stdout, stderr }. */
-function runIdx(args, env = {}) {
+/** Run ibr (src/index.js) and return a promise resolving to { code, stdout, stderr }. */
+function runIbr(args, env = {}) {
   return new Promise(resolve => {
     const proc = spawn(NODE, [resolve_path(CWD, 'src/index.js'), ...args], {
       env: { ...process.env, ...env },
@@ -65,7 +65,7 @@ async function startDaemon(stateFile, env = {}) {
   const child = spawn(NODE, [SERVER_JS], {
     detached: true,
     stdio: 'ignore',
-    env: { ...process.env, ...env, IDX_STATE_FILE: stateFile },
+    env: { ...process.env, ...env, IBR_STATE_FILE: stateFile },
     cwd: CWD,
   });
   child.unref();
@@ -185,7 +185,7 @@ describe('cli daemon mode — server lifecycle (story 020)', () => {
   });
 });
 
-describe('cli daemon mode — IDX_DAEMON=true invocation (story 020)', () => {
+describe('cli daemon mode — IBR_DAEMON=true invocation (story 020)', () => {
   let stateFile;
   let daemonState;
   let ai;
@@ -241,20 +241,20 @@ describe('cli daemon mode — IDX_DAEMON=true invocation (story 020)', () => {
     INSTRUCTION_EXECUTION_JITTER_MS: '0',
     PAGE_LOADING_DELAY_MS: '0',
     LOG_LEVEL: 'error',
-    IDX_DAEMON: 'true',
-    IDX_STATE_FILE: stateFile,
+    IBR_DAEMON: 'true',
+    IBR_STATE_FILE: stateFile,
   });
 
-  it('IDX_DAEMON=true exits 0 and returns extracted data', async () => {
+  it('IBR_DAEMON=true exits 0 and returns extracted data', async () => {
     const prompt = `go to ${web.baseUrl}/product-page.html and get the price`;
-    const result = await runIdx([prompt], baseEnv());
+    const result = await runIbr([prompt], baseEnv());
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('9.99');
   }, 35000);
 
   it('reuses the same daemon pid on second call', async () => {
     const prompt = `go to ${web.baseUrl}/product-page.html and get the price`;
-    const result = await runIdx([prompt], baseEnv());
+    const result = await runIbr([prompt], baseEnv());
     expect(result.code).toBe(0);
     const pidAfter = readStateFile(stateFile)?.pid;
     expect(pidAfter).toBe(daemonState.pid);

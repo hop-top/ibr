@@ -9,7 +9,7 @@ success vs. failure without parsing output.
 
 ## Stories
 
-- As an automated workflow, idx exits 0 on full success and non-zero on any
+- As an automated workflow, ibr exits 0 on full success and non-zero on any
   unrecovered error, enabling `&&` chaining in shell scripts.
 - As an automated workflow, I can distinguish fatal errors from soft warnings
   (e.g., loop cap hit) via exit code.

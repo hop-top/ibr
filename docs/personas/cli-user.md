@@ -2,7 +2,7 @@
 
 ## Description
 
-Developer invoking `idx` from the terminal using natural language instructions.
+Developer invoking `ibr` from the terminal using natural language instructions.
 Cares about expressive, readable prompt syntax; reliable element detection;
 clear error messages; and observable execution (logs, browser window).
 

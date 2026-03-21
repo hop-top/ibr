@@ -1,12 +1,12 @@
 /**
- * `idx snap <url>` — on-demand DOM inspection subcommand.
+ * `ibr snap <url>` — on-demand DOM inspection subcommand.
  *
  * Flags:
  *   --aria           show ariaSnapshot output (ARIA YAML tree) instead of DOM JSON
  *   -i               interactive only:
  *                      dom mode  → nodes with xpath index
  *                      aria mode → lines with role + non-empty name
- *   -a               annotated screenshot → /tmp/idx-dom-annotated.png (dom mode only)
+ *   -a               annotated screenshot → /tmp/ibr-dom-annotated.png (dom mode only)
  *   -d <N>           depth limit: truncate DOM tree at depth N (dom mode only)
  *   -s <selector>    scope to CSS selector subtree (dom mode only)
  *
@@ -75,8 +75,8 @@ export function parseDomArgs(args) {
 
   if (!opts.url) throw new Error(
     'snap subcommand requires a URL argument. ' +
-    'Usage: idx snap <url> [flags]. ' +
-    'Example: idx snap https://example.com -i'
+    'Usage: ibr snap <url> [flags]. ' +
+    'Example: ibr snap https://example.com -i'
   );
   return opts;
 }
@@ -106,9 +106,9 @@ function filterAriaInteractive(ariaYaml) {
 async function takeAnnotatedScreenshot(page, xpaths, outPath) {
   await page.evaluate((paths) => {
     const style = document.createElement('style');
-    style.id = '__idx_overlay_style';
+    style.id = '__ibr_overlay_style';
     style.textContent = `
-      .__idx_annotated {
+      .__ibr_annotated {
         outline: 2px solid rgba(255, 80, 0, 0.8) !important;
         position: relative;
       }
@@ -127,7 +127,7 @@ async function takeAnnotatedScreenshot(page, xpaths, outPath) {
     for (const xpath of paths) {
       const el = byXPath(xpath);
       if (el && el instanceof HTMLElement) {
-        el.classList.add('__idx_annotated');
+        el.classList.add('__ibr_annotated');
       }
     }
   }, xpaths);
@@ -135,15 +135,15 @@ async function takeAnnotatedScreenshot(page, xpaths, outPath) {
   await page.screenshot({ path: outPath, fullPage: false });
 
   await page.evaluate(() => {
-    document.getElementById('__idx_overlay_style')?.remove();
-    for (const el of document.querySelectorAll('.__idx_annotated')) {
-      el.classList.remove('__idx_annotated');
+    document.getElementById('__ibr_overlay_style')?.remove();
+    for (const el of document.querySelectorAll('.__ibr_annotated')) {
+      el.classList.remove('__ibr_annotated');
     }
   });
 }
 
 /**
- * Main entry point for `idx snap <url>` subcommand.
+ * Main entry point for `ibr snap <url>` subcommand.
  * @param {string[]} args - argv after 'snap' token
  * @param {Object} browserConfig
  */
@@ -191,7 +191,7 @@ export async function runDomCommand(args, browserConfig = {}) {
       const json = simplifier.stringifySimplifiedDom(output);
 
       if (opts.annotated) {
-        const outPath = '/tmp/idx-dom-annotated.png';
+        const outPath = '/tmp/ibr-dom-annotated.png';
         await takeAnnotatedScreenshot(page, simplifier.xpaths, outPath);
         process.stderr.write(`Annotated screenshot: ${outPath}\n`);
       }

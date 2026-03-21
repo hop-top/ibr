@@ -25,8 +25,8 @@ dotenv.config();
 // ---------------------------------------------------------------------------
 
 const _stateFile =
-  process.env.IDX_STATE_FILE ||
-  path.join(os.homedir(), '.idx', 'server.json');
+  process.env.IBR_STATE_FILE ||
+  path.join(os.homedir(), '.ibr', 'server.json');
 const STATE_DIR = path.dirname(_stateFile);
 const STATE_FILE = _stateFile;
 const IDLE_CHECK_INTERVAL_MS = 60_000;
@@ -155,10 +155,10 @@ function checkAuth(req) {
   const expected = `Bearer ${serverToken}`;
   // SHA-256 hex comparison is not truly constant-time (timingSafeEqual would be
   // stricter). This is intentional: the daemon is localhost-only and the token
-  // lives in ~/.idx/server.json (mode 0600, same UID). Any local attacker with
+  // lives in ~/.ibr/server.json (mode 0600, same UID). Any local attacker with
   // the ability to time loopback requests already has direct read access to the
   // token — timing side-channels add no meaningful attack surface here.
-  // See: https://github.com/hop-top/idx/pull/11#discussion_r2966992046
+  // See: https://github.com/hop-top/ibr/pull/11#discussion_r2966992046
   if (auth.length !== expected.length) return false;
   return createHash('sha256').update(auth).digest('hex') ===
          createHash('sha256').update(expected).digest('hex');
@@ -242,7 +242,7 @@ async function handleRequest(req, res) {
       sendJSON(res, 500, {
         error: err.message,
         hint: 'Task execution failed. Check daemon logs for the failing instruction index and observability context. ' +
-              'Run "idx snap <url> -i" to inspect the page state before retrying.',
+              'Run "ibr snap <url> -i" to inspect the page state before retrying.',
       });
     }
     return;
@@ -274,7 +274,7 @@ function startIdleCheck() {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  logger.info('idx daemon starting');
+  logger.info('ibr daemon starting');
 
   // Validate env
   const provider = (process.env.AI_PROVIDER || 'openai').toLowerCase();
@@ -303,7 +303,7 @@ async function main() {
     logger.error(
       'Browser disconnected unexpectedly. ' +
       'The Chromium process may have crashed or been killed externally. ' +
-      'Restart the daemon with "idx --daemon" or check system resource limits.'
+      'Restart the daemon with "ibr --daemon" or check system resource limits.'
     );
     removeStateFile().finally(() => process.exit(1));
   });
@@ -340,7 +340,7 @@ async function main() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  logger.info('idx daemon ready', { port, pid: process.pid });
+  logger.info('ibr daemon ready', { port, pid: process.pid });
 }
 
 main().catch(err => {

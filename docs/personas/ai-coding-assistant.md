@@ -2,7 +2,7 @@
 
 ## Description
 
-AI agent (Claude Code, Copilot, Cursor, etc.) invoking idx to perform web
+AI agent (Claude Code, Copilot, Cursor, etc.) invoking ibr to perform web
 interactions on behalf of a developer. Cares about deterministic behavior,
 machine-readable output, clear error codes, and no interactive prompts.
 

@@ -12,7 +12,7 @@ import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-function runIdx(args, env = {}) {
+function runIbr(args, env = {}) {
   return new Promise((resolve) => {
     const proc = spawn('node', ['src/index.js', ...args], {
       env: { ...process.env, ...env },
@@ -52,7 +52,7 @@ describe('cli provider selection (story 005)', () => {
     const env = { ...process.env };
     delete env.ANTHROPIC_API_KEY;
 
-    const result = await runIdx(
+    const result = await runIbr(
       [`go to ${web.baseUrl}/product-page.html and extract title`],
       {
         ...env,
@@ -76,7 +76,7 @@ describe('cli provider selection (story 005)', () => {
     delete env.ANTHROPIC_API_KEY;
     delete env.GOOGLE_GENERATIVE_AI_API_KEY;
 
-    const result = await runIdx(
+    const result = await runIbr(
       [`go to ${web.baseUrl}/product-page.html and extract title`],
       {
         ...env,
@@ -97,7 +97,7 @@ describe('cli provider selection (story 005)', () => {
       JSON.stringify([{ text: 'Widget Pro' }]),
     ]);
 
-    const result = await runIdx(
+    const result = await runIbr(
       [`go to ${web.baseUrl}/product-page.html and extract the title`],
       {
         ...BASE_ENV,
@@ -123,7 +123,7 @@ describe('cli provider selection (story 005)', () => {
       JSON.stringify([{ text: '4.5 stars' }]),
     ]);
 
-    const result = await runIdx(
+    const result = await runIbr(
       [`visit ${web.baseUrl}/product-page.html and get rating`],
       {
         ...BASE_ENV,

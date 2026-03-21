@@ -7,7 +7,7 @@ let testDir;
 let CacheManager;
 
 beforeEach(async () => {
-  testDir = path.join(os.tmpdir(), `idx-test-${Date.now()}`);
+  testDir = path.join(os.tmpdir(), `ibr-test-${Date.now()}`);
   vi.stubEnv('CACHE_DIR', testDir);
   vi.stubEnv('CACHE_ENABLED', 'true');
   vi.resetModules();

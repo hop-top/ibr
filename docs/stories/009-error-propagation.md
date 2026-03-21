@@ -9,7 +9,7 @@ re-throw them without parsing stderr.
 
 ## Stories
 
-- As an integrator, idx rejects its promise with a typed error when an action
+- As an integrator, ibr rejects its promise with a typed error when an action
   fails, including step index and action type.
 - As an integrator, configuration errors (missing API key, unknown provider)
   throw before any browser is launched.

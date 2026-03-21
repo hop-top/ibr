@@ -1,7 +1,8 @@
 import path from 'path';
+import os from 'os';
 import logger from '../utils/logger.js';
 
-const ANNOTATION_CLASS = 'idx_annotation';
+const ANNOTATION_CLASS = 'ibr_annotation';
 const MAX_CONCURRENT_BBOX = 50;
 
 /**
@@ -27,7 +28,7 @@ export class AnnotationService {
      */
     #validatePath(screenshotPath) {
         const resolved = path.resolve(screenshotPath);
-        const safeDirs = ['/tmp', process.cwd()];
+        const safeDirs = ['/tmp', os.tmpdir(), process.cwd()];
         const safe = safeDirs.some(
             dir => resolved === dir || resolved.startsWith(dir + path.sep)
         );
@@ -90,7 +91,7 @@ export class AnnotationService {
 
             let locator;
             if (isPseudoRef) {
-                locator = this.page.locator(`[data-idx-ref="${elementIndex}"]`);
+                locator = this.page.locator(`[data-ibr-ref="${elementIndex}"]`);
             } else {
                 const xpath = xpaths[elementIndex];
                 if (xpath) {

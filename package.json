@@ -1,8 +1,11 @@
 {
-  "name": "@hop/idx",
+  "name": "@hop/ibr",
   "version": "1.0.0",
   "main": "src/index.js",
   "type": "module",
+  "bin": {
+    "ibr": "./src/index.js"
+  },
   "scripts": {
     "start": "node src/index.js",
     "server": "node src/server.js",

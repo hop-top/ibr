@@ -5,7 +5,7 @@
 
 ## Goal
 
-Automated tests confirm that idx correctly parses all instruction types from
+Automated tests confirm that ibr correctly parses all instruction types from
 natural language prompts into structured action plans.
 
 ## Stories

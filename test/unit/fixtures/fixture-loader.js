@@ -133,7 +133,7 @@ export function validateFixtureSchema(fixture, filePath) {
 }
 
 /**
- * Parse an idx prompt string (the raw CLI format) into {url, instructions}.
+ * Parse an ibr prompt string (the raw CLI format) into {url, instructions}.
  *
  * Format:
  *   url: <url>

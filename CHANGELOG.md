@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `idx` are documented here.
+All notable changes to `ibr` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional Commits](https://www.conventionalcommits.org/).
 
 ---
@@ -38,7 +38,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 - **High-precision AI-actionable error messages (T-0013)**
   - 29 error strings rewritten across 8 source files; no logic changes.
   - Every error is self-contained: what failed + why + concrete next step.
-  - Element resolution failures include `idx snap <url> -i` and `@refs` hint.
+  - Element resolution failures include `ibr snap <url> -i` and `@refs` hint.
   - Action failures include `hidden, disabled, or covered` diagnosis hint.
   - AI parse failures suggest `AI_TEMPERATURE=0` and prompt format corrections.
   - Config/flag errors include bad value, accepted range/set, Usage, Example.
@@ -53,9 +53,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 - **Annotated screenshots for visual debugging (T-0009)**
   - `--annotate` / `-a` CLI flag: captures full-page PNG after each element-resolution
     step; overlays show red bounding boxes labeled `@e1`/`@c1` etc.
-  - Output path: `/tmp/idx-annotate-step-<N>-<ts>.png`.
+  - Output path: `/tmp/ibr-annotate-step-<N>-<ts>.png`.
   - `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` env var: auto-captures on any
-    action failure; path `/tmp/idx-failure-step-<N>-<ts>.png`; non-fatal.
+    action failure; path `/tmp/ibr-failure-step-<N>-<ts>.png`; non-fatal.
   - `src/services/AnnotationService.js` — pure DOM overlay injection via
     `page.evaluate`; no image-library dep. Path validation (must be `/tmp` or
     `cwd`). Bbox fetched in parallel batches ≤50. Cleanup always runs (finally).
@@ -65,9 +65,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
     `docs/stories/006-debug-observability.md`.
 
 - **Daemon mode — persistent browser for fast warm invocations (T-0012)**
-  - Opt-in: `IDX_DAEMON=true` or `--daemon` flag; stateless flow unchanged by default.
+  - Opt-in: `IBR_DAEMON=true` or `--daemon` flag; stateless flow unchanged by default.
   - `src/server.js` — Node.js HTTP daemon: Chromium + Operations stay alive 30 min;
-    random port, localhost-only, UUID Bearer token, atomic state file `~/.idx/server.json`.
+    random port, localhost-only, UUID Bearer token, atomic state file `~/.ibr/server.json`.
   - `src/daemon.js` — CLI client: `ensureServer()` + `sendCommand()`; auto-restarts on
     stale PID or failed health check; retries once on `ECONNREFUSED`.
   - `GET /health` (no auth) → `{status, uptime, pid}`.
@@ -111,17 +111,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 
 ### feat
 
-- **`idx snap` subcommand** — on-demand DOM inspection without writing a full task.
-  - `idx snap <url>` — outputs simplified DOM JSON to stdout (`=== DOM Tree ===`)
-  - `idx snap --aria <url>` — outputs Playwright `ariaSnapshot()` YAML (`=== ARIA Snapshot ===`)
-  - `idx snap --aria -i <url>` — ARIA snapshot filtered to interactive elements
+- **`ibr snap` subcommand** — on-demand DOM inspection without writing a full task.
+  - `ibr snap <url>` — outputs simplified DOM JSON to stdout (`=== DOM Tree ===`)
+  - `ibr snap --aria <url>` — outputs Playwright `ariaSnapshot()` YAML (`=== ARIA Snapshot ===`)
+  - `ibr snap --aria -i <url>` — ARIA snapshot filtered to interactive elements
     (role + non-empty name)
   - `-i` — interactive only: dom → xpath-indexed nodes; aria → role+name lines
-  - `-a` — annotated screenshot with orange outlines → `/tmp/idx-dom-annotated.png` (dom only)
+  - `-a` — annotated screenshot with orange outlines → `/tmp/ibr-dom-annotated.png` (dom only)
   - `-d <N>` — depth limit; truncate tree at level N (dom only)
   - `-s <selector>` — scope tree to a CSS selector subtree (dom only)
   - `-a`, `-d`, `-s` are DOM-only; not compatible with `--aria`
-  - Flags are composable; e.g. `idx snap <url> -i -s "nav" -d 3 -a`
+  - Flags are composable; e.g. `ibr snap <url> -i -s "nav" -d 3 -a`
 
 - **Snapshot diffing** — automatic ~85% token reduction in loop workflows.
   - `SnapshotDiffer` works in both dom and aria modes

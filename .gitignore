@@ -48,7 +48,7 @@ yarn-error.log*
 test/results/
 
 # Cache
-.idx-cache/
+.ibr-cache/
 
 # Optional npm cache directory
 .npm

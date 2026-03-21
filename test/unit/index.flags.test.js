@@ -41,41 +41,41 @@ exitSpy.mockRestore();
 
 describe('parseCookiesFlag — high-precision errors', () => {
   it('returns null when --cookies flag absent', () => {
-    expect(parseCookiesFlag(['node', 'idx', 'some prompt'])).toBeNull();
+    expect(parseCookiesFlag(['node', 'ibr', 'some prompt'])).toBeNull();
   });
 
   it('throws when --cookies has no value', () => {
-    expect(() => parseCookiesFlag(['node', 'idx', '--cookies']))
+    expect(() => parseCookiesFlag(['node', 'ibr', '--cookies']))
       .toThrow('--cookies flag requires a value');
   });
 
   it('error includes Usage hint', () => {
-    expect(() => parseCookiesFlag(['node', 'idx', '--cookies']))
+    expect(() => parseCookiesFlag(['node', 'ibr', '--cookies']))
       .toThrow('Usage: --cookies <browser>[:<domain1>,<domain2>]');
   });
 
   it('error includes Example', () => {
-    expect(() => parseCookiesFlag(['node', 'idx', '--cookies']))
+    expect(() => parseCookiesFlag(['node', 'ibr', '--cookies']))
       .toThrow('Example: --cookies chrome  or  --cookies arc:github.com,linear.app');
   });
 
   it('error lists supported browsers', () => {
-    expect(() => parseCookiesFlag(['node', 'idx', '--cookies']))
+    expect(() => parseCookiesFlag(['node', 'ibr', '--cookies']))
       .toThrow('Supported browsers: chrome, arc, brave, edge, comet');
   });
 
   it('throws when --cookies value is another flag', () => {
-    expect(() => parseCookiesFlag(['node', 'idx', '--cookies', '--mode']))
+    expect(() => parseCookiesFlag(['node', 'ibr', '--cookies', '--mode']))
       .toThrow('--cookies flag requires a value');
   });
 
   it('returns browser with empty domains when no colon', () => {
-    const result = parseCookiesFlag(['node', 'idx', '--cookies', 'chrome']);
+    const result = parseCookiesFlag(['node', 'ibr', '--cookies', 'chrome']);
     expect(result).toEqual({ browser: 'chrome', domains: [] });
   });
 
   it('parses browser + domains from colon-separated value', () => {
-    const result = parseCookiesFlag(['node', 'idx', '--cookies', 'arc:github.com,linear.app']);
+    const result = parseCookiesFlag(['node', 'ibr', '--cookies', 'arc:github.com,linear.app']);
     expect(result).toEqual({ browser: 'arc', domains: ['github.com', 'linear.app'] });
   });
 });
