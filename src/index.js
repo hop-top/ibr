@@ -7,7 +7,11 @@ import logger from './utils/logger.js';
 import { importCookies } from './utils/cookieImport.js';
 import { runDomCommand } from './commands/snap.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
-import { notifyIfAvailable, runUpgradeCLI } from './upgrade.js';
+import { createUpgrader } from '@hop/upgrade';
+
+const _up = createUpgrader({ binary: 'idx', githubRepo: 'hop-top/idx' });
+const notifyIfAvailable = (v) => _up.notifyIfAvailable(v);
+const runUpgradeCLI = (v, opts) => _up.runUpgradeCLI(v, opts);
 import { createRequire } from 'node:module';
 
 const _require = createRequire(import.meta.url);
@@ -200,29 +204,6 @@ function printUsage() {
   logger.info('See .env.example for all available configuration options');
 }
 
-/**
- * Generate a markdown upgrade preamble fragment for agent skill files.
- * @param {string} binary
- * @param {'never'|'once'|'always'} snooze
- */
-function generateUpgradePreamble(binary, snooze = 'once') {
-  const cmd = `${binary} upgrade`;
-  const lines = [
-    `## Upgrade Preamble\n`,
-    `Before running any task, ensure \`${binary}\` is up to date.\n\n`,
-  ];
-  if (snooze === 'never') {
-    lines.push(`1. Run \`${cmd} --auto\` silently.\n`);
-    lines.push('2. If upgraded, inform the user to restart before continuing.\n');
-  } else if (snooze === 'once') {
-    lines.push(`1. Run \`${cmd}\` — accept the upgrade if offered, snooze once if user declines.\n`);
-    lines.push('2. Continue with the task regardless of upgrade outcome.\n');
-  } else {
-    lines.push(`1. Check: \`${cmd} --check\` and report if an update is available.\n`);
-    lines.push('2. Do not install automatically; let the user decide.\n');
-  }
-  return lines.join('');
-}
 
 async function run() {
   logger.info('Starting idx (Intent Driven eXtractor)');
@@ -317,7 +298,7 @@ async function run() {
         const level = pFlags.includes('--auto') ? 'never'
           : pFlags.includes('--never') ? 'always'
           : 'once';
-        process.stdout.write(generateUpgradePreamble('idx', level));
+        process.stdout.write(_up.generatePreamble(level));
         return;
       }
       await runUpgradeCLI(IDX_VERSION, {

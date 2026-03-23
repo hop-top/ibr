@@ -6,7 +6,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { isNewer, isSnoozed, snooze, checkForUpdate } from '../../src/upgrade.js';
+import { createUpgrader, isNewer, checkForUpdate as _checkForUpdate } from '@hop/upgrade';
+
+const _up = createUpgrader({ binary: 'idx', githubRepo: 'hop-top/idx' });
+const { isSnoozed, snooze } = _up;
+const checkForUpdate = (current, opts) => _checkForUpdate('idx', current, opts);
 
 // Isolate state dir per test
 const tmpDir = path.join(os.tmpdir(), `idx-upgrade-test-${process.pid}`);
