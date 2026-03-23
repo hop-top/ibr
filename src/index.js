@@ -7,6 +7,12 @@ import logger from './utils/logger.js';
 import { importCookies } from './utils/cookieImport.js';
 import { runDomCommand } from './commands/snap.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
+import { notifyIfAvailable, runUpgradeCLI } from './upgrade.js';
+import { createRequire } from 'node:module';
+
+const _require = createRequire(import.meta.url);
+const _pkg = _require('../package.json');
+const IDX_VERSION = _pkg.version || 'dev';
 
 // Load environment variables
 dotenv.config();
@@ -152,6 +158,9 @@ function printUsage() {
   logger.info('  idx [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"');
   logger.info('  idx [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)');
   logger.info('  idx snap <url> [flags]          - inspect DOM at URL');
+  logger.info('  idx upgrade [--auto] [--quiet]  - check for and install updates');
+  logger.info('  idx upgrade preamble            - print agent skill preamble fragment');
+  logger.info('  idx version [--short|--json]    - print version information');
   logger.info('');
   logger.info('Flags:');
   logger.info('  --daemon                         Use persistent browser daemon (opt-in)');
@@ -191,6 +200,30 @@ function printUsage() {
   logger.info('See .env.example for all available configuration options');
 }
 
+/**
+ * Generate a markdown upgrade preamble fragment for agent skill files.
+ * @param {string} binary
+ * @param {'never'|'once'|'always'} snooze
+ */
+function generateUpgradePreamble(binary, snooze = 'once') {
+  const cmd = `${binary} upgrade`;
+  const lines = [
+    `## Upgrade Preamble\n`,
+    `Before running any task, ensure \`${binary}\` is up to date.\n\n`,
+  ];
+  if (snooze === 'never') {
+    lines.push(`1. Run \`${cmd} --auto\` silently.\n`);
+    lines.push('2. If upgraded, inform the user to restart before continuing.\n');
+  } else if (snooze === 'once') {
+    lines.push(`1. Run \`${cmd}\` — accept the upgrade if offered, snooze once if user declines.\n`);
+    lines.push('2. Continue with the task regardless of upgrade outcome.\n');
+  } else {
+    lines.push(`1. Check: \`${cmd} --check\` and report if an update is available.\n`);
+    lines.push('2. Do not install automatically; let the user decide.\n');
+  }
+  return lines.join('');
+}
+
 async function run() {
   logger.info('Starting idx (Intent Driven eXtractor)');
 
@@ -228,6 +261,12 @@ async function run() {
     // Strip --cookies flag to get effective argv for prompt detection
     const effectiveArgv = stripCookiesFlag(process.argv);
 
+    // Startup update notification (async, non-blocking; skipped for upgrade/version cmds)
+    const _subcmd = process.argv[2];
+    if (_subcmd !== 'upgrade' && _subcmd !== 'version') {
+      notifyIfAvailable(IDX_VERSION).catch(() => {});
+    }
+
     // Parse CLI flags (--mode) from the already-stripped argv (no --cookies)
     // parseCliFlags reads process.argv, so we temporarily shadow it
     const savedArgv = process.argv;
@@ -249,6 +288,43 @@ async function run() {
     if (args[0] === '--help' || args[0] === '-h') {
       printUsage();
       process.exit(0);
+    }
+
+    // Subcommand: idx version
+    if (process.argv[2] === 'version') {
+      const flags = process.argv.slice(3);
+      if (flags.includes('--short')) {
+        process.stdout.write(IDX_VERSION + '\n');
+      } else if (flags.includes('--json')) {
+        const info = {
+          version: IDX_VERSION,
+          node: process.version,
+          platform: process.platform,
+          arch: process.arch,
+        };
+        process.stdout.write(JSON.stringify(info, null, 2) + '\n');
+      } else {
+        process.stdout.write(`idx v${IDX_VERSION}\n`);
+      }
+      return;
+    }
+
+    // Subcommand: idx upgrade [--auto] [--quiet] [preamble [--auto|--never]]
+    if (process.argv[2] === 'upgrade') {
+      const flags = process.argv.slice(3);
+      if (flags[0] === 'preamble') {
+        const pFlags = flags.slice(1);
+        const level = pFlags.includes('--auto') ? 'never'
+          : pFlags.includes('--never') ? 'always'
+          : 'once';
+        process.stdout.write(generateUpgradePreamble('idx', level));
+        return;
+      }
+      await runUpgradeCLI(IDX_VERSION, {
+        auto: flags.includes('--auto'),
+        quiet: flags.includes('--quiet') || flags.includes('-q'),
+      });
+      return;
     }
 
     // Subcommand: idx snap <url> [flags] — no AI provider needed; dispatch early
