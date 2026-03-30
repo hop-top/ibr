@@ -3,7 +3,7 @@
  *
  * Fixes covered:
  *   1. Keychain timeout — execFileSync SIGTERM/ETIMEDOUT → CookieImportError('keychain_timeout')
- *   2. assertMacOS() — non-darwin platform → CookieImportError('unsupported_platform')
+ *   2. Platform support — Linux parity, Windows still rejected
  *   3. Domain filter expansion — bare domain auto-expands to include leading-dot variant
  *   4. Pure function unit tests: decryptCookieValue, toPlaywrightCookie,
  *      chromiumEpochToUnix, mapSameSite
@@ -50,7 +50,9 @@ async function loadModule() {
 
 describe('cookieImport — Copilot review regression tests', () => {
   afterEach(() => {
+    vi.clearAllMocks();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   // ── Fix 1: keychain timeout ────────────────────────────────────────────────
@@ -128,17 +130,17 @@ describe('cookieImport — Copilot review regression tests', () => {
     });
   });
 
-  // ── Fix 2: assertMacOS() platform guard ───────────────────────────────────
+  // ── Fix 2: platform support ───────────────────────────────────────────────
 
-  describe('assertMacOS() — unsupported_platform', () => {
-    it('throws CookieImportError(unsupported_platform) on linux', async () => {
+  describe('platform-aware cookie import support', () => {
+    it('supports importCookies on linux without Keychain access', async () => {
       vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
 
-      const { importCookies, CookieImportError } = await loadModule();
+      const { importCookies } = await loadModule();
 
-      await expect(importCookies('chrome', [])).rejects.toSatisfy((err) =>
-        err instanceof CookieImportError && err.code === 'unsupported_platform'
-      );
+      const result = await importCookies('chrome', []);
+      expect(result).toMatchObject({ count: 0, failed: 0 });
+      expect(execFileSync).not.toHaveBeenCalled();
     });
 
     it('throws CookieImportError(unsupported_platform) on win32', async () => {
@@ -164,23 +166,47 @@ describe('cookieImport — Copilot review regression tests', () => {
       expect(result).toMatchObject({ count: 0, failed: 0 });
     });
 
-    it('findInstalledBrowsers throws unsupported_platform on linux', async () => {
+    it('findInstalledBrowsers returns Linux-supported browsers only', async () => {
       vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
 
-      const { findInstalledBrowsers, CookieImportError } = await loadModule();
+      const { findInstalledBrowsers } = await loadModule();
 
-      expect(() => findInstalledBrowsers()).toThrow(
-        expect.objectContaining({ code: 'unsupported_platform' })
-      );
+      const result = findInstalledBrowsers().map(browser => browser.name);
+      expect(result).toEqual(['Chrome', 'Brave', 'Edge', 'Chromium']);
     });
 
-    it('listDomains throws unsupported_platform on linux', async () => {
+    it('findInstalledBrowsers uses XDG_CONFIG_HOME on linux', async () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+      vi.stubEnv('XDG_CONFIG_HOME', '/tmp/ibr-xdg');
+
+      const { findInstalledBrowsers } = await loadModule();
+      const fs = await import('fs');
+      const seenPaths = [];
+      fs.existsSync.mockImplementation((candidate) => {
+        seenPaths.push(candidate);
+        return candidate === '/tmp/ibr-xdg/google-chrome/Default/Cookies';
+      });
+
+      expect(findInstalledBrowsers().map(browser => browser.name)).toEqual(['Chrome']);
+      expect(seenPaths).toContain('/tmp/ibr-xdg/google-chrome/Default/Cookies');
+    });
+
+    it('listDomains works on linux', async () => {
       vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
 
-      const { listDomains, CookieImportError } = await loadModule();
+      const { listDomains } = await loadModule();
 
-      expect(() => listDomains('chrome')).toThrow(
-        expect.objectContaining({ code: 'unsupported_platform' })
+      expect(listDomains('chrome')).toEqual({ domains: [], browser: 'Chrome' });
+      expect(execFileSync).not.toHaveBeenCalled();
+    });
+
+    it('rejects macOS-only browser aliases on linux', async () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+
+      const { importCookies, CookieImportError } = await loadModule();
+
+      await expect(importCookies('arc', [])).rejects.toSatisfy((err) =>
+        err instanceof CookieImportError && err.code === 'unknown_browser'
       );
     });
   });

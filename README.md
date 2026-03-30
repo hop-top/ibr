@@ -81,11 +81,12 @@ instructions:
 ### Authenticated Sessions (`--cookies`)
 
 Import real browser cookies so ibr can reach pages that require a logged-in
-session. **macOS only.** Reads directly from the browser's on-disk SQLite
+session. Supports macOS and Linux Chromium-based browsers. Reads directly from
+the browser's on-disk SQLite
 cookie database; no proxy, no extension, no manual export needed.
 
-**Requires:** `better-sqlite3` (native addon, already listed in `package.json`)
-and macOS Keychain access for the target browser.
+**Requires:** `better-sqlite3` (native addon, already listed in `package.json`).
+On macOS, the first import also requires Keychain access for the target browser.
 
 #### Syntax
 
@@ -100,13 +101,14 @@ ibr --cookies <browser>[:<domain1>,<domain2>,...] "<prompt>"
 
 #### Supported Browsers
 
-| Alias | Browser |
-|-------|---------|
-| `comet` | Comet (Perplexity) |
-| `chrome` | Google Chrome |
-| `arc` | Arc |
-| `brave` | Brave |
-| `edge` | Microsoft Edge |
+| Alias | Browser | Platforms |
+|-------|---------|-----------|
+| `chrome` | Google Chrome | macOS, Linux |
+| `brave` | Brave | macOS, Linux |
+| `edge` | Microsoft Edge | macOS, Linux |
+| `arc` | Arc | macOS |
+| `comet` | Comet (Perplexity) | macOS |
+| `chromium` | Chromium | Linux |
 
 #### Examples
 
@@ -160,10 +162,12 @@ instructions:
 
 #### How It Works
 
-1. Resolves the browser's cookie DB path under
-   `~/Library/Application Support/<browser>/Default/Cookies`.
-2. Calls `security find-generic-password` to retrieve the Safe Storage key from
-   macOS Keychain — **a permission dialog appears on first run; click "Allow"**.
+1. Resolves the browser's cookie DB path under:
+   - macOS: `~/Library/Application Support/<browser>/Default/Cookies`
+   - Linux: `${XDG_CONFIG_HOME:-~/.config}/<browser>/Default/Cookies`
+2. Retrieves the Safe Storage password:
+   - macOS: `security find-generic-password` from Keychain — **a permission dialog appears on first run; click "Allow"**
+   - Linux: fixed Chromium fallback password `peanuts`
 3. Derives a 16-byte AES key via PBKDF2 (SHA-1, 1003 iterations, salt
    `saltysalt`).
 4. Decrypts each `v10`-prefixed cookie value with AES-128-CBC.
@@ -172,10 +176,10 @@ instructions:
 
 #### Limitations
 
-- **macOS only** — no Windows or Linux support.
+- **Windows not yet supported**.
 - Reads the **Default** profile only; named profiles not yet supported.
-- Keychain key is cached per-process; subsequent calls for the same browser
-  skip the dialog.
+- The derived key is cached per-process; macOS subsequent calls for the same
+  browser skip the dialog.
 
 #### Error Cases
 
@@ -183,8 +187,8 @@ instructions:
 |------------|-------|--------|
 | `not_installed` | Browser cookie DB not found on disk | Install the browser or check the alias spelling |
 | `keychain_denied` | User clicked "Deny" in the macOS dialog | Re-run and click "Allow" |
-| `keychain_timeout` | Keychain dialog not answered within 10 s | Re-run and respond to the dialog promptly |
-| `keychain_not_found` | No Keychain entry for that browser | Browser may not be a Chromium build; check alias |
+| `keychain_timeout` | macOS Keychain dialog not answered within 10 s | Re-run and respond to the dialog promptly |
+| `keychain_not_found` | No macOS Keychain entry for that browser | Browser may not be a Chromium build; check alias |
 | `db_locked` | DB still locked after copy attempt | Close the browser and retry |
 | `db_corrupt` | SQLite DB is corrupt | Reinstall or reset the browser profile |
 
@@ -712,7 +716,7 @@ instructions:
 ## Limitations
 
 - Requires API key for selected AI provider
-- `--cookies` flag requires macOS (no Windows/Linux)
+- `--cookies` flag supports macOS and Linux; Windows is not yet supported
 - May struggle with heavily JavaScript-rendered content
 - No built-in retry on transient failures (but logs indicate when/why to retry)
 - Browser automation is slower than direct API calls

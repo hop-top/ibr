@@ -6,7 +6,7 @@ import { createAIProvider } from './ai/provider.js';
 import { Operations } from './Operations.js';
 import { validateEnvironmentVariables, validateBrowserConfig } from './utils/validation.js';
 import logger from './utils/logger.js';
-import { importCookies } from './utils/cookieImport.js';
+import { importCookies, getSupportedCookieBrowsersHelpText } from './utils/cookieImport.js';
 import { runDomCommand } from './commands/snap.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
@@ -46,7 +46,7 @@ export function parseCookiesFlag(argv) {
       '--cookies flag requires a value. ' +
       'Usage: --cookies <browser>[:<domain1>,<domain2>]. ' +
       'Example: --cookies chrome  or  --cookies arc:github.com,linear.app. ' +
-      'Supported browsers: chrome, arc, brave, edge, comet.'
+      `Supported browsers: ${getSupportedCookieBrowsersHelpText()}.`
     );
   }
 
@@ -219,7 +219,7 @@ function printUsage() {
   logger.info('  --daemon                         Use persistent browser daemon (opt-in)');
   logger.info('  --cookies <browser>              Import all non-expired cookies from browser');
   logger.info('  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only');
-  logger.info('  Supported browsers: chrome, arc, brave, edge, comet');
+  logger.info(`  Supported browsers: ${getSupportedCookieBrowsersHelpText()}`);
   logger.info('  Note: --cookies and --mode are stateless-mode flags; not supported with --daemon');
   logger.info('  --annotate, -a               Capture annotated screenshots after each find step');
   logger.info('  --mode aria   Force ARIA accessibility tree (ariaSnapshot)');
@@ -456,7 +456,7 @@ async function run() {
           logger.error(
             `Cookie import failed: ${err.message} ` +
             `Continuing without session cookies — authenticated pages may be inaccessible. ` +
-            `Check that the browser is installed and you granted Keychain access when prompted.`,
+            `Check that the browser is installed and, on macOS, grant Keychain access when prompted.`,
             { code: err.code }
           );
           // Non-fatal — continue without session cookies

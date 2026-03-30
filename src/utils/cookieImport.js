@@ -1,13 +1,18 @@
 /**
  * Chromium browser cookie import — read and decrypt cookies from real browsers.
  *
- * Supports macOS Chromium-based browsers: Comet, Chrome, Arc, Brave, Edge.
+ * Supports Chromium-based browsers on:
+ *   - macOS: Comet, Chrome, Arc, Brave, Edge
+ *   - Linux: Chrome, Brave, Edge, Chromium
+ * Windows is not yet supported.
+ *
  * Pure logic module — no Playwright dependency, no HTTP concerns.
  *
- * Decryption pipeline (Chromium macOS "v10" format):
+ * Decryption pipeline (Chromium "v10" format):
  *
- *   1. Keychain: `security find-generic-password -s "<svc>" -w`
- *      → base64 password string
+ *   1. Safe Storage password:
+ *      - macOS: `security find-generic-password -s "<svc>" -w`
+ *      - Linux: fixed password `peanuts`
  *
  *   2. Key derivation:
  *      PBKDF2(password, salt="saltysalt", iter=1003, len=16, sha1)
@@ -28,8 +33,6 @@
  *      Unix seconds = (epoch - 11644473600000000) / 1000000
  *
  *   6. sameSite: 0→"None", 1→"Lax", 2→"Strict", else→"Lax"
- *
- * macOS only — no Windows/Linux support.
  */
 
 import Database from 'better-sqlite3';
@@ -45,35 +48,54 @@ import { execFileSync } from 'child_process';
 export const BROWSER_REGISTRY = [
   {
     name: 'Comet',
-    dataDir: 'Comet/',
+    dataDirs: { darwin: 'Comet/' },
     keychainService: 'Comet Safe Storage',
     aliases: ['comet', 'perplexity'],
   },
   {
     name: 'Chrome',
-    dataDir: 'Google/Chrome/',
+    dataDirs: {
+      darwin: 'Google/Chrome/',
+      linux: 'google-chrome/',
+    },
     keychainService: 'Chrome Safe Storage',
     aliases: ['chrome', 'google-chrome'],
   },
   {
     name: 'Arc',
-    dataDir: 'Arc/User Data/',
+    dataDirs: { darwin: 'Arc/User Data/' },
     keychainService: 'Arc Safe Storage',
     aliases: ['arc'],
   },
   {
     name: 'Brave',
-    dataDir: 'BraveSoftware/Brave-Browser/',
+    dataDirs: {
+      darwin: 'BraveSoftware/Brave-Browser/',
+      linux: 'BraveSoftware/Brave-Browser/',
+    },
     keychainService: 'Brave Safe Storage',
     aliases: ['brave'],
   },
   {
     name: 'Edge',
-    dataDir: 'Microsoft Edge/',
+    dataDirs: {
+      darwin: 'Microsoft Edge/',
+      linux: 'microsoft-edge/',
+    },
     keychainService: 'Microsoft Edge Safe Storage',
     aliases: ['edge'],
   },
+  {
+    name: 'Chromium',
+    dataDirs: { linux: 'chromium/' },
+    keychainService: 'Chromium Safe Storage',
+    aliases: ['chromium'],
+  },
 ];
+
+const COOKIE_BROWSER_HELP_TEXT =
+  'chrome, brave, edge, arc (macOS), comet (macOS), chromium (Linux)';
+const LINUX_SAFE_STORAGE_PASSWORD = 'peanuts';
 
 // ─── Key Cache ───────────────────────────────────────────────────
 // Derive once per browser per process.
@@ -93,26 +115,53 @@ export class CookieImportError extends Error {
 
 // ─── Platform Guard ───────────────────────────────────────────────
 
-function assertMacOS() {
-  if (process.platform !== 'darwin') {
+function assertSupportedPlatform() {
+  if (process.platform !== 'darwin' && process.platform !== 'linux') {
     throw new CookieImportError(
-      `Cookie import is only supported on macOS (current platform: ${process.platform}).`,
+      `Cookie import is supported on macOS and Linux only (current platform: ${process.platform}).`,
       'unsupported_platform',
     );
   }
 }
 
+function getConfigBase() {
+  assertSupportedPlatform();
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support');
+  }
+  return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+}
+
+function getSupportedBrowsers() {
+  assertSupportedPlatform();
+  return BROWSER_REGISTRY.filter(browser => Boolean(browser.dataDirs[process.platform]));
+}
+
+function getBrowserDataDir(browser) {
+  const dataDir = browser.dataDirs[process.platform];
+  if (!dataDir) {
+    throw new CookieImportError(
+      `${browser.name} cookie import is not supported on ${process.platform}.`,
+      'unsupported_browser',
+    );
+  }
+  return dataDir;
+}
+
+export function getSupportedCookieBrowsersHelpText() {
+  return COOKIE_BROWSER_HELP_TEXT;
+}
+
 // ─── Public API ──────────────────────────────────────────────────
 
 /**
- * Find which browsers are installed (have a cookie DB on disk).
- * @returns {Array<{name:string, dataDir:string, keychainService:string, aliases:string[]}>}
+ * Find which browsers are installed (have a cookie DB on disk for this platform).
+ * @returns {Array<{name:string, dataDirs:Object, keychainService:string, aliases:string[]}>}
  */
 export function findInstalledBrowsers() {
-  assertMacOS();
-  const appSupport = path.join(os.homedir(), 'Library', 'Application Support');
-  return BROWSER_REGISTRY.filter(b => {
-    const dbPath = path.join(appSupport, b.dataDir, 'Default', 'Cookies');
+  const configBase = getConfigBase();
+  return getSupportedBrowsers().filter(browser => {
+    const dbPath = path.join(configBase, getBrowserDataDir(browser), 'Default', 'Cookies');
     try { return fs.existsSync(dbPath); } catch { return false; }
   });
 }
@@ -124,7 +173,6 @@ export function findInstalledBrowsers() {
  * @returns {{ domains: Array<{domain:string, count:number}>, browser: string }}
  */
 export function listDomains(browserName, profile = 'Default') {
-  assertMacOS();
   const browser = resolveBrowser(browserName);
   const dbPath = getCookieDbPath(browser, profile);
   const db = openDb(dbPath, browser.name);
@@ -153,7 +201,6 @@ export function listDomains(browserName, profile = 'Default') {
  * @returns {Promise<{cookies: Array, count: number, failed: number, domainCounts: Object}>}
  */
 export async function importCookies(browserName, domains, profile = 'Default') {
-  assertMacOS();
   const browser = resolveBrowser(browserName);
   const derivedKey = getDerivedKey(browser);
   const dbPath = getCookieDbPath(browser, profile);
@@ -216,12 +263,13 @@ export async function importCookies(browserName, domains, profile = 'Default') {
 // ─── Internal: Browser Resolution ───────────────────────────────
 
 function resolveBrowser(nameOrAlias) {
+  const browsers = getSupportedBrowsers();
   const needle = nameOrAlias.toLowerCase().trim();
-  const found = BROWSER_REGISTRY.find(b =>
+  const found = browsers.find(b =>
     b.aliases.includes(needle) || b.name.toLowerCase() === needle
   );
   if (!found) {
-    const supported = BROWSER_REGISTRY.flatMap(b => b.aliases).join(', ');
+    const supported = browsers.flatMap(b => b.aliases).join(', ');
     throw new CookieImportError(
       `Unknown browser '${nameOrAlias}'. Supported: ${supported}`,
       'unknown_browser',
@@ -241,8 +289,7 @@ function validateProfile(profile) {
 
 function getCookieDbPath(browser, profile) {
   validateProfile(profile);
-  const appSupport = path.join(os.homedir(), 'Library', 'Application Support');
-  const dbPath = path.join(appSupport, browser.dataDir, profile, 'Cookies');
+  const dbPath = path.join(getConfigBase(), getBrowserDataDir(browser), profile, 'Cookies');
   if (!fs.existsSync(dbPath)) {
     throw new CookieImportError(
       `${browser.name} is not installed (no cookie database at ${dbPath})`,
@@ -304,10 +351,13 @@ function openDbFromCopy(dbPath, browserName) {
 // ─── Internal: Keychain Access ───────────────────────────────────
 
 function getDerivedKey(browser) {
-  const cached = keyCache.get(browser.keychainService);
+  const cacheKey = `${process.platform}:${browser.keychainService}`;
+  const cached = keyCache.get(cacheKey);
   if (cached) return cached;
 
-  const password = getKeychainPassword(browser.keychainService);
+  const password = process.platform === 'linux'
+    ? LINUX_SAFE_STORAGE_PASSWORD
+    : getKeychainPassword(browser.keychainService);
   const derived = crypto.pbkdf2Sync(
     Buffer.from(password, 'utf-8'),
     'saltysalt',
@@ -315,7 +365,7 @@ function getDerivedKey(browser) {
     16,
     'sha1',
   );
-  keyCache.set(browser.keychainService, derived);
+  keyCache.set(cacheKey, derived);
   return derived;
 }
 
@@ -372,8 +422,8 @@ function decryptCookieValue(row, key) {
   if (prefix !== 'v10') {
     throw new Error(
       `Unknown cookie encryption prefix: "${prefix}" (expected "v10"). ` +
-      `This cookie may have been encrypted with an unsupported Chromium version or a Windows/Linux format. ` +
-      `Only macOS Chromium "v10" AES-128-CBC cookies are supported.`
+      `This cookie may have been encrypted with an unsupported Chromium version or Windows format. ` +
+      `Only macOS/Linux Chromium "v10" AES-128-CBC cookies are supported.`
     );
   }
 

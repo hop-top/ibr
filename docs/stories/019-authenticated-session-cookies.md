@@ -15,6 +15,8 @@ logged-in session, without re-entering credentials.
   specific domains, avoiding unrelated cookie noise.
 - As a CLI user, macOS Keychain prompts me once per browser; after I click
   "Allow" the key is cached for the rest of the process lifetime.
+- As a CLI user on Linux, I can import Chromium-family cookies without a
+  Keychain prompt by using Chromium's standard `peanuts` fallback key.
 - As a CLI user, I get a clear error if the browser is not installed, if
   Keychain access is denied, or if the DB is corrupt — each with an
   actionable hint.
@@ -29,5 +31,6 @@ logged-in session, without re-entering credentials.
   click "Allow".
 - Keychain timeout (>10 s): `CookieImportError` with `code: 'keychain_timeout'`.
 - DB corrupt: `CookieImportError` with `code: 'db_corrupt'`.
-- macOS only; exits with clear message on Linux/Windows.
+- Linux is supported for Chrome, Brave, Edge, and Chromium.
+- Windows remains unsupported; exits with clear message on Windows.
 - Requires `better-sqlite3`; native build handled by pnpm.
