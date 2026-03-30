@@ -24,10 +24,10 @@ dotenv.config();
  * @returns {{ browser: string, domains: string[] } | null}
  */
 export function parseCookiesFlag(argv) {
-  const idx = argv.indexOf('--cookies');
-  if (idx === -1) return null;
+  const cookiesFlagIndex = argv.indexOf('--cookies');
+  if (cookiesFlagIndex === -1) return null;
 
-  const raw = argv[idx + 1];
+  const raw = argv[cookiesFlagIndex + 1];
   if (!raw || raw.startsWith('--')) {
     throw new Error(
       '--cookies flag requires a value. ' +

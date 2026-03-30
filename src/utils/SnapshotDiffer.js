@@ -40,8 +40,8 @@ function flattenByIndex(node, map = new Map()) {
 function buildPathMap(domTree, xpaths) {
   const flat = flattenByIndex(domTree);
   const pathMap = new Map();
-  for (const [idx, node] of flat) {
-    const path = (xpaths && xpaths[idx]) ? xpaths[idx] : String(idx);
+  for (const [flatIndex, node] of flat) {
+    const path = (xpaths && xpaths[flatIndex]) ? xpaths[flatIndex] : String(flatIndex);
     pathMap.set(path, node);
   }
   return pathMap;

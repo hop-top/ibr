@@ -32,8 +32,8 @@ export class DomSimplifier {
           const tag = node.tagName;
           const siblings = Array.from(node.parentNode?.children || [])
             .filter(c => c.tagName === tag);
-          const idx = siblings.length > 1 ? `[${siblings.indexOf(node) + 1}]` : '';
-          parts.unshift(`${tag}${idx}`);
+          const siblingSuffix = siblings.length > 1 ? `[${siblings.indexOf(node) + 1}]` : '';
+          parts.unshift(`${tag}${siblingSuffix}`);
           node = node.parentNode;
           if (node === document.documentElement.parentNode) break;
         }
@@ -158,10 +158,10 @@ export class DomSimplifier {
             const parts = [];
             let node = el;
             while (node && node.nodeType === Node.ELEMENT_NODE) {
-              let idx = 1;
+              let siblingIndex = 1;
               let sib = node.previousElementSibling;
-              while (sib) { idx++; sib = sib.previousElementSibling; }
-              parts.unshift(`${node.tagName.toLowerCase()}:nth-child(${idx})`);
+              while (sib) { siblingIndex++; sib = sib.previousElementSibling; }
+              parts.unshift(`${node.tagName.toLowerCase()}:nth-child(${siblingIndex})`);
               node = node.parentElement;
             }
             return parts.join(' > ');
