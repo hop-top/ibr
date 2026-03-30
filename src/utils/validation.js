@@ -1,5 +1,6 @@
 import logger from './logger.js';
 import { parseWithBAML } from '../ai/baml-parser.js';
+import { CliError } from './cliErrors.js';
 
 /**
  * Schema for task description returned by AI model
@@ -22,7 +23,8 @@ const INSTRUCTION_SCHEMA = {
 export function validateEnvironmentVariables(requiredVars) {
   const missing = requiredVars.filter(v => !process.env[v]);
   if (missing.length > 0) {
-    throw new Error(
+    throw new CliError(
+      'CONFIG_ERROR',
       `Missing required environment variables: ${missing.join(', ')}\n` +
       `Please configure them in your .env file. See .env.example for details.`
     );

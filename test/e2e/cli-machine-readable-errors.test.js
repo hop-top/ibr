@@ -88,13 +88,61 @@ describe('cli machine-readable errors (story 015)', () => {
     expect(result.stdout).not.toMatch(/at Object\.\<anonymous\>|at Module\._compile/);
   }, 30000);
 
-  it.todo(
-    'stderr JSON has "error" key + "code" field (AI_PARSE_ERROR) — ' +
-    'needs structured JSON stderr in src/index.js',
-  );
+  it('stderr JSON has "error" key + "code" field (AI_PARSE_ERROR)', async () => {
+    const ai = await startFakeAIServerE2E(['THIS IS NOT JSON {{{']);
+    const result = await runIbr(
+      [`go to ${web.baseUrl}/product-page.html and extract the title`],
+      {
+        ...BASE_ENV,
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_BASE_URL: ai.baseUrl,
+      },
+    );
+    await ai.close();
 
-  it.todo(
-    'stderr JSON has "code": "ELEMENT_NOT_FOUND" when element missing — ' +
-    'needs structured JSON stderr in src/index.js',
-  );
+    const lines = result.stderr.split('\n').filter(Boolean);
+    const jsonLine = lines.find(line => {
+      try {
+        const parsed = JSON.parse(line);
+        return parsed.error?.code === 'AI_PARSE_ERROR';
+      } catch {
+        return false;
+      }
+    });
+
+    expect(result.code).toBe(1);
+    expect(jsonLine).toBeDefined();
+  }, 30000);
+
+  it('stderr JSON has "code": "ELEMENT_NOT_FOUND" when element missing', async () => {
+    const ai = await startFakeAIServerE2E([
+      JSON.stringify({
+        url: `${web.baseUrl}/product-page.html`,
+        instructions: [{ name: 'click', prompt: 'click the missing control' }],
+      }),
+      JSON.stringify({ elements: [{ x: 9999 }], type: 'click' }),
+    ]);
+    const result = await runIbr(
+      [`go to ${web.baseUrl}/product-page.html and click the missing control`],
+      {
+        ...BASE_ENV,
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_BASE_URL: ai.baseUrl,
+      },
+    );
+    await ai.close();
+
+    const lines = result.stderr.split('\n').filter(Boolean);
+    const jsonLine = lines.find(line => {
+      try {
+        const parsed = JSON.parse(line);
+        return parsed.error?.code === 'ELEMENT_NOT_FOUND';
+      } catch {
+        return false;
+      }
+    });
+
+    expect(result.code).toBe(1);
+    expect(jsonLine).toBeDefined();
+  }, 30000);
 });

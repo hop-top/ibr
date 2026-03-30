@@ -1,5 +1,7 @@
 import { chromium } from 'playwright';
 import dotenv from 'dotenv';
+import { once } from 'node:events';
+import fs from 'node:fs';
 import { createAIProvider } from './ai/provider.js';
 import { Operations } from './Operations.js';
 import { validateEnvironmentVariables, validateBrowserConfig } from './utils/validation.js';
@@ -7,6 +9,7 @@ import logger from './utils/logger.js';
 import { importCookies } from './utils/cookieImport.js';
 import { runDomCommand } from './commands/snap.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
+import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
 
 // Load environment variables
 dotenv.config();
@@ -86,6 +89,52 @@ function getBrowserConfig() {
     timeout,
     channel: process.env.BROWSER_CHANNEL
   });
+}
+
+function emitStructuredError(error) {
+  process.stderr.write(`\n${JSON.stringify(serializeCliError(error))}\n`);
+}
+
+async function readPromptFromStdin() {
+  const stat = fs.fstatSync(0);
+  const hasPipedInput = stat.isFIFO() || stat.isFile() || stat.isSocket();
+
+  if (process.stdin.isTTY || !hasPipedInput) {
+    return '';
+  }
+
+  const stdinReady = await Promise.race([
+    once(process.stdin, 'readable').then(() => true),
+    once(process.stdin, 'end').then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 50)),
+  ]);
+
+  if (!stdinReady) {
+    return '';
+  }
+
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+
+  return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+function parseExecutionTimeoutMs() {
+  const raw = process.env.EXECUTION_TIMEOUT_MS;
+  if (!raw) return null;
+
+  const timeoutMs = Number.parseInt(raw, 10);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new CliError(
+      'CONFIG_ERROR',
+      `EXECUTION_TIMEOUT_MS must be a positive integer in milliseconds (got: ${raw}). ` +
+      'Set EXECUTION_TIMEOUT_MS=1000 to cap a run at 1 second, or unset it for no global timeout.'
+    );
+  }
+
+  return timeoutMs;
 }
 
 const VALID_MODES = new Set(['aria', 'dom', 'auto']);
@@ -236,15 +285,22 @@ async function run() {
     process.argv = savedArgv;
 
     // The prompt is the first remaining positional argument
-    const prompt = args[0];
+    let prompt = args[0];
 
     // Validate command line arguments (after stripping --cookies and --mode)
     if (!prompt) {
-      logger.error(
+      prompt = await readPromptFromStdin();
+    }
+
+    if (!prompt) {
+      const error = new CliError(
+        'CONFIG_ERROR',
         'No user prompt provided. ' +
         'Pass a task description as the first argument, e.g.: ibr "url: https://example.com\\ninstructions:\\n  - click the login button". ' +
         'Run "ibr --help" for full usage.'
       );
+      logger.error(error.message);
+      emitStructuredError(error);
       printUsage();
       process.exit(1);
     }
@@ -265,6 +321,7 @@ async function run() {
       } catch (err) {
         // Only log the message, not the full stack for usage errors
         logger.error(err.message);
+        emitStructuredError(ensureCliError(err, 'CONFIG_ERROR'));
         process.exit(1);
       }
       return;
@@ -296,8 +353,11 @@ async function run() {
       operationOptions = getOperationOptions(mode, annotate);
     } catch (err) {
       logger.error(err.message);
+      emitStructuredError(ensureCliError(err, 'CONFIG_ERROR'));
       process.exit(1);
     }
+
+    const executionTimeoutMs = parseExecutionTimeoutMs();
 
     logger.debug('Browser configuration', { ...browserConfig, channel: browserConfig.channel || 'default' });
     logger.debug('Operation options', operationOptions);
@@ -364,12 +424,14 @@ async function run() {
       try {
         taskDescription = await operations.parseTaskDescription(prompt);
       } catch (error) {
+        const cliError = ensureCliError(error, 'AI_PARSE_ERROR');
         logger.error('Failed to parse task description. ' +
           'Ensure the prompt includes a "url:" field and an "instructions:" list. ' +
           'Example: "url: https://example.com\\ninstructions:\\n  - click submit". ' +
           'Check AI_PROVIDER and API key env vars if the AI call itself failed.', {
-          error: error.message,
+          error: cliError.message,
         });
+        emitStructuredError(cliError);
         process.exit(1);
       }
 
@@ -379,7 +441,26 @@ async function run() {
       // Execute task
       try {
         logger.info('Starting task execution');
-        await operations.executeTask(taskDescription);
+        if (executionTimeoutMs == null) {
+          await operations.executeTask(taskDescription);
+        } else {
+          let timeoutId;
+          const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => {
+              reject(new CliError(
+                'TIMEOUT',
+                `Execution exceeded the global timeout of ${executionTimeoutMs} ms. ` +
+                'Increase EXECUTION_TIMEOUT_MS or reduce page/action delays for this workflow.'
+              ));
+            }, executionTimeoutMs);
+          });
+
+          try {
+            await Promise.race([operations.executeTask(taskDescription), timeoutPromise]);
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
 
         logger.info('Task execution completed');
         logger.info('Extracted data:', JSON.stringify(operations.extracts, null, 2));
@@ -391,12 +472,14 @@ async function run() {
           totalTokens: operations.tokenUsage.total
         });
       } catch (error) {
+        const cliError = ensureCliError(error, 'RUNTIME_ERROR');
         logger.error('Task execution failed. ' +
           'Review the error above for the failing instruction index and observability context. ' +
           'Run "ibr snap <url> -i" to inspect the page state before retrying.', {
-          error: error.message,
+          error: cliError.message,
           stage: 'task execution'
         });
+        emitStructuredError(cliError);
         process.exit(1);
       }
     } finally {
@@ -405,15 +488,19 @@ async function run() {
       await browser.close();
     }
   } catch (error) {
+    const cliError = ensureCliError(error, 'RUNTIME_ERROR');
     logger.error('Fatal error', {
-      error: error.message,
-      code: error.code
+      error: cliError.message,
+      code: cliError.code
     });
+    emitStructuredError(cliError);
     process.exit(1);
   }
 }
 
 run().catch(error => {
-  logger.error('Unhandled error in main', { error: error.message });
+  const cliError = ensureCliError(error, 'RUNTIME_ERROR');
+  logger.error('Unhandled error in main', { error: cliError.message });
+  emitStructuredError(cliError);
   process.exit(1);
 });

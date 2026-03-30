@@ -1,5 +1,8 @@
 # ibr justfile
 
+browser-install:
+    npm run browser:install
+
 test:
     npm test
 

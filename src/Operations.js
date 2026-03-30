@@ -23,6 +23,7 @@ import { ObservabilityBuffer } from './observability/ObservabilityBuffer.js';
 import { AnnotationService } from './services/AnnotationService.js';
 import { streamer } from './observability/NdjsonStreamer.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
+import { CliError, ensureCliError } from './utils/cliErrors.js';
 
 /** Strip query params from URL before emitting to NDJSON stream (avoid leaking tokens/keys). */
 function sanitizeUrlForStream(rawUrl) {
@@ -354,7 +355,9 @@ export class Operations {
                 error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
+            throw alreadyAnnotated
+                ? error
+                : ensureCliError(error, 'RUNTIME_ERROR', { message: errMsg });
         }
     }
 
@@ -407,7 +410,9 @@ export class Operations {
                 error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
+            throw alreadyAnnotated
+                ? error
+                : ensureCliError(error, 'RUNTIME_ERROR', { message: errMsg });
         }
     }
 
@@ -509,7 +514,9 @@ export class Operations {
                 executionIndex: this.executionIndex
             });
             streamer.instructionError({ instructionType: 'extract', error: error.message });
-            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
+            throw alreadyAnnotated
+                ? error
+                : ensureCliError(error, 'RUNTIME_ERROR', { message: errMsg });
         }
     }
 
@@ -622,11 +629,13 @@ export class Operations {
                 }
 
                 if (!locator) {
-                    throw new Error(
+                    throw new CliError(
+                        'ELEMENT_NOT_FOUND',
                         `Unable to resolve element descriptor: ${JSON.stringify(descriptor)}. ` +
                         `The AI returned a reference that could not be matched to a page element. ` +
                         `Run "ibr snap <url> -i" to inspect available interactive elements and their @refs, ` +
-                        `then retry with a more specific prompt.`
+                        `then retry with a more specific prompt.`,
+                        { step: this.executionIndex, action: action.type?.toLowerCase() || instruction.name }
                     );
                 }
 
@@ -705,10 +714,12 @@ export class Operations {
                         { status: 'error', error: actionError.message },
                         Date.now() - actionStartMs,
                     );
-                    throw new Error(
+                    throw new CliError(
+                        'RUNTIME_ERROR',
                         `Failed to execute "${action.type}" action on element ${locatorDesc}: ${actionError.message}. ` +
                         `The element was found but the action failed — it may be hidden, disabled, or covered by another element. ` +
-                        `Run "ibr snap <url> -i" to inspect the page state.`
+                        `Run "ibr snap <url> -i" to inspect the page state.`,
+                        { step: this.executionIndex, action: action.type?.toLowerCase() || instruction.name, cause: actionError }
                     );
                 } finally {
                     // Clean up injected refs after action
@@ -741,7 +752,9 @@ export class Operations {
                 error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
+            throw alreadyAnnotated
+                ? error
+                : ensureCliError(error, 'RUNTIME_ERROR', { message: errMsg });
         }
     }
 
@@ -967,7 +980,9 @@ export class Operations {
                 error: errMsg,
                 executionIndex: this.executionIndex
             });
-            throw alreadyAnnotated ? error : new Error(errMsg, { cause: error });
+            throw alreadyAnnotated
+                ? error
+                : ensureCliError(error, 'RUNTIME_ERROR', { message: errMsg });
         }
     }
 }

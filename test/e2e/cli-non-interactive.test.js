@@ -66,9 +66,8 @@ describe('cli non-interactive mode (story 016)', () => {
     await web.close();
   });
 
-  it.skip(
-    'prompt piped via stdin (no CLI arg) → exit 0 — ' +
-    'src/index.js reads prompt from argv[2] only; stdin not yet supported',
+  it(
+    'prompt piped via stdin (no CLI arg) → exit 0',
     async () => {
       const prompt =
         `go to ${web.baseUrl}/product-page.html and extract the title\n`;

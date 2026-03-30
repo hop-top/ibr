@@ -46,6 +46,7 @@ yarn-error.log*
 
 # Test results
 test/results/
+coverage/
 
 # Cache
 .ibr-cache/
