@@ -10,6 +10,16 @@ import { importCookies } from './utils/cookieImport.js';
 import { runDomCommand } from './commands/snap.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
+import { createUpgrader } from './utils/upgrader.js';
+import { createRequire } from 'node:module';
+
+const _up = createUpgrader({ binary: 'ibr', githubRepo: 'hop-top/ibr' });
+const notifyIfAvailable = (v) => _up.notifyIfAvailable(v);
+const runUpgradeCLI = (v, opts) => _up.runUpgradeCLI(v, opts);
+
+const _require = createRequire(import.meta.url);
+const _pkg = _require('../package.json');
+const IBR_VERSION = _pkg.version || 'dev';
 
 // Load environment variables
 dotenv.config();
@@ -201,6 +211,9 @@ function printUsage() {
   logger.info('  ibr [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"');
   logger.info('  ibr [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)');
   logger.info('  ibr snap <url> [flags]          - inspect DOM at URL');
+  logger.info('  ibr upgrade [--auto] [--quiet]  - check for and install updates');
+  logger.info('  ibr upgrade preamble            - print agent skill preamble fragment');
+  logger.info('  ibr version [--short|--json]    - print version information');
   logger.info('');
   logger.info('Flags:');
   logger.info('  --daemon                         Use persistent browser daemon (opt-in)');
@@ -240,6 +253,7 @@ function printUsage() {
   logger.info('See .env.example for all available configuration options');
 }
 
+
 async function run() {
   logger.info('Starting ibr (Intent Browser Runtime)');
 
@@ -277,6 +291,12 @@ async function run() {
     // Strip --cookies flag to get effective argv for prompt detection
     const effectiveArgv = stripCookiesFlag(process.argv);
 
+    // Startup update notification (async, non-blocking; skipped for upgrade/version cmds)
+    const _subcmd = process.argv[2];
+    if (_subcmd !== 'upgrade' && _subcmd !== 'version') {
+      notifyIfAvailable(IBR_VERSION).catch(() => {});
+    }
+
     // Parse CLI flags (--mode) from the already-stripped argv (no --cookies)
     // parseCliFlags reads process.argv, so we temporarily shadow it
     const savedArgv = process.argv;
@@ -308,6 +328,43 @@ async function run() {
     if (prompt === '--help' || prompt === '-h') {
       printUsage();
       process.exit(0);
+    }
+
+    // Subcommand: ibr version
+    if (process.argv[2] === 'version') {
+      const flags = process.argv.slice(3);
+      if (flags.includes('--short')) {
+        process.stdout.write(IBR_VERSION + '\n');
+      } else if (flags.includes('--json')) {
+        const info = {
+          version: IBR_VERSION,
+          node: process.version,
+          platform: process.platform,
+          arch: process.arch,
+        };
+        process.stdout.write(JSON.stringify(info, null, 2) + '\n');
+      } else {
+        process.stdout.write(`ibr v${IBR_VERSION}\n`);
+      }
+      return;
+    }
+
+    // Subcommand: ibr upgrade [--auto] [--quiet] [preamble [--auto|--never]]
+    if (process.argv[2] === 'upgrade') {
+      const flags = process.argv.slice(3);
+      if (flags[0] === 'preamble') {
+        const pFlags = flags.slice(1);
+        const level = pFlags.includes('--auto') ? 'never'
+          : pFlags.includes('--never') ? 'always'
+          : 'once';
+        process.stdout.write(_up.generatePreamble(level));
+        return;
+      }
+      await runUpgradeCLI(IBR_VERSION, {
+        auto: flags.includes('--auto'),
+        quiet: flags.includes('--quiet') || flags.includes('-q'),
+      });
+      return;
     }
 
     // Subcommand: ibr snap <url> [flags] — no AI provider needed; dispatch early
