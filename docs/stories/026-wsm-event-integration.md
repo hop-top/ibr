@@ -47,3 +47,17 @@ web interactions alongside other workspace events.
 ## Tests
 
 - `test/unit/WsmAdapter.test.js` — 31 unit tests; 100% method coverage
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-wsm.test.js](../../test/e2e/cli-wsm.test.js) — partial: covers graceful
+  degradation when WSM is missing and successful navigate-event emission when a
+  fake WSM binary is present.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-wsm.test.js](../../test/e2e/cli-wsm.test.js) to verify
+  diagnostics/artifact recording, workspace browser profile inheritance, and
+  prior-failure warning behavior.

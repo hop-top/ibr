@@ -27,3 +27,15 @@ Browser dialogs (alert/confirm/prompt/beforeunload) don't block or timeout task 
 - Rapid-fire dialogs (<100ms apart) logged as warning; all entries still buffered.
 - Navigation-triggered dialog dismissal (accept throws) swallowed silently;
   entry recorded with `action='accept-failed'`.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- None today. Dialog handling is currently covered by unit tests.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-dialogs.test.js` — should verify
+  `alert`, `confirm`, `prompt`, and `beforeunload` handling plus observable
+  non-blocking behavior in a real browser run.

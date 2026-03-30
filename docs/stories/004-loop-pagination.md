@@ -22,3 +22,17 @@ or lazy-loaded content without manual iteration.
 - Hard iteration cap (100) prevents runaway loops.
 - Extracted data accumulates across iterations.
 - Cap reached: ibr logs warning and continues to result output.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [fixtures.test.js](../../test/e2e/fixtures.test.js) — partial: loop-shaped
+  fixtures can run end-to-end, but there are no dedicated assertions for loop
+  exit, accumulation, and cap behavior.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-loop.test.js` — should verify repeated
+  execution, loop exit on missing condition, extraction accumulation, and the
+  100-iteration safety cap.

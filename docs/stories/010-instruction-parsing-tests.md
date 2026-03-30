@@ -21,3 +21,16 @@ natural language prompts into structured action plans.
   if found) parsed correctly in unit tests.
 - Malformed prompts produce parse errors with descriptive messages.
 - Tests run without a real browser or AI API call (mocked AI responses).
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [fixtures.test.js](../../test/e2e/fixtures.test.js) — partial: structurally
+  validates parsed task descriptions against fixture expectations.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-parse-instruction-matrix.test.js`
+  — should cover the full prompt-to-plan matrix with dedicated end-to-end parse
+  assertions for each instruction type.

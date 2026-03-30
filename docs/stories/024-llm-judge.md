@@ -37,3 +37,16 @@ Non-deterministic AI output can't be exact-matched; semantic comparison required
 - T-0014: fixture schema (`expectedExtracts` field)
 - T-0015: result files at `test/results/e2e/*.json`
 - `src/ai/provider.js`: `createAIProvider`, `generateAIResponse`
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- None today. Judge behavior is covered by unit tests, not the current E2E
+  suite.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/judge-e2e.test.js` — should verify report
+  generation, threshold gating, and `--validate` behavior against fixture
+  result files.

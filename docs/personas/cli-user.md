@@ -17,6 +17,11 @@ clear error messages; and observable execution (logs, browser window).
 - [019 - Authenticated Session Cookies](../stories/019-authenticated-session-cookies.md)
 - [022 - Dialog Handling](../stories/022-dialog-handling.md)
 - [025 - Visual Debugging](../stories/025-visual-debugging.md)
+- [027 - Inspect Before Automating](../stories/027-inspect-before-automating.md)
+- [028 - Page Representation Control](../stories/028-page-representation-control.md)
+- [029 - Scroll / Viewport Control](../stories/029-scroll-viewport-control.md)
+- [033 - CLI Composition Via stdin](../stories/033-cli-composition-via-stdin.md)
+- [034 - Tool Lifecycle Commands](../stories/034-tool-lifecycle-commands.md)
 
 ## Related Stories
 

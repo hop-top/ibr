@@ -12,3 +12,8 @@ structured return values, error propagation, and token-usage reporting.
 - [008 - Structured Output](../stories/008-structured-output.md)
 - [009 - Error Propagation](../stories/009-error-propagation.md)
 - [013 - Token Usage Reporting](../stories/013-token-usage-reporting.md)
+- [030 - Structured Success Output Contract](../stories/030-structured-success-output-contract.md)
+- [031 - Cache Reuse Across Repeated Runs](../stories/031-cache-reuse-across-runs.md)
+- [032 - OpenAI-Compatible Gateway Support](../stories/032-openai-compatible-gateway-support.md)
+- [037 - Programmatic SDK Export](../stories/037-programmatic-sdk-export.md)
+- [038 - Structured SDK Result Contract](../stories/038-structured-sdk-result-contract.md)

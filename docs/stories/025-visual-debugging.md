@@ -39,3 +39,16 @@ screenshots with bounding-box overlays labeled `@e1`, `@e2`, `@c1`, etc.
   returns `{success:false}`.
 - Bounding boxes fetched in parallel batches of max 50 concurrent.
 - `AnnotationService` has no external image-library dependency (pure DOM).
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-annotate.test.js](../../test/e2e/cli-annotate.test.js) — partial:
+  covers `--annotate`, `-a`, and some failure-screenshot plumbing.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-annotate.test.js](../../test/e2e/cli-annotate.test.js) to assert
+  failure screenshot creation, predictable filenames, and non-fatal behavior on
+  screenshot/CSP failures.

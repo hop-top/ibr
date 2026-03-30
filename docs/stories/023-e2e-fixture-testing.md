@@ -20,6 +20,14 @@ AI without mocking.
 - Per-fixture result file written to `test/results/e2e/<category>-<name>.json`
 - Structural match asserted (not value-exact); value diffs flagged for T-0016
 
+## Acceptance Criteria
+
+- `npm run test:e2e` executes the loaded fixture suite end-to-end.
+- `E2E_TAGS` filtering limits execution to matching tagged fixtures.
+- Each fixture writes a result artifact under `test/results/e2e/`.
+- Structural parse/extract mismatches fail the run; value-only diffs are
+  recorded for downstream judgment.
+
 ## Structural Match Rules
 
 - URL: exact match
@@ -61,3 +69,14 @@ test/results/e2e/<category>-<name>.json
 
 - T-0014: fixture loader (`test/unit/fixtures/fixture-loader.js`)
 - T-0016: LLM judge consuming `test/results/e2e/*.json`
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [fixtures.test.js](../../test/e2e/fixtures.test.js) — full: this story is
+  implemented directly by the current E2E fixture runner.
+
+**Expected E2E coverage for full criteria**
+
+- None beyond current coverage.

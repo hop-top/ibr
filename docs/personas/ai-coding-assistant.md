@@ -13,6 +13,8 @@ machine-readable output, clear error codes, and no interactive prompts.
 - [016 - Non-Interactive Mode](../stories/016-non-interactive-mode.md)
 - [020 - Daemon Mode](../stories/020-daemon-mode.md)
 - [021 - High-Precision AI-Actionable Errors](../stories/021-high-precision-errors.md)
+- [027 - Inspect Before Automating](../stories/027-inspect-before-automating.md)
+- [030 - Structured Success Output Contract](../stories/030-structured-success-output-contract.md)
 
 ## Related Stories
 

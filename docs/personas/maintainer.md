@@ -13,6 +13,7 @@ DOM simplification fidelity, and AI prompt stability.
 - [012 - Loop Safety Tests](../stories/012-loop-safety-tests.md)
 - [023 - E2E Fixture Testing](../stories/023-e2e-fixture-testing.md)
 - [024 - LLM-as-Judge](../stories/024-llm-judge.md)
+- [034 - Tool Lifecycle Commands](../stories/034-tool-lifecycle-commands.md)
 
 ## Related Stories
 

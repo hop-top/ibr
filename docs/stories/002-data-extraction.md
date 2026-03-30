@@ -21,3 +21,18 @@ field names.
 - List extraction (`extract all …`) returns a JSON array.
 - Missing fields return `null`; ibr does not throw.
 - Output is valid JSON on stdout.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [fixtures.test.js](../../test/e2e/fixtures.test.js) — partial: validates
+  extraction structurally across fixtures.
+- [cli-daemon.test.js](../../test/e2e/cli-daemon.test.js) — partial: proves
+  extracted values are returned to the caller on successful runs.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-extraction.test.js` — should
+  verify scalar extraction, list extraction, missing-field `null` behavior, and
+  the exact CLI success payload shape.

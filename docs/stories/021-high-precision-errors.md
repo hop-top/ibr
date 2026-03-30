@@ -38,3 +38,19 @@ missing field, and a concrete next step.
 - `BAML parser: Unable to extract JSON` error names all strategies tried.
 - `AI response missing usage information` error mentions API version mismatch.
 - All new error strings are covered by unit tests asserting on message content.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-errors.test.js](../../test/e2e/cli-errors.test.js) — partial: covers
+  no-prompt hints, `snap` usage hints, `AI_TEMPERATURE` validation, parse
+  failures, and `--cookies` flag guidance.
+- [cli-machine-readable-errors.test.js](../../test/e2e/cli-machine-readable-errors.test.js)
+  — partial: proves some of the same failures are serialized structurally.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-errors.test.js](../../test/e2e/cli-errors.test.js) to cover
+  action-failure guidance, `-d` / `-s` flag messaging, and usage/API-version
+  mismatch hints.

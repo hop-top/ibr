@@ -20,3 +20,16 @@ success vs. failure without parsing output.
 - Exit 1: any unrecovered runtime error (element not found, timeout, AI error).
 - Exit 2: configuration error (missing key, unknown provider).
 - Loop cap reached (soft): exit 0 with warning on stderr.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-exit-codes.test.js](../../test/e2e/cli-exit-codes.test.js) — partial:
+  covers success, failure, and `snap` subcommand routing, but does not assert
+  the full exact numeric exit-code matrix.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-exit-codes.test.js](../../test/e2e/cli-exit-codes.test.js) to
+  assert exact `0/1/2` codes and loop-cap soft-warning behavior.

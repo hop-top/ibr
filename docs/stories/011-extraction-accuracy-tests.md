@@ -32,3 +32,17 @@ well-typed output against known HTML fixtures.
 - Fixture categories: instruction_types, edge_cases, parsing, extraction,
   navigation
 - Tags: @fast (commit hooks), @slow (nightly only)
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [fixtures.test.js](../../test/e2e/fixtures.test.js) — partial: validates
+  extraction structure across fixtures, but does not require exact extracted
+  values for all cases.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-extraction-accuracy.test.js`
+  — should assert exact scalar values, exact list values, and missing-field
+  behavior against local fixtures.

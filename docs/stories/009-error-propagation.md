@@ -25,3 +25,16 @@ re-throw them without parsing stderr.
 
 - Error messages are self-contained: include what failed, why, and how to fix.
 - No vague messages — every throw names the exact bad value or missing field.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- None today. Existing E2E error tests exercise CLI serialization, not SDK
+  rejection behavior.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/sdk-error-propagation.test.js`
+  — should verify structured rejection objects for config and runtime errors
+  and confirm that non-fatal skips do not reject.

@@ -22,3 +22,17 @@ without code changes.
 - Validates presence of the corresponding API key at startup.
 - `AI_MODEL` overrides provider default when set.
 - Unknown `AI_PROVIDER` value exits with non-zero and descriptive message.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-provider-selection.test.js](../../test/e2e/cli-provider-selection.test.js)
+  — partial: covers missing Anthropic key, unknown-provider failure, custom
+  model override, and OpenAI-compatible execution.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-provider-selection.test.js](../../test/e2e/cli-provider-selection.test.js)
+  to verify the Google provider path and the exact exit-code/error contract for
+  unsupported provider values.

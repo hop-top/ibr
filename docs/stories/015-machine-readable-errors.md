@@ -30,3 +30,18 @@ screen-scraping free-form text.
 - Element-not-found errors name the descriptor and suggest `ibr snap -i`.
 - Parse errors suggest `AI_TEMPERATURE=0` and prompt format corrections.
 - Flag errors include Usage + Example in the message string.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-machine-readable-errors.test.js](../../test/e2e/cli-machine-readable-errors.test.js)
+  — partial: covers `AI_PARSE_ERROR`, `ELEMENT_NOT_FOUND`, and stdout hygiene.
+- [cli-timeout.test.js](../../test/e2e/cli-timeout.test.js) — partial: covers
+  structured `TIMEOUT` serialization.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-machine-readable-errors.test.js](../../test/e2e/cli-machine-readable-errors.test.js)
+  to cover `CONFIG_ERROR`, `LOOP_CAP_REACHED`, and stdout cleanliness across
+  all error classes.

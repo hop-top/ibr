@@ -34,3 +34,16 @@ logged-in session, without re-entering credentials.
 - Linux is supported for Chrome, Brave, Edge, and Chromium.
 - Windows remains unsupported; exits with clear message on Windows.
 - Requires `better-sqlite3`; native build handled by pnpm.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- None today. Cookie import is covered by unit tests, not by the current E2E
+  suite.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-cookies.test.js` — should verify
+  browser selection, domain filtering, DB-copy-on-lock behavior, and non-fatal
+  failure handling with fixture cookie databases.

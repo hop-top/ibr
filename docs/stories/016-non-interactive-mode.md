@@ -19,3 +19,17 @@ vars or prompt string, not interactive prompts.
 - No interactive prompts at any point during execution.
 - Missing required config (API key) → immediate exit, non-zero code, JSON error.
 - Prompt accepted from stdin when no CLI argument provided (`ibr < prompt.yaml`).
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-non-interactive.test.js](../../test/e2e/cli-non-interactive.test.js) —
+  partial: covers stdin prompt input, missing-key failure without a TTY, and
+  absence of readline prompt characters.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-non-interactive.test.js](../../test/e2e/cli-non-interactive.test.js)
+  to verify the no-prompt/no-stdin failure path and CLI-argument precedence
+  over piped stdin content.

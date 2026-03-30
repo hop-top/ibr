@@ -36,3 +36,17 @@ where the same browser context is reused.
   with mode `0600`; contains `pid`, `port`, `token`.
 - Exit code 0 on successful command; non-zero on server error.
 - Daemon process keeps running between invocations (pid unchanged).
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-daemon.test.js](../../test/e2e/cli-daemon.test.js) — partial: covers
+  state file creation, `/health`, auth, successful daemon invocations, and pid
+  reuse.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-daemon.test.js](../../test/e2e/cli-daemon.test.js) to verify
+  auto-start on first invocation, idle shutdown, and transparent restart after
+  daemon failure.

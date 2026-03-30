@@ -21,3 +21,18 @@ enforce budgets.
 - Counts aggregated across all AI calls in the run.
 - Values are integers ≥ 0.
 - Available both in programmatic API and printed to stdout at CLI exit.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [fixtures.test.js](../../test/e2e/fixtures.test.js) — partial: records token
+  counts in per-fixture result artifacts.
+- [cli-daemon.test.js](../../test/e2e/cli-daemon.test.js) — partial: daemon
+  success payload includes `tokenUsage`.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-token-usage.test.js` — should
+  verify aggregated prompt/completion/total tokens for normal CLI success
+  output and the programmatic contract once shipped.

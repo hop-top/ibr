@@ -22,3 +22,17 @@ natural language.
 - Navigates to `url` before executing instructions.
 - Executes `click`, `fill`, `type`, `press` in sequence.
 - Times out gracefully with an actionable error if element not found.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [fixtures.test.js](../../test/e2e/fixtures.test.js) — partial: exercises the
+  parse-and-execute flow end-to-end, but does not provide a dedicated action
+  matrix for `click`, `fill`, `type`, and `press`.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-actions.test.js` — should verify the
+  `click`, `fill`, `type`, and `press` instruction paths plus element-not-found
+  failure behavior.

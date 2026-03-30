@@ -20,3 +20,15 @@ CI environments, Docker containers, and agent subprocesses.
 - `BROWSER_HEADLESS=true` (default) launches Chromium in headless mode.
 - No Xvfb or display server required when headless.
 - Exit code 0 on success, non-zero on any unrecovered error.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-headless.test.js](../../test/e2e/cli-headless.test.js) — partial:
+  covers successful headless runs and absence of display-related errors.
+
+**Expected E2E coverage for full criteria**
+
+- Extend [cli-headless.test.js](../../test/e2e/cli-headless.test.js) to verify
+  the default headless path and explicit execution with no `DISPLAY` available.

@@ -21,3 +21,15 @@ downstream processing.
 - Absent fields: `null`, not `undefined` or omitted.
 - Type of `data` consistent with instruction (`extract all` → array,
   `extract: a,b` → object).
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- None today. The current E2E suite validates CLI behavior, not SDK return
+  shapes.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/sdk-structured-output.test.js`
+  — should verify object vs array outputs, key fidelity, and `null` semantics.

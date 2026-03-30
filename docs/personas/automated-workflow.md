@@ -12,3 +12,6 @@ execution, timeout control, and no dependency on a display server.
 - [017 - Exit Code Contract](../stories/017-exit-code-contract.md)
 - [018 - Execution Timeout](../stories/018-execution-timeout.md)
 - [020 - Daemon Mode](../stories/020-daemon-mode.md)
+- [030 - Structured Success Output Contract](../stories/030-structured-success-output-contract.md)
+- [031 - Cache Reuse Across Repeated Runs](../stories/031-cache-reuse-across-runs.md)
+- [033 - CLI Composition Via stdin](../stories/033-cli-composition-via-stdin.md)

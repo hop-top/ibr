@@ -47,3 +47,18 @@ Observe execution in real-time and access structured logs to diagnose failures.
   action, extract, error, task_end.
 - Disabled by default; no output when unset.
 - Stream write errors are swallowed — observability never breaks core flow.
+
+## E2E Coverage
+
+**Existing E2E coverage**
+
+- [cli-annotate.test.js](../../test/e2e/cli-annotate.test.js) — partial:
+  covers annotated screenshots and part of the failure-screenshot workflow.
+- [cli-wsm.test.js](../../test/e2e/cli-wsm.test.js) — partial: covers one
+  observability sink via WSM event emission.
+
+**Expected E2E coverage for full criteria**
+
+- `test/e2e/cli-observability.test.js` —
+  should verify headed execution, `BROWSER_SLOWMO`, log file emission,
+  `NDJSON_STREAM`, and non-fatal observability failures.
