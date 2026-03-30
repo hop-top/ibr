@@ -1,4 +1,4 @@
-# 021 - Visual Debugging (Annotated Screenshots)
+# 025 - Visual Debugging (Annotated Screenshots)
 
 **Persona:** [CLI User](../personas/cli-user.md)
 

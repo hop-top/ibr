@@ -1,4 +1,6 @@
-# Story 024: LLM-as-Judge for Extraction Quality
+# 024 - LLM-as-Judge for Extraction Quality
+
+**Persona:** [Maintainer](../personas/maintainer.md)
 
 ## Summary
 

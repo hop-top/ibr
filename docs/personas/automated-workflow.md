@@ -11,3 +11,4 @@ execution, timeout control, and no dependency on a display server.
 - [014 - Headless Execution](../stories/014-headless-execution.md)
 - [017 - Exit Code Contract](../stories/017-exit-code-contract.md)
 - [018 - Execution Timeout](../stories/018-execution-timeout.md)
+- [020 - Daemon Mode](../stories/020-daemon-mode.md)

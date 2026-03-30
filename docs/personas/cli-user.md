@@ -15,6 +15,8 @@ clear error messages; and observable execution (logs, browser window).
 - [005 - AI Provider Selection](../stories/005-ai-provider-selection.md)
 - [006 - Debug & Observability](../stories/006-debug-observability.md)
 - [019 - Authenticated Session Cookies](../stories/019-authenticated-session-cookies.md)
+- [022 - Dialog Handling](../stories/022-dialog-handling.md)
+- [025 - Visual Debugging](../stories/025-visual-debugging.md)
 
 ## Related Stories
 

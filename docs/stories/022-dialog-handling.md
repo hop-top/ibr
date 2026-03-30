@@ -1,6 +1,6 @@
 # 022 - Dialog Handling
 
-**Persona:** CLI User
+**Persona:** [CLI User](../personas/cli-user.md)
 
 ## Goal
 

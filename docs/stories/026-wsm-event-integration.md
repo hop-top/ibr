@@ -1,4 +1,6 @@
-# Story 023 — WSM Event Integration for Browser Interactions
+# 026 - WSM Event Integration for Browser Interactions
+
+**Persona:** [Workspace Operator](../personas/workspace-operator.md)
 
 **Status:** Done
 **Task:** T-0011

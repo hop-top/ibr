@@ -1,4 +1,6 @@
-# Story 023 — Tier 2: E2E AI-Agent Fixture Testing (T-0015)
+# 023 - Tier 2: E2E AI-Agent Fixture Testing (T-0015)
+
+**Persona:** [Maintainer](../personas/maintainer.md)
 
 ## Goal
 
