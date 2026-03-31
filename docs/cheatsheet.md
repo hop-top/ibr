@@ -228,6 +228,113 @@ ibr upgrade preamble         # emit agent skill preamble fragment
 
 ---
 
+## Pro Tips
+
+### Pipe results into other tools
+
+```bash
+# Extract JSON → jq
+ibr "url: https://hn.algolia.com/?q=rust&type=story
+instructions:
+  - extract top 10 stories with title, points, url" | jq '.[].title'
+
+# Feed ibr output into ctxt
+ibr tool web-search --param query="ibr playwright" | ctxt analyze --type text --hints "#research"
+
+# Chain ibr → ibr via stdin
+ibr tool arxiv --param query="LLM agents" | ibr "url: -
+instructions:
+  - summarise the key contributions of each paper"
+```
+
+### Scope cookies tightly to reduce noise
+
+```bash
+# Bad — imports thousands of cookies, may confuse AI context
+ibr --cookies chrome "url: https://github.com ..."
+
+# Better — only what's needed
+ibr --cookies chrome:github.com "url: https://github.com ..."
+```
+
+### Snap first, automate second
+
+```bash
+# Inspect interactive elements before writing a prompt
+ibr snap https://app.example.com -i -d 4
+
+# Force dom mode on canvas/shadow-DOM apps
+ibr snap https://figma.com --mode dom -i
+```
+
+### Combine snap + AI prompt for hard pages
+
+```bash
+# Capture the raw structure, pipe into an ibr prompt
+ibr snap https://app.example.com -i | ibr "given this DOM:
+$(cat -)
+write ibr instructions to click the primary CTA"
+```
+
+### Daemon for high-frequency scripting
+
+```bash
+# Start daemon once; all subsequent calls are ~540ms
+IBR_DAEMON=true ibr "url: https://example.com/step1 ..."
+IBR_DAEMON=true ibr "url: https://example.com/step2 ..."
+
+# Stop
+kill $(jq .pid ~/.ibr/server.json)
+```
+
+### Structured output → CSV pipeline
+
+```bash
+ibr tool amazon --param query="mechanical keyboards" --param max_results=20 \
+  | jq -r '.[] | [.title, .price, .rating] | @csv' \
+  > keyboards.csv
+```
+
+### Batch tool runs with xargs
+
+```bash
+# Search arxiv for multiple topics in parallel
+echo -e "LLM agents\ntransformer attention\nRAG retrieval" \
+  | xargs -P3 -I{} ibr tool arxiv --param query="{}" --param max_results=3
+```
+
+### Debug a stuck flow with annotate + logs
+
+```bash
+LOG_LEVEL=debug ANNOTATED_SCREENSHOTS_ON_FAILURE=true \
+  ibr --annotate "url: https://example.com ..." 2>ibr.log
+# Review PNGs in /tmp/ibr-annotate-*.png and ibr.log
+```
+
+### Force a specific AI model per run
+
+```bash
+AI_MODEL=claude-opus-4-6 AI_PROVIDER=anthropic ibr "url: ... complex multi-step task"
+AI_MODEL=gpt-4o ibr "url: ... quick extraction"
+```
+
+### NDJSON streaming for pipeline integration
+
+```bash
+NDJSON_STREAM=true ibr "url: https://example.com ..." \
+  | jq -c 'select(.event == "extract")' \
+  | while read line; do echo "$line" | process_event; done
+```
+
+### robots.txt as a gate in CI
+
+```bash
+# Fail fast if site disallows automation
+OBEY_ROBOTS=true ibr "url: https://example.com ..." || exit 1
+```
+
+---
+
 ## Common Failure Modes
 
 | Symptom | Fix |
