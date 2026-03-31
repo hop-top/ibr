@@ -1,0 +1,41 @@
+graph TD
+    subgraph Daemon["ibr daemon (src/server.js)"]
+        B[Browser chromium]
+        CP[ContextPool\nmax=IBR_DAEMON_MAX_CLIENTS]
+        Q[Waiter queue]
+        B --> CP
+        CP --> Q
+    end
+
+    subgraph Slot0["Slot 0 (busy)"]
+        C0[BrowserContext 0]
+        P0[Page 0]
+        O0[Operations 0]
+        C0 --> P0
+        P0 --> O0
+    end
+
+    subgraph Slot1["Slot 1 (busy)"]
+        C1[BrowserContext 1]
+        P1[Page 1]
+        O1[Operations 1]
+        C1 --> P1
+        P1 --> O1
+    end
+
+    subgraph SlotN["Slot N (idle/free)"]
+        CN[BrowserContext N]
+        PN[Page N]
+        ON[Operations N]
+        CN --> PN
+        PN --> ON
+    end
+
+    CP --> Slot0
+    CP --> Slot1
+    CP --> SlotN
+
+    Client0["ibr client 0\nHTTP POST /command"] -->|checkout| Slot0
+    Client1["ibr client 1\nHTTP POST /command"] -->|checkout| Slot1
+    ClientN["ibr client N+1\nHTTP POST /command"] -->|enqueue → wait| Q
+    Q -->|slot freed → checkout| SlotN
