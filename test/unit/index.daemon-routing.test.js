@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { execFileSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,29 +24,16 @@ const NODE = process.execPath;
 
 // Helper: run index.js with given argv and env, capture stdout/stderr + exit code
 function runIbr(args = [], env = {}) {
-  try {
-    const stdout = execFileSync(NODE, [INDEX, ...args], {
-      env: { ...process.env, ...env },
-      timeout: 5000,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return { stdout, stderr: '', code: 0 };
-  } catch (err) {
-    // If it's a SpawnSyncReturns with status 0, it's not actually an error
-    if (err.status === 0) {
-      return {
-        stdout: err.stdout || '',
-        stderr: err.stderr || '',
-        code: 0,
-      };
-    }
-    return {
-      stdout: err.stdout || '',
-      stderr: err.stderr || '',
-      code: err.status ?? 1,
-    };
-  }
+  const result = spawnSync(NODE, [INDEX, ...args], {
+    env: { ...process.env, ...env },
+    timeout: 5000,
+    encoding: 'utf8',
+  });
+  return {
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    code: result.status ?? 1,
+  };
 }
 
 describe('index.js daemon routing', () => {

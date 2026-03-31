@@ -24,14 +24,14 @@ describe('createAIProvider', () => {
     vi.resetModules();
   });
 
-  it('openai default → provider=openai, model=gpt-4-mini', async () => {
+  it('openai default → provider=openai, model=gpt-4.1-mini', async () => {
     vi.stubEnv('AI_PROVIDER', 'openai');
     vi.stubEnv('AI_MODEL', '');
     vi.stubEnv('OPENAI_BASE_URL', '');
     const { createAIProvider } = await loadProvider();
     const result = createAIProvider();
     expect(result.provider).toBe('openai');
-    expect(result.model).toBe('gpt-4-mini');
+    expect(result.model).toBe('gpt-4.1-mini');
     expect(result.modelInstance).toBeDefined();
   });
 
