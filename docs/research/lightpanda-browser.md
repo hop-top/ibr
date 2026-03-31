@@ -71,7 +71,7 @@ production use with ibr's Playwright-dependent operations.
 3. **Minimal footprint philosophy**: stripping rendering-only browser work
    (CSS, GPU, images) mirrors ibr's own DOM simplification (DomSimplifier.js).
    Validates ibr's direction.
-4. **robots.txt compliance flag** (`--obey_robots`): clean opt-in for
+4. **robots.txt compliance flag** (`--obey-robots`): clean opt-in for
    responsible automation — worth adding to ibr.
 
 ### Feasibility as Optional ibr Backend
@@ -88,12 +88,22 @@ production use with ibr's Playwright-dependent operations.
 
 ## Recommendation
 
-Monitor, do not adopt now.
+Monitor LightPanda as backend. Act on learnings now:
 
-- Watch issues: #2015 (CORS), Playwright compat tracker
-- Re-evaluate at v1.0 stable or when e2e pass rate > 90%
-- Add to ibr README "Related Tools" section as a perf-focused alternative
-- Consider adopting benchmark methodology (T-follow-up: create ibr bench suite)
+**Actionable immediately:**
+- Create ibr benchmark suite using same methodology (100-page batch, memory +
+  time, reproducible via Docker) — no dependency on LightPanda to do this
+- Add `--obey-robots` flag to ibr CLI for responsible automation opt-in
+- Explore multi-client daemon: ibr daemon is single-client today; same CDP
+  multi-tenant pattern applies for parallel invocations
+
+**LightPanda backend — blocked on:**
+- CORS gap (issue #2015) — hard blocker for most real sites
+- Playwright shim instability — silent breakage risk
+- Re-evaluate when CORS lands; gate: ibr full e2e suite passes against
+  LightPanda CDP endpoint
+
+**Watch:** issues #2015, Playwright compat tracker, AGPL licensing (cloud use)
 
 ---
 
