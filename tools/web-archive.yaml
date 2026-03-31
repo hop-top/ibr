@@ -1,0 +1,16 @@
+name: web-archive
+description: Fetch an archived snapshot of a URL from the Wayback Machine
+params:
+  - name: url
+    description: The URL to look up in the Wayback Machine
+    required: true
+  - name: date
+    description: Snapshot date in YYYYMMDD format; empty = latest available snapshot
+    default: ""
+url: "https://web.archive.org/web/{{date}}*/{{url}}"
+instructions:
+  - wait for the Wayback Machine calendar or snapshot list to load
+  - if {{date}} is not empty, navigate to the closest snapshot on or before {{date}}
+  - otherwise click the most recent available snapshot link
+  - wait for the archived page to load inside the Wayback Machine frame
+  - extract the main textual content of the archived page including headings and body text

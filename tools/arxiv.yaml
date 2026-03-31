@@ -1,0 +1,18 @@
+name: arxiv
+description: Search arXiv for papers and extract title, authors, abstract, and URL
+params:
+  - name: query
+    description: Search terms (keywords, author, title)
+    required: true
+  - name: max_results
+    description: Maximum number of papers to extract
+    default: "5"
+  - name: category
+    description: arXiv category filter (e.g. cs.AI, cs.LG); empty = all categories
+    default: ""
+url: "https://arxiv.org/search/?searchtype=all&query={{query}}"
+instructions:
+  - wait for the search results to load
+  - if {{category}} is not empty, look for a category filter and select {{category}}
+  - extract up to {{max_results}} papers from the results list
+  - for each paper extract title, authors (as a list), abstract, and arXiv URL
