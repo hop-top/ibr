@@ -15,6 +15,7 @@ import { chromium } from 'playwright';
 import { createAIProvider } from './ai/provider.js';
 import { Operations } from './Operations.js';
 import { validateBrowserConfig } from './utils/validation.js';
+import { resolveBrowserChannel } from './utils/browserChannel.js';
 import logger from './utils/logger.js';
 
 dotenv.config();
@@ -50,18 +51,10 @@ function getBrowserConfig() {
   const headless = process.env.BROWSER_HEADLESS?.toLowerCase() !== 'false'; // default true for daemon
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
-  const CHANNEL_PATHS = {
-    brave: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
-    edge: '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    chromium: '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  };
-  const channelRaw = process.env.BROWSER_CHANNEL?.toLowerCase();
-  const executablePath = process.env.BROWSER_EXECUTABLE_PATH
-    || (channelRaw && CHANNEL_PATHS[channelRaw]);
-  return validateBrowserConfig({
-    headless, slowMo, timeout,
-    ...(executablePath ? { executablePath } : {}),
-  });
+  const channelOpts = process.env.BROWSER_EXECUTABLE_PATH
+    ? { executablePath: process.env.BROWSER_EXECUTABLE_PATH }
+    : resolveBrowserChannel(process.env.BROWSER_CHANNEL);
+  return validateBrowserConfig({ headless, slowMo, timeout, ...channelOpts });
 }
 
 function getOperationOptions() {

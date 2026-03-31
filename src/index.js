@@ -11,6 +11,7 @@ import { runDomCommand } from './commands/snap.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
 import { createUpgrader } from './utils/upgrader.js';
+import { resolveBrowserChannel } from './utils/browserChannel.js';
 import { createRequire } from 'node:module';
 
 const _up = createUpgrader({ binary: 'ibr', githubRepo: 'hop-top/ibr' });
@@ -93,24 +94,11 @@ function getBrowserConfig() {
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
 
-  // BROWSER_CHANNEL shortcuts: map known browser names to executablePath
-  // because Playwright only supports a narrow set of channel strings.
-  const CHANNEL_PATHS = {
-    brave: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
-    edge: '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    chromium: '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  };
+  const channelOpts = process.env.BROWSER_EXECUTABLE_PATH
+    ? { executablePath: process.env.BROWSER_EXECUTABLE_PATH }
+    : resolveBrowserChannel(process.env.BROWSER_CHANNEL);
 
-  const channelRaw = process.env.BROWSER_CHANNEL?.toLowerCase();
-  const executablePath = process.env.BROWSER_EXECUTABLE_PATH
-    || (channelRaw && CHANNEL_PATHS[channelRaw]);
-
-  return validateBrowserConfig({
-    headless,
-    slowMo,
-    timeout,
-    ...(executablePath ? { executablePath } : {}),
-  });
+  return validateBrowserConfig({ headless, slowMo, timeout, ...channelOpts });
 }
 
 function emitStructuredError(error) {
