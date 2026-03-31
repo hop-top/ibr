@@ -16,6 +16,10 @@ machine-readable output, clear error codes, and no interactive prompts.
 - [027 - Inspect Before Automating](../stories/027-inspect-before-automating.md)
 - [030 - Structured Success Output Contract](../stories/030-structured-success-output-contract.md)
 - [040 - Tool Subcommand](../stories/040-tool-subcommand.md)
+- [041 - Tool: trend-search](../stories/041-tool-trend-search.md)
+- [042 - Tool: github-search](../stories/042-tool-github-search.md)
+- [043 - Tool: github-trending](../stories/043-tool-github-trending.md)
+- [044 - Tool: github-starred](../stories/044-tool-github-starred.md)
 
 ## Related Stories
 
