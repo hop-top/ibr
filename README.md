@@ -12,6 +12,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Loop Support**: Repeat actions until conditions are met
 - **Authenticated Sessions**: Inherit browser cookies via `--cookies` flag
 - **Snapshot Diffing**: 85% token reduction in loops via incremental DOM diffs
+- **Tool Runner**: `ibr tool` subcommand — YAML-defined reusable browser workflows with typed params
 - **DOM Inspector**: `ibr snap` subcommand for on-demand page inspection
 - **Daemon Mode**: Optional persistent browser server; warm invocations ~540ms vs ~3800ms cold
 - **Visual Debugging**: `--annotate` / `-a` flag captures annotated PNGs with labeled bounding boxes
@@ -404,6 +405,87 @@ kill $(jq .pid ~/.ibr/server.json)  # stop the daemon manually
 
 ---
 
+## Tool Runner (`ibr tool`)
+
+Run pre-packaged browser workflows defined as YAML files in `tools/`.
+Params use `{{placeholder}}` syntax; defaults applied when omitted.
+
+```
+ibr tool <name> [--param key=value ...]
+ibr tool --list
+```
+
+### Built-in Tools
+
+| Name | Description | Required Params |
+|------|-------------|----------------|
+| `web-search` | Search the web; extract ranked results | `query` |
+| `web-fetch` | Fetch a URL; extract main content | `url` |
+| `trend-search` | Google Trends interest + related queries | `topic` |
+| `github-search` | GitHub repo/code/issue/user search | `query` |
+| `github-trending` | GitHub trending repos by language/period | _(all optional)_ |
+| `github-starred` | Browse a user's starred repos | `username` |
+
+### Examples
+
+```bash
+# Web search
+ibr tool web-search --param query="openai agents"
+
+# Google Trends (defaults: region=US, period=7d)
+ibr tool trend-search --param topic=javascript --param region=GB
+
+# GitHub repo search
+ibr tool github-search --param query=playwright --param type=repositories
+
+# GitHub trending (all params optional)
+ibr tool github-trending --param language=go --param period=weekly
+
+# User's starred repos with keyword filter
+ibr tool github-starred --param username=sindresorhus --param query=rust
+
+# List available tools
+ibr tool --list
+```
+
+### YAML Tool Format
+
+Place `.yaml` files in `tools/` and they become available as `ibr tool <name>`:
+
+```yaml
+name: my-tool
+description: "Short description"
+params:
+  - name: query
+    description: "Search query"
+    required: true
+  - name: count
+    description: "Number of results"
+    default: "5"
+url: "https://www.google.com"
+instructions:
+  - type {{query}} into the search box and press Enter
+  - extract the top {{count}} results with titles and URLs
+```
+
+`{{param}}` placeholders are interpolated in both `url` and `instructions`.
+Missing required params → non-zero exit with a clear error before the browser starts.
+
+### VCR Test Record Mode
+
+E2E tests for tools use cassette replay by default. To record real cassettes
+from live sites (run once, then commit):
+
+```bash
+VCR_RECORD=true OPENAI_API_KEY=sk-... \
+  node node_modules/vitest/vitest.mjs run test/e2e/cli-tool-vcr.test.js
+```
+
+The proxy forwards requests to the real AI endpoint, captures responses, and
+writes updated cassette files to `test/e2e/cassettes/`.
+
+---
+
 ## DOM Inspector (`ibr snap`)
 
 Inspect the live DOM of any page without writing a full task. Outputs simplified DOM JSON
@@ -744,7 +826,7 @@ Fixtures without `expectedExtracts` are skipped — CI does not fail.
 
 Requires Node >=20. Run once to produce `dist/ibr` and `dist/ibr-server`:
 
-    just build
+    task build
 
 Binaries are self-contained (no Node runtime needed). Native deps (Playwright,
 better-sqlite3, @boundaryml/baml) must still exist in `node_modules` alongside

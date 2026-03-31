@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync } from 'fs';
 
 mkdirSync('dist', { recursive: true });
 
+const commonBanner = 'const __import_meta_url = require("url").pathToFileURL(__filename).href;';
+
 // Shared esbuild config. packages: 'external' keeps all node_modules out of
 // the bundle — external require() calls are resolved at runtime by Node.
 const shared = {
@@ -12,6 +14,10 @@ const shared = {
   packages: 'external',
   minify: false,
   sourcemap: false,
+  banner: { js: commonBanner },
+  define: {
+    'import.meta.url': '__import_meta_url',
+  },
 };
 
 // Regular bundles — used for `node dist/ibr.cjs` invocation.
@@ -103,6 +109,7 @@ const seaPatchPlugin = {
 // In SEA, process.execPath is the binary path; CJS resolution walks up from
 // its directory to find node_modules, making external packages loadable.
 const seaBanner = `
+${commonBanner}
 var _seaRequire;
 (function() {
   var _m = require('module');

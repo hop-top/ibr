@@ -1,0 +1,59 @@
+version: '3'
+
+tasks:
+  browser-install:
+    cmds:
+      - npm run browser:install
+
+  test:
+    cmds:
+      - npm test
+
+  test-watch:
+    cmds:
+      - npm run test:watch
+
+  test-unit:
+    cmds:
+      - npm run test:unit
+
+  test-integration:
+    cmds:
+      - npm run test:integration
+
+  test-e2e:
+    cmds:
+      - npm run test:e2e
+
+  test-e2e-fast:
+    cmds:
+      - npm run test:e2e:fast
+
+  test-coverage:
+    cmds:
+      - npm run test:coverage
+
+  judge-e2e:
+    cmds:
+      - npm run judge:e2e
+
+  build:
+    cmds:
+      - node scripts/build.mjs
+      - node scripts/sea.mjs
+
+  build-bundle:
+    cmds:
+      - node scripts/build.mjs
+
+  build-sea:
+    cmds:
+      - node scripts/sea.mjs
+
+  bench:
+    cmds:
+      - node bench/run.js {{.CLI_ARGS}}
+
+  bench-report:
+    cmds:
+      - node bench/report.js {{.CLI_ARGS}}
