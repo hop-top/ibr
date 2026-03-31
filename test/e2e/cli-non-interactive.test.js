@@ -10,7 +10,7 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { resolve, dirname } from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startFakeAIServerE2E } from '../helpers/fakeAIServerE2E.js';
+import { startFromCassette } from './helpers/vcr.js';
 import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -52,13 +52,7 @@ describe('cli non-interactive mode (story 016)', () => {
 
   beforeAll(async () => {
     web = await startStaticServer();
-    ai = await startFakeAIServerE2E([
-      JSON.stringify({
-        url: `${web.baseUrl}/product-page.html`,
-        instructions: [{ name: 'extract', prompt: 'get the title' }],
-      }),
-      JSON.stringify([{ text: 'Widget Pro' }]),
-    ]);
+    ai = await startFromCassette('story-016-stdin', { SERVER_URL: web.baseUrl });
   }, 15000);
 
   afterAll(async () => {
@@ -121,13 +115,7 @@ describe('cli non-interactive mode (story 016)', () => {
   }, 15000);
 
   it('normal argv run still exits 0 with fake AI (sanity check)', async () => {
-    const ai2 = await startFakeAIServerE2E([
-      JSON.stringify({
-        url: `${web.baseUrl}/product-page.html`,
-        instructions: [{ name: 'extract', prompt: 'get rating' }],
-      }),
-      JSON.stringify([{ text: '4.5 stars' }]),
-    ]);
+    const ai2 = await startFromCassette('story-016-argv-sanity', { SERVER_URL: web.baseUrl });
     const result = await runIbr(
       [`visit ${web.baseUrl}/product-page.html and get rating`],
       {

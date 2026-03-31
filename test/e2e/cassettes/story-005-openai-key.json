@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/product-page.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"get the rating\"}]}",
+  "[{\"text\":\"4.5 stars\"}]"
+]

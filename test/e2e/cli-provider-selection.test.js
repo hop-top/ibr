@@ -7,7 +7,7 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { resolve, dirname } from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startFakeAIServerE2E } from '../helpers/fakeAIServerE2E.js';
+import { startFromCassette } from './helpers/vcr.js';
 import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -89,13 +89,7 @@ describe('cli provider selection (story 005)', () => {
   }, 15000);
 
   it('AI_MODEL=custom-model with fake OpenAI endpoint → run completes exit 0', async () => {
-    const ai = await startFakeAIServerE2E([
-      JSON.stringify({
-        url: `${web.baseUrl}/product-page.html`,
-        instructions: [{ name: 'extract', prompt: 'get the title' }],
-      }),
-      JSON.stringify([{ text: 'Widget Pro' }]),
-    ]);
+    const ai = await startFromCassette('story-005-custom-model', { SERVER_URL: web.baseUrl });
 
     const result = await runIbr(
       [`go to ${web.baseUrl}/product-page.html and extract the title`],
@@ -115,13 +109,7 @@ describe('cli provider selection (story 005)', () => {
   }, 30000);
 
   it('AI_PROVIDER=openai with OPENAI_API_KEY set → does not reject key', async () => {
-    const ai = await startFakeAIServerE2E([
-      JSON.stringify({
-        url: `${web.baseUrl}/product-page.html`,
-        instructions: [{ name: 'extract', prompt: 'get the rating' }],
-      }),
-      JSON.stringify([{ text: '4.5 stars' }]),
-    ]);
+    const ai = await startFromCassette('story-005-openai-key', { SERVER_URL: web.baseUrl });
 
     const result = await runIbr(
       [`visit ${web.baseUrl}/product-page.html and get rating`],

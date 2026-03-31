@@ -13,6 +13,7 @@ import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.j
 import { createUpgrader } from './utils/upgrader.js';
 import { resolveBrowserChannel } from './utils/browserChannel.js';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const _up = createUpgrader({ binary: 'ibr', githubRepo: 'hop-top/ibr' });
 const notifyIfAvailable = (v) => _up.notifyIfAvailable(v);
@@ -437,12 +438,16 @@ async function run() {
     }
 
     // Static prompt pre-validation — fail fast before browser launch.
-    // Checks that the prompt contains a url: field; saves ~3s browser startup on bad input.
-    if (!/^\s*url\s*:/m.test(prompt)) {
+    // Accepts structured "url: ..." format OR natural-language prompts that
+    // contain an inferable URL (https?:// or bare hostname with TLD).
+    const hasStructuredUrl = /^\s*url\s*:/m.test(prompt);
+    const hasInferableUrl = /https?:\/\/\S+/.test(prompt) || /\b(?:www\.\S+|\S+\.(?:com|org|net|io|dev|app|co)\b)/.test(prompt);
+    if (!hasStructuredUrl && !hasInferableUrl) {
       const error = new CliError(
         'CONFIG_ERROR',
-        'Prompt must include a "url:" field. ' +
-        'Example: "url: https://example.com\\ninstructions:\\n  - click submit". ' +
+        'Prompt must include a URL. ' +
+        'Example: "url: https://example.com\\ninstructions:\\n  - click submit" ' +
+        'or "go to https://example.com and extract the title". ' +
         'Run "ibr --help" for full usage.'
       );
       logger.error(error.message);
@@ -621,9 +626,13 @@ async function run() {
   }
 }
 
-run().catch(error => {
-  const cliError = ensureCliError(error, 'RUNTIME_ERROR');
-  logger.error('Unhandled error in main', { error: cliError.message });
-  emitStructuredError(cliError);
-  process.exit(1);
-});
+// Only auto-run when invoked directly as a CLI (not imported as a module).
+const _isMain = process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]);
+if (_isMain) {
+  run().catch(error => {
+    const cliError = ensureCliError(error, 'RUNTIME_ERROR');
+    logger.error('Unhandled error in main', { error: cliError.message });
+    emitStructuredError(cliError);
+    process.exit(1);
+  });
+}
