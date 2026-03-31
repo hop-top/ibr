@@ -1,0 +1,19 @@
+name: amazon
+description: "Search Amazon for products and extract title, price, rating, review count, and ASIN"
+params:
+  - name: query
+    description: "Product search terms"
+    required: true
+  - name: max_results
+    description: "Maximum number of products to extract"
+    default: "5"
+  - name: country
+    description: "Amazon TLD to use (e.g. com, co.uk, de, fr, co.jp)"
+    default: "com"
+url: "https://www.amazon.{{country}}/s?k={{query}}"
+instructions:
+  - wait for the search results page to load
+  - extract up to {{max_results}} product listings from the results
+  - for each product extract: title, price (as displayed), star rating, review count, and ASIN
+  - skip sponsored or non-product entries (ads, banners)
+  - return results as a list with all extracted fields

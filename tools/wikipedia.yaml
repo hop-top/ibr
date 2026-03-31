@@ -1,0 +1,19 @@
+name: wikipedia
+description: "Look up a Wikipedia article and extract intro summary + optional section"
+params:
+  - name: topic
+    description: "Article title or search term (spaces become underscores)"
+    required: true
+  - name: section
+    description: "Specific section heading to extract; leave empty for intro only"
+    default: ""
+  - name: lang
+    description: "Wikipedia language code (e.g. en, fr, de, es)"
+    default: "en"
+url: "https://{{lang}}.wikipedia.org/wiki/{{topic}}"
+instructions:
+  - navigate to the article page; if redirected, accept the redirect
+  - extract the introductory summary (the paragraphs before the first section heading)
+  - if section param is not empty, locate the section with heading matching {{section}}
+    and extract its full text content
+  - return topic, url, summary, and (if requested) the section text

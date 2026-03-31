@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract product listings with title, price, rating, review count, and ASIN\"}]}",
+  "[{\"title\":\"Sony WH-1000XM5 Wireless Noise Canceling Headphones\",\"price\":\"$279.99\",\"rating\":\"4.4\",\"review_count\":\"12453\",\"asin\":\"B09XS7JWHH\"},{\"title\":\"Bose QuietComfort 45 Bluetooth Wireless Headphones\",\"price\":\"$229.00\",\"rating\":\"4.5\",\"review_count\":\"18732\",\"asin\":\"B098FKXT8L\"}]"
+]

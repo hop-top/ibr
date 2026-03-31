@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract the article intro summary and return topic, url, and summary\"}]}",
+  "[{\"topic\":\"Playwright\",\"url\":\"{SERVER_URL}/tool-results.html\",\"summary\":\"Playwright is a framework for web testing and automation. It allows testing Chromium, Firefox and WebKit with a single API.\"}]"
+]
