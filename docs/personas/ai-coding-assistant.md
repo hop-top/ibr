@@ -15,6 +15,7 @@ machine-readable output, clear error codes, and no interactive prompts.
 - [021 - High-Precision AI-Actionable Errors](../stories/021-high-precision-errors.md)
 - [027 - Inspect Before Automating](../stories/027-inspect-before-automating.md)
 - [030 - Structured Success Output Contract](../stories/030-structured-success-output-contract.md)
+- [040 - Tool Subcommand](../stories/040-tool-subcommand.md)
 
 ## Related Stories
 
