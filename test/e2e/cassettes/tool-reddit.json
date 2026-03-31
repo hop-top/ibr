@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract Reddit posts with title, subreddit, score, comment_count, url, and snippet\"}]}",
+  "[{\"title\":\"Why I switched to Rust for async services\",\"subreddit\":\"rust\",\"score\":1240,\"comment_count\":87,\"url\":\"https://example.com/rust-async\",\"snippet\":\"After struggling with Go concurrency...\"}]"
+]

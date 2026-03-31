@@ -1,0 +1,22 @@
+name: reddit
+description: Search Reddit and extract post title, subreddit, score, comment count, URL, and snippet
+params:
+  - name: query
+    description: Search terms
+    required: true
+  - name: subreddit
+    description: Scope search to a specific subreddit (leave empty for site-wide)
+    default: ""
+  - name: sort
+    description: Sort order — relevance, hot, new, or top
+    default: "relevance"
+  - name: max_results
+    description: Maximum number of results to extract
+    default: "5"
+url: "https://www.reddit.com/search/?q={{query}}&sort={{sort}}"
+instructions:
+  - if subreddit param is non-empty, navigate to
+    https://www.reddit.com/r/{{subreddit}}/search/?q={{query}}&sort={{sort}} instead
+  - wait for search results to load
+  - extract the top {{max_results}} results; for each result include title, subreddit,
+    score, comment_count, url, and snippet

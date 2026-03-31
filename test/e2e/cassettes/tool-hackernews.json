@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract HN stories with title, points, comment_count, author, url, and hn_url\"}]}",
+  "[{\"title\":\"Rust async runtimes compared\",\"points\":342,\"comment_count\":94,\"author\":\"tptacek\",\"url\":\"https://example.com/rust-async\",\"hn_url\":\"https://news.ycombinator.com/item?id=12345678\"}]"
+]

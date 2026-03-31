@@ -1,0 +1,20 @@
+name: hackernews
+description: Search Hacker News via Algolia and extract story title, points, comment count, author, URL, and HN URL
+params:
+  - name: query
+    description: Search terms
+    required: true
+  - name: type
+    description: Item type — story, comment, job, or poll
+    default: "story"
+  - name: sort
+    description: Sort order — date or popularity
+    default: "popularity"
+  - name: max_results
+    description: Maximum number of results to extract
+    default: "10"
+url: "https://hn.algolia.com/?q={{query}}&type={{type}}&sort=by{{sort}}"
+instructions:
+  - wait for search results to load
+  - extract the top {{max_results}} results; for each result include title, points,
+    comment_count, author, url, and hn_url
