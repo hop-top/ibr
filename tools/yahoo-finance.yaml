@@ -1,0 +1,23 @@
+name: yahoo-finance
+description: "Fetch stock quote and key statistics from Yahoo Finance"
+params:
+  - name: ticker
+    description: "Stock ticker symbol (e.g. AAPL, TSLA, MSFT)"
+    required: true
+url: "https://finance.yahoo.com/quote/{{ticker}}/"
+instructions:
+  - navigate to https://finance.yahoo.com/quote/{{ticker}}/
+  - wait for the quote page to load with price data visible
+  - extract the following fields:
+      - ticker: the ticker symbol shown on the page
+      - company_name: full company name
+      - price: current price (regular market price)
+      - change: price change (e.g. +1.23 or -0.45)
+      - change_percent: percentage change (e.g. +0.92% or -1.10%)
+      - market_cap: market capitalisation (formatted, e.g. "2.89T")
+      - pe_ratio: trailing P/E ratio
+      - eps: earnings per share (EPS)
+      - week_52_high: 52-week high price
+      - week_52_low: 52-week low price
+      - volume: current day volume (formatted)
+      - avg_volume: average volume (formatted)

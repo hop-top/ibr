@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract stock quote data including ticker, company name, price, change, change_percent, market_cap, pe_ratio, eps, week_52_high, week_52_low, volume, and avg_volume\"}]}",
+  "{\"ticker\":\"AAPL\",\"company_name\":\"Apple Inc.\",\"price\":\"189.42\",\"change\":\"+1.23\",\"change_percent\":\"+0.65%\",\"market_cap\":\"2.94T\",\"pe_ratio\":\"29.87\",\"eps\":\"6.34\",\"week_52_high\":\"199.62\",\"week_52_low\":\"164.08\",\"volume\":\"54.2M\",\"avg_volume\":\"58.1M\"}"
+]

@@ -1,0 +1,29 @@
+name: dockerhub
+description: "Search Docker Hub for container images; extract pull counts, stars, and tags"
+params:
+  - name: image
+    description: "Image name to search for (e.g. nginx, postgres, node)"
+    required: true
+  - name: max_results
+    description: "Maximum number of search results to return"
+    default: "5"
+  - name: show_tags
+    description: "Also extract the 10 most recent tags from the top result (true/false)"
+    default: "false"
+url: "https://hub.docker.com/search?q={{image}}&type=image"
+instructions:
+  - navigate to https://hub.docker.com/search?q={{image}}&type=image
+  - wait for the search results to load
+  - extract up to {{max_results}} results; for each include:
+      - name: image name (e.g. library/nginx or user/image)
+      - description: short description of the image
+      - pull_count: total pull count (formatted, e.g. "1B+" or "500M+")
+      - star_count: number of stars
+      - official: true if it is an official Docker image, false otherwise
+      - url: full URL to the image page on Docker Hub
+  - if show_tags is "true":
+      - navigate to the Docker Hub page of the top result
+      - extract the 10 most recent tags; for each include:
+          - tag: tag name (e.g. latest, 1.25, alpine)
+          - digest: image digest if shown
+          - last_pushed: date the tag was last pushed

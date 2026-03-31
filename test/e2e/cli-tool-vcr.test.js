@@ -504,3 +504,71 @@ describe('ibr tool amazon (T-0015)', () => {
     expect(result.stdout + result.stderr).toMatch(/query|required param/i);
   }, 10000);
 });
+
+// ─── pypi (T-0018) ───────────────────────────────────────────────────────────
+
+describe('ibr tool pypi (T-0018)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-pypi', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'pypi', '--param', 'package=requests'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('package is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'pypi'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/package|required param/i);
+  }, 10000);
+});
+
+// ─── producthunt (T-0019) ────────────────────────────────────────────────────
+
+describe('ibr tool producthunt (T-0019)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-producthunt', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'producthunt', '--param', 'query=notion'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('query is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'producthunt'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/query|required param/i);
+  }, 10000);
+});
