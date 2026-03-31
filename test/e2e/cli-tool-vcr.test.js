@@ -232,3 +232,275 @@ describe('ibr tool context7 (T-0005)', () => {
     expect(result.stdout + result.stderr).toMatch(/question|required param/i);
   }, 10000);
 });
+
+// ─── ebay (T-0016) ───────────────────────────────────────────────────────────
+
+describe('ibr tool ebay (T-0016)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-ebay', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'ebay', '--param', 'query=iphone 15 pro'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('query is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'ebay'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/query|required param/i);
+  }, 10000);
+});
+
+// ─── npm (T-0017) ────────────────────────────────────────────────────────────
+
+describe('ibr tool npm (T-0017)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-npm', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'npm', '--param', 'package=react'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('package is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'npm'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/package|required param/i);
+  }, 10000);
+});
+
+// ─── reddit (T-0020) ─────────────────────────────────────────────────────────
+
+describe('ibr tool reddit (T-0020)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-reddit', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'reddit', '--param', 'query=rust async'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('query is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'reddit'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/query|required param/i);
+  }, 10000);
+});
+
+// ─── hackernews (T-0021) ─────────────────────────────────────────────────────
+
+describe('ibr tool hackernews (T-0021)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-hackernews', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'hackernews', '--param', 'query=rust async'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('query is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'hackernews'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/query|required param/i);
+  }, 10000);
+});
+
+// ─── yahoo-finance (T-0022) ───────────────────────────────────────────────────
+
+describe('ibr tool yahoo-finance (T-0022)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-yahoo-finance', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'yahoo-finance', '--param', 'ticker=AAPL'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('ticker is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'yahoo-finance'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/ticker|required param/i);
+  }, 10000);
+});
+
+// ─── dockerhub (T-0023) ──────────────────────────────────────────────────────
+
+describe('ibr tool dockerhub (T-0023)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-dockerhub', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'dockerhub', '--param', 'image=nginx'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('image is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'dockerhub'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/image|required param/i);
+  }, 10000);
+});
+
+// ─── wikipedia (T-0014) ───────────────────────────────────────────────────────
+
+describe('ibr tool wikipedia (T-0014)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-wikipedia', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'wikipedia', '--param', 'topic=Playwright'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('topic is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'wikipedia'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/topic|required param/i);
+  }, 10000);
+});
+
+// ─── amazon (T-0015) ─────────────────────────────────────────────────────────
+
+describe('ibr tool amazon (T-0015)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-amazon', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'amazon', '--param', 'query=noise cancelling headphones'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('query is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'amazon'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/query|required param/i);
+  }, 10000);
+});

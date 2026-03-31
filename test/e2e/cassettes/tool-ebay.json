@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract eBay listing data with title, price, condition, sold status, and URL\"}]}",
+  "[{\"title\":\"iPhone 15 Pro 256GB Black Titanium\",\"price\":\"$899.00\",\"condition\":\"Used\",\"sold\":true,\"url\":\"https://www.ebay.com/itm/123456789\"},{\"title\":\"iPhone 15 Pro 128GB Natural Titanium\",\"price\":\"$849.99\",\"condition\":\"Used\",\"sold\":true,\"url\":\"https://www.ebay.com/itm/987654321\"}]"
+]

@@ -1,0 +1,19 @@
+name: npm
+description: "Fetch npm package info: version, downloads, license, dependents"
+params:
+  - name: package
+    description: "npm package name (e.g. react, lodash, express)"
+    required: true
+url: "https://www.npmjs.com/package/{{package}}"
+instructions:
+  - navigate to https://www.npmjs.com/package/{{package}}
+  - wait for the page to load fully
+  - extract the following fields:
+      - name: package name
+      - version: latest published version
+      - description: package description
+      - weekly_downloads: weekly download count (numeric string)
+      - license: license identifier (e.g. MIT, Apache-2.0)
+      - homepage: homepage URL if present
+      - github: GitHub repository URL if linked
+      - dependents: number of packages that depend on this package

@@ -1,0 +1,25 @@
+name: ebay
+description: "Search eBay listings; optionally filter to sold prices"
+params:
+  - name: query
+    description: "Search terms (e.g. 'iphone 15 pro 256gb')"
+    required: true
+  - name: max_results
+    description: "Maximum number of listings to extract"
+    default: "5"
+  - name: sold
+    description: "Show only sold/completed listings (true/false)"
+    default: "false"
+  - name: country
+    description: "eBay country TLD (com, co.uk, de, fr, ca, com.au, etc.)"
+    default: "com"
+url: "https://www.ebay.{{country}}/sch/i.html?_nkw={{query}}"
+instructions:
+  - navigate to https://www.ebay.{{country}}/sch/i.html?_nkw={{query}}{% if sold == "true" %}&LH_Sold=1&LH_Complete=1{% endif %}
+  - wait for the search results to load
+  - extract up to {{max_results}} listings; for each include:
+      - title: full listing title
+      - price: listed price (or sold price if sold=true)
+      - condition: item condition (New, Used, Refurbished, etc.)
+      - sold: true if the item has been sold/completed, false otherwise
+      - url: full URL of the listing
