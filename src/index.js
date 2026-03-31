@@ -8,6 +8,7 @@ import { validateEnvironmentVariables, validateBrowserConfig } from './utils/val
 import logger from './utils/logger.js';
 import { importCookies, getSupportedCookieBrowsersHelpText } from './utils/cookieImport.js';
 import { runDomCommand } from './commands/snap.js';
+import { loadAndBuildPrompt, listTools, parseToolArgs } from './commands/tool.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
 import { createUpgrader } from './utils/upgrader.js';
@@ -217,6 +218,8 @@ function printUsage() {
     '  ibr [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"',
     '  ibr [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)',
     '  ibr snap <url> [flags]          - inspect DOM at URL',
+    '  ibr tool <name> [--param k=v]   - run a YAML-defined tool',
+    '  ibr tool --list                 - list available tools',
     '  ibr upgrade [--auto] [--quiet]  - check for and install updates',
     '  ibr upgrade preamble            - print agent skill preamble fragment',
     '  ibr version [--short|--json]    - print version information',
@@ -458,6 +461,53 @@ async function run() {
         process.exit(1);
       }
       return;
+    }
+
+    // Subcommand: ibr tool <name> [--param k=v ...] — load YAML, interpolate, run
+    if (process.argv[2] === 'tool') {
+      const toolArgs = process.argv.slice(3);
+
+      // ibr tool --list
+      if (toolArgs[0] === '--list' || toolArgs[0] === '-l') {
+        const tools = listTools();
+        if (tools.length === 0) {
+          process.stdout.write('No tools available.\n');
+        } else {
+          process.stdout.write('Available tools:\n');
+          for (const t of tools) {
+            process.stdout.write(`  ${t}\n`);
+          }
+        }
+        return;
+      }
+
+      const toolName = toolArgs[0];
+      if (!toolName || toolName.startsWith('--')) {
+        const error = new CliError(
+          'CONFIG_ERROR',
+          'ibr tool requires a tool name. ' +
+          'Usage: ibr tool <name> [--param key=value ...]. ' +
+          'Run "ibr tool --list" to see available tools.'
+        );
+        logger.error(error.message);
+        emitStructuredError(error);
+        process.exit(1);
+      }
+
+      let toolPrompt;
+      try {
+        const { params } = parseToolArgs(toolArgs.slice(1));
+        const { prompt } = loadAndBuildPrompt(toolName, params);
+        toolPrompt = prompt;
+      } catch (err) {
+        logger.error(err.message);
+        emitStructuredError(ensureCliError(err, 'CONFIG_ERROR'));
+        process.exit(1);
+      }
+
+      // Re-inject the resolved prompt back into the execution flow by
+      // overwriting the prompt variable and falling through to normal execution.
+      prompt = toolPrompt;
     }
 
     // Static prompt pre-validation — fail fast before browser launch.

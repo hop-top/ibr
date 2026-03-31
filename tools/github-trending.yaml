@@ -1,0 +1,17 @@
+name: github-trending
+description: Fetch GitHub trending repositories filtered by language and time period
+params:
+  - name: language
+    description: Programming language to filter by (e.g. "go", "typescript"); empty means all languages
+    default: ""
+  - name: period
+    description: Time period for trending; one of daily, weekly, monthly
+    default: "daily"
+  - name: count
+    description: Number of trending repos to extract
+    default: "10"
+url: "https://github.com/trending/{{language}}?since={{period}}"
+instructions:
+  - navigate to the URL and wait for the page to fully load
+  - extract the top {{count}} trending repositories from the list; for each include repo name
+    (owner/name), description, primary language, stars earned today, and total stars

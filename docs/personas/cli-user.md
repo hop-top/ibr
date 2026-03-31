@@ -22,6 +22,11 @@ clear error messages; and observable execution (logs, browser window).
 - [029 - Scroll / Viewport Control](../stories/029-scroll-viewport-control.md)
 - [033 - CLI Composition Via stdin](../stories/033-cli-composition-via-stdin.md)
 - [034 - Tool Lifecycle Commands](../stories/034-tool-lifecycle-commands.md)
+- [040 - Tool Subcommand](../stories/040-tool-subcommand.md)
+- [041 - Tool: trend-search](../stories/041-tool-trend-search.md)
+- [042 - Tool: github-search](../stories/042-tool-github-search.md)
+- [043 - Tool: github-trending](../stories/043-tool-github-trending.md)
+- [044 - Tool: github-starred](../stories/044-tool-github-starred.md)
 
 ## Related Stories
 

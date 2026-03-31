@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract trending repositories with name, description, language, stars today, and total stars\"}]}",
+  "[{\"name\":\"owner/awesome-go\",\"description\":\"A curated list of Go frameworks\",\"language\":\"Go\",\"starsToday\":142,\"totalStars\":98200},{\"name\":\"owner/bun\",\"description\":\"Incredibly fast JS runtime\",\"language\":\"Zig\",\"starsToday\":98,\"totalStars\":74100}]"
+]

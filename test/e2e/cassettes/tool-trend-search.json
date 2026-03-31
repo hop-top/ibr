@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract trending interest data and related queries\"}]}",
+  "[{\"topic\":\"javascript\",\"interest\":[{\"date\":\"2026-03-25\",\"value\":72},{\"date\":\"2026-03-26\",\"value\":78}],\"relatedQueries\":{\"rising\":[\"javascript frameworks\",\"javascript 2026\"],\"top\":[\"javascript tutorial\",\"javascript vs python\"]}}]"
+]

@@ -1,0 +1,17 @@
+name: github-starred
+description: Browse a GitHub user's starred repositories, optionally filtering by a search term
+params:
+  - name: username
+    description: GitHub username whose starred repos to browse
+    required: true
+  - name: query
+    description: Filter term to narrow starred repos; leave empty for no filter
+    default: ""
+  - name: count
+    description: Number of starred repos to extract
+    default: "10"
+url: "https://github.com/{{username}}?tab=stars"
+instructions:
+  - navigate to https://github.com/{{username}}?tab=stars and wait for the page to load
+  - if {{query}} is non-empty, locate the filter/search box on the stars page, type {{query}} into it, and wait for results to update
+  - extract the top {{count}} starred repositories; for each include name, description, primary language, and star count

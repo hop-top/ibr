@@ -1,0 +1,14 @@
+name: web-search
+description: Search the web and return ranked results with titles, URLs, and snippets
+params:
+  - name: query
+    description: Search query
+    required: true
+  - name: count
+    description: Number of results to extract
+    default: "5"
+url: "https://www.google.com"
+instructions:
+  - type {{query}} into the search box and press Enter
+  - wait for results to load
+  - extract the top {{count}} results; for each result include title, URL, and snippet

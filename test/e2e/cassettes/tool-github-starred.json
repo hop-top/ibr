@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract starred repositories with name, description, language, and star count\"}]}",
+  "[{\"name\":\"sindresorhus/awesome\",\"description\":\"Awesome lists\",\"language\":null,\"stars\":330000},{\"name\":\"torvalds/linux\",\"description\":\"Linux kernel\",\"language\":\"C\",\"stars\":188000}]"
+]

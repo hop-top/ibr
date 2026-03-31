@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract repository search results with name, description, and stars\"}]}",
+  "[{\"name\":\"example/repo-one\",\"description\":\"An example repository\",\"stars\":1420},{\"name\":\"example/repo-two\",\"description\":\"Another repository\",\"stars\":830}]"
+]

@@ -1,0 +1,19 @@
+name: context7
+description: "Look up library/framework docs and answer a focused question"
+params:
+  - name: library
+    description: "Library or framework name (e.g. react, playwright, vitest)"
+    required: true
+  - name: question
+    description: "Focused question to answer from the docs"
+    required: true
+  - name: version
+    description: "Specific version to target (e.g. 18, 3.x); omit for latest"
+    default: ""
+url: "https://context7.com/{{library}}"
+instructions:
+  - navigate to the page and wait for content to load
+  - if a version selector is visible and version param is not empty, select version {{version}}
+  - locate the documentation content or search functionality on the page
+  - answer the following question using only content visible on the page: {{question}}
+  - extract a concise answer including any relevant code examples
