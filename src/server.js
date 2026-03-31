@@ -1,7 +1,11 @@
 /**
  * Daemon server — persistent browser process.
- * Lifecycle: launch browser → create AI+Operations → HTTP server on random port →
+ * Lifecycle: launch browser → create ContextPool → HTTP server on random port →
  * write state file → idle-check interval → signal handlers for clean shutdown.
+ *
+ * Multi-client: each /command request gets an isolated BrowserContext.
+ * Concurrency controlled by IBR_DAEMON_MAX_CLIENTS (default: 3).
+ * Queue timeout controlled by IBR_DAEMON_QUEUE_TIMEOUT_MS (default: 30000).
  */
 
 import http from 'http';
@@ -12,10 +16,9 @@ import path from 'path';
 import dotenv from 'dotenv';
 
 import { chromium } from 'playwright';
-import { createAIProvider } from './ai/provider.js';
-import { Operations } from './Operations.js';
 import { validateBrowserConfig } from './utils/validation.js';
 import { resolveBrowserChannel } from './utils/browserChannel.js';
+import { ContextPool, DEFAULT_MAX_CLIENTS, DEFAULT_QUEUE_TIMEOUT_MS } from './server/ContextPool.js';
 import logger from './utils/logger.js';
 
 dotenv.config();
@@ -37,7 +40,7 @@ const IDLE_TIMEOUT_MS = 30 * 60_000; // 30 min
 // ---------------------------------------------------------------------------
 
 let browser = null;
-let operations = null;
+let pool = null;
 let serverToken = null;
 let startedAt = Date.now();
 let lastActivityAt = Date.now();
@@ -67,6 +70,15 @@ function getOperationOptions() {
     );
   }
   return { temperature };
+}
+
+function getPoolConfig() {
+  const maxClients = parseInt(process.env.IBR_DAEMON_MAX_CLIENTS || String(DEFAULT_MAX_CLIENTS), 10);
+  const queueTimeoutMs = parseInt(
+    process.env.IBR_DAEMON_QUEUE_TIMEOUT_MS || String(DEFAULT_QUEUE_TIMEOUT_MS),
+    10
+  );
+  return { maxClients, queueTimeoutMs };
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +121,9 @@ async function shutdown(reason = 'signal') {
   logger.info('Shutting down daemon', { reason });
   if (idleTimer) clearInterval(idleTimer);
   await removeStateFile();
+  if (pool) {
+    await pool.drain();
+  }
   if (browser) {
     try { await browser.close(); } catch { /* ignore */ }
   }
@@ -175,6 +190,8 @@ async function handleRequest(req, res) {
       status: 'healthy',
       uptime: Math.floor((Date.now() - startedAt) / 1000),
       pid: process.pid,
+      activeClients: pool ? pool.activeCount : 0,
+      queueDepth: pool ? pool.queueDepth : 0,
     });
     return;
   }
@@ -211,12 +228,26 @@ async function handleRequest(req, res) {
     lastActivityAt = Date.now();
     const prompt = body.args[0];
 
+    // Checkout an isolated context slot from the pool
+    let slot;
+    try {
+      slot = await pool.checkout();
+    } catch (err) {
+      logger.error('ContextPool checkout failed', { error: err.message });
+      sendJSON(res, 503, {
+        error: err.message,
+        hint: `All ${pool.activeCount} slots busy and queue timed out. ` +
+              `Increase IBR_DAEMON_MAX_CLIENTS or retry later.`,
+      });
+      return;
+    }
+
     try {
       logger.info('Executing command', { prompt: prompt.slice(0, 80) });
 
       let taskDescription;
       try {
-        taskDescription = await operations.parseTaskDescription(prompt);
+        taskDescription = await slot.ops.parseTaskDescription(prompt);
       } catch (err) {
         sendJSON(res, 500, {
           error: `Parse failed: ${err.message}`,
@@ -225,17 +256,12 @@ async function handleRequest(req, res) {
         return;
       }
 
-      await operations.executeTask(taskDescription);
+      await slot.ops.executeTask(taskDescription);
 
       const result = JSON.stringify({
-        extracts: operations.extracts,
-        tokenUsage: operations.tokenUsage,
+        extracts: slot.ops.extracts,
+        tokenUsage: slot.ops.tokenUsage,
       }, null, 2);
-
-      // Reset per-command state so next command starts fresh
-      operations.extracts = [];
-      operations.tokenUsage = { prompt: 0, completion: 0, total: 0 };
-      operations.executionIndex = 0;
 
       lastActivityAt = Date.now();
       sendText(res, 200, result);
@@ -246,6 +272,9 @@ async function handleRequest(req, res) {
         hint: 'Task execution failed. Check daemon logs for the failing instruction index and observability context. ' +
               'Run "ibr snap <url> -i" to inspect the page state before retrying.',
       });
+    } finally {
+      // Always return slot — context is closed inside checkin()
+      await pool.checkin(slot);
     }
     return;
   }
@@ -310,13 +339,11 @@ async function main() {
     removeStateFile().finally(() => process.exit(1));
   });
 
-  const context = await browser.newContext();
-  const page = await context.newPage();
-
-  // Create AI + Operations
-  const aiProvider = createAIProvider();
+  // Create context pool
   const operationOptions = getOperationOptions();
-  operations = new Operations({ aiProvider, page }, operationOptions);
+  const { maxClients, queueTimeoutMs } = getPoolConfig();
+  pool = new ContextPool(browser, { maxClients, queueTimeoutMs, operationOptions });
+  logger.info('ContextPool ready', { maxClients, queueTimeoutMs });
 
   // Token
   serverToken = randomUUID();
