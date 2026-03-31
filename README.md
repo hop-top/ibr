@@ -12,6 +12,7 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Loop Support**: Repeat actions until conditions are met
 - **Authenticated Sessions**: Inherit browser cookies via `--cookies` flag
 - **Snapshot Diffing**: 85% token reduction in loops via incremental DOM diffs
+- **Tool Runner**: `ibr tool` subcommand — YAML-defined reusable browser workflows with typed params
 - **DOM Inspector**: `ibr snap` subcommand for on-demand page inspection
 - **Daemon Mode**: Optional persistent browser server; warm invocations ~540ms vs ~3800ms cold
 - **Visual Debugging**: `--annotate` / `-a` flag captures annotated PNGs with labeled bounding boxes
@@ -401,6 +402,61 @@ npm run server
 unset IBR_DAEMON           # revert to stateless for this session
 kill $(jq .pid ~/.ibr/server.json)  # stop the daemon manually
 ```
+
+---
+
+## Tool Runner (`ibr tool`)
+
+Run pre-packaged browser workflows defined as YAML files in `tools/`.
+Params use `{{placeholder}}` syntax; defaults are applied when omitted.
+
+```
+ibr tool <name> [--param key=value ...]
+ibr tool --list
+```
+
+### Built-in Tools
+
+| Name | Description | Required Params |
+|------|-------------|----------------|
+| `web-search` | Search the web; extract ranked results | `query` |
+| `web-fetch` | Fetch a URL; extract main content | `url` |
+
+### Examples
+
+```bash
+# Web search
+ibr tool web-search --param query="openai agents"
+
+# Web search with custom result count
+ibr tool web-search --param query="playwright testing" --param count=10
+
+# Fetch and extract page content
+ibr tool web-fetch --param url=https://example.com/article
+
+# List all available tools
+ibr tool --list
+```
+
+### YAML Tool Format
+
+```yaml
+name: my-tool
+description: "Short description"
+params:
+  - name: query
+    description: "Search query"
+    required: true
+  - name: count
+    description: "Number of results"
+    default: "5"
+url: "https://www.google.com"
+instructions:
+  - type {{query}} into the search box and press Enter
+  - extract the top {{count}} results with titles and URLs
+```
+
+Place `.yaml` files in `tools/` and they are automatically available via `ibr tool <name>`.
 
 ---
 

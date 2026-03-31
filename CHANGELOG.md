@@ -7,6 +7,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 
 ## [Unreleased]
 
+### feat
+
+- **`ibr tool` subcommand — YAML-defined browser tools (T-0002)**
+  - `src/commands/tool.js` — YAML loader, param interpolator, prompt builder.
+  - `tools/web-search.yaml` — search engine results tool (T-0003).
+  - `tools/web-fetch.yaml` — direct URL fetch + content extraction tool (T-0004).
+  - `ibr tool <name> [--param k=v ...]` — load tool, interpolate, run via std path.
+  - `ibr tool --list` — list available tools; no browser/AI key required.
+  - Missing required param → non-zero exit with clear error.
+  - Unknown tool → non-zero exit with "Tool not found" message.
+  - Story: `docs/stories/040-tool-subcommand.md`.
+
 ### test
 
 - **Tier 3 LLM-as-judge for extraction quality (T-0016)**
