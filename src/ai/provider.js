@@ -8,7 +8,7 @@ import logger from '../utils/logger.js';
  * Default models for each provider
  */
 const DEFAULT_MODELS = {
-  openai: 'gpt-4-mini',
+  openai: 'gpt-4.1-mini',
   anthropic: 'claude-3-5-haiku-20241022',
   google: 'gemini-1.5-flash'
 };

@@ -261,7 +261,7 @@ async function run() {
   const rawArgs = process.argv.slice(2);
 
   // Short-circuit info subcommands before any logger output.
-  if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+  if (rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs[0] === 'help') {
     printUsage();
     process.exit(0);
   }
@@ -395,6 +395,20 @@ async function run() {
         process.exit(1);
       }
       return;
+    }
+
+    // Static prompt pre-validation — fail fast before browser launch.
+    // Checks that the prompt contains a url: field; saves ~3s browser startup on bad input.
+    if (!/^\s*url\s*:/m.test(prompt)) {
+      const error = new CliError(
+        'CONFIG_ERROR',
+        'Prompt must include a "url:" field. ' +
+        'Example: "url: https://example.com\\ninstructions:\\n  - click submit". ' +
+        'Run "ibr --help" for full usage.'
+      );
+      logger.error(error.message);
+      emitStructuredError(error);
+      process.exit(1);
     }
 
     // Validate required environment variables based on provider
