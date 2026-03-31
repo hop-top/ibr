@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"answer the focused question using docs content\"}]}",
+  "[{\"answer\":\"Use `page.locator(selector).click()` to click an element. Example: `await page.locator('#submit').click()`\"}]"
+]

@@ -189,3 +189,46 @@ describe('ibr tool github-starred (T-0010)', () => {
     expect(result.stdout + result.stderr).toMatch(/username|required param/i);
   }, 10000);
 });
+
+// ─── context7 (T-0005) ───────────────────────────────────────────────────────
+
+describe('ibr tool context7 (T-0005)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-context7', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'context7', '--param', 'library=playwright', '--param', 'question=how to click an element'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('library is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'context7', '--param', 'question=how to click'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/library|required param/i);
+  }, 10000);
+
+  it('question is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'context7', '--param', 'library=playwright'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/question|required param/i);
+  }, 10000);
+});
