@@ -1,0 +1,195 @@
+# Nightly browser matrix — broader coverage beyond fast PR lanes.
+# Runs on a schedule (02:00 UTC) and is also dispatchable manually.
+#
+# Feasibility matrix for GitHub-hosted runners:
+#   Linux:   Chrome, Chromium, Brave, Edge       ← all runnable
+#   macOS:   Chrome, Brave, Edge                 ← all runnable
+#   Windows: Chrome, Edge                        ← DEFERRED (cookie import
+#                                                   not yet implemented for
+#                                                   Windows; see T-0035)
+#
+# Deferred / self-hosted only:
+#   macOS Arc   — Arc does not publish a Homebrew formula or CI-installable
+#                 package; requires a developer machine with Arc installed.
+#   macOS Comet — same constraint as Arc; pre-release / invite-only.
+#
+# Deferred lanes are listed as jobs with continue-on-error: true and a
+# skip guard so they appear in the matrix but do not block the nightly run.
+name: Browser Matrix (Nightly)
+
+on:
+  schedule:
+    # 02:00 UTC every day — outside business hours for most timezones.
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Linux — Chrome, Chromium, Brave, Edge (all supported)
+  # ──────────────────────────────────────────────────────────────────────────
+  linux-browsers:
+    name: "linux / ${{ matrix.browser_channel }}"
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        browser_channel: [chrome, chromium, brave, edge]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Brave requires an extra apt step; Chrome/Chromium/Edge use Playwright.
+      - name: Install Brave (Linux)
+        if: matrix.browser_channel == 'brave'
+        run: |
+          sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+            https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] \
+            https://brave-browser-apt-release.s3.brave.com/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/brave-browser-release.list
+          sudo apt-get update -qq && sudo apt-get install -y brave-browser
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-ubuntu-${{ matrix.browser_channel }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true' && matrix.browser_channel != 'brave'
+        run: npm run browser:install
+
+      - name: Run e2e (full)
+        env:
+          BROWSER_CHANNEL: ${{ matrix.browser_channel }}
+        run: npm run test:e2e
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # macOS — Chrome, Brave, Edge (Arc/Comet deferred)
+  # ──────────────────────────────────────────────────────────────────────────
+  macos-browsers:
+    name: "macos / ${{ matrix.browser_channel }}"
+    runs-on: macos-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        browser_channel: [chrome, brave, edge]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Brave (macOS)
+        if: matrix.browser_channel == 'brave'
+        run: brew install --cask brave-browser
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: pw-macos-${{ matrix.browser_channel }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true' && matrix.browser_channel != 'brave'
+        run: npm run browser:install
+
+      - name: Run e2e (full)
+        env:
+          BROWSER_CHANNEL: ${{ matrix.browser_channel }}
+        run: npm run test:e2e
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # macOS Arc — DEFERRED (self-hosted / manual only)
+  # Arc has no CI-installable package; this lane is a placeholder that always
+  # skips on GitHub-hosted runners. Run on a machine with Arc installed.
+  # ──────────────────────────────────────────────────────────────────────────
+  macos-arc:
+    name: "macos / arc [DEFERRED — self-hosted]"
+    runs-on: ubuntu-latest   # placeholder runner; step exits early
+    continue-on-error: true
+
+    steps:
+      - name: Skip — Arc requires self-hosted runner with Arc installed
+        run: |
+          echo "Arc browser lane is deferred to self-hosted runners."
+          echo "Arc does not publish a CI-installable package."
+          exit 0
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # macOS Comet — DEFERRED (self-hosted / manual only)
+  # Comet is pre-release/invite-only; same constraint as Arc.
+  # ──────────────────────────────────────────────────────────────────────────
+  macos-comet:
+    name: "macos / comet [DEFERRED — self-hosted]"
+    runs-on: ubuntu-latest   # placeholder runner; step exits early
+    continue-on-error: true
+
+    steps:
+      - name: Skip — Comet requires self-hosted runner with Comet installed
+        run: |
+          echo "Comet browser lane is deferred to self-hosted runners."
+          echo "Comet is pre-release/invite-only and has no CI package."
+          exit 0
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Windows Chrome/Edge — DEFERRED (cookie import not implemented)
+  # Windows cookie import support is tracked in T-0035. Until implemented,
+  # these lanes run but are allowed to fail without blocking the nightly.
+  # ──────────────────────────────────────────────────────────────────────────
+  windows-browsers-deferred:
+    name: "windows / ${{ matrix.browser_channel }} [DEFERRED — cookie import]"
+    runs-on: windows-latest
+    # continue-on-error: Windows cookie import not yet supported (T-0035).
+    # Remove continue-on-error once Windows support lands.
+    continue-on-error: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        browser_channel: [chrome, edge]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: "%LOCALAPPDATA%\\ms-playwright"
+          key: pw-windows-${{ matrix.browser_channel }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npm run browser:install
+
+      - name: Run e2e (full) — expected partial failure on cookie import
+        env:
+          BROWSER_CHANNEL: ${{ matrix.browser_channel }}
+        run: npm run test:e2e
