@@ -12,6 +12,7 @@ import { wsmAdapter } from './services/WsmAdapter.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
 import { createUpgrader } from './utils/upgrader.js';
 import { resolveBrowserChannel } from './utils/browserChannel.js';
+import { checkRobots } from './utils/robotsCheck.js';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -153,13 +154,14 @@ const VALID_MODES = new Set(['aria', 'dom', 'auto']);
 /**
  * Parse CLI flags from argv.
  * Strips recognised flags and returns remaining positional args + parsed options.
- * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean }}
+ * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean, obeyRobots: boolean }}
  */
 function parseCliFlags() {
   const argv = process.argv.slice(2);
   const remaining = [];
   let mode = 'auto';
   let annotate = false;
+  let obeyRobots = process.env.OBEY_ROBOTS === 'true';
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--mode' && argv[i + 1]) {
@@ -174,12 +176,14 @@ function parseCliFlags() {
       mode = val;
     } else if (argv[i] === '--annotate' || argv[i] === '-a') {
       annotate = true;
+    } else if (argv[i] === '--obey-robots') {
+      obeyRobots = true;
     } else {
       remaining.push(argv[i]);
     }
   }
 
-  return { args: remaining, mode, annotate };
+  return { args: remaining, mode, annotate, obeyRobots };
 }
 
 /**
@@ -223,6 +227,7 @@ function printUsage() {
     '  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only',
     `  Supported browsers: ${getSupportedCookieBrowsersHelpText()}`,
     '  Note: --cookies and --mode are stateless-mode flags; not supported with --daemon',
+    '  --obey-robots                Check robots.txt before running; abort if path is disallowed',
     '  --annotate, -a               Capture annotated screenshots after each find step',
     '  --mode aria   Force ARIA accessibility tree (ariaSnapshot)',
     '  --mode dom    Force DOM simplifier + XPath',
@@ -288,6 +293,7 @@ function printUsage() {
     '  BROWSER_EXECUTABLE_PATH - Explicit path to browser binary (overrides BROWSER_CHANNEL)',
     '  BROWSER_HEADLESS      - Run headless (true/false) [default: false]',
     '  BROWSER_SLOWMO        - Slow down actions (ms) [default: 100]',
+    '  OBEY_ROBOTS           - Check robots.txt before automation (true/false) [default: false]',
     '  IBR_DAEMON            - Enable daemon mode (true/false) [default: false]',
     '  IBR_STATE_FILE        - Daemon state file path [default: ~/.ibr/server.json]',
     '',
@@ -354,7 +360,7 @@ async function run() {
     // parseCliFlags reads process.argv, so we temporarily shadow it
     const savedArgv = process.argv;
     process.argv = ['node', 'src/index.js', ...effectiveArgv.slice(2)];
-    const { args, mode, annotate } = parseCliFlags();
+    const { args, mode, annotate, obeyRobots } = parseCliFlags();
     process.argv = savedArgv;
 
     // The prompt is the first remaining positional argument
@@ -422,10 +428,27 @@ async function run() {
 
     // Subcommand: ibr snap <url> [flags] — no AI provider needed; dispatch early
     if (process.argv[2] === 'snap') {
-      const domArgs = process.argv.slice(3);
+      const domArgs = process.argv.slice(3).filter(a => a !== '--obey-robots');
+      const snapObeyRobots =
+        process.env.OBEY_ROBOTS === 'true' || process.argv.slice(3).includes('--obey-robots');
       try {
         // Parse args early to catch missing URL/invalid flags before launching browser
         const snapOpts = await import('./commands/snap.js').then(m => m.parseDomArgs(domArgs));
+
+        if (snapObeyRobots && snapOpts.url) {
+          const robotsResult = await checkRobots(snapOpts.url);
+          if (!robotsResult.allowed) {
+            const error = new CliError(
+              'ROBOTS_DISALLOWED',
+              `Target URL is disallowed by robots.txt: ${snapOpts.url}. ` +
+              'Remove --obey-robots to bypass this check, or target a different URL.'
+            );
+            logger.error(error.message);
+            emitStructuredError(error);
+            process.exit(1);
+          }
+        }
+
         const browserConfig = getBrowserConfig();
         await runDomCommand(domArgs, browserConfig);
       } catch (err) {
@@ -453,6 +476,25 @@ async function run() {
       logger.error(error.message);
       emitStructuredError(error);
       process.exit(1);
+    }
+
+    // robots.txt compliance check (opt-in via --obey-robots or OBEY_ROBOTS=true)
+    if (obeyRobots) {
+      const urlMatch = prompt.match(/https?:\/\/\S+/);
+      const targetUrl = urlMatch ? urlMatch[0].replace(/['")\]]+$/, '') : null;
+      if (targetUrl) {
+        const robotsResult = await checkRobots(targetUrl);
+        if (!robotsResult.allowed) {
+          const error = new CliError(
+            'ROBOTS_DISALLOWED',
+            `Target URL is disallowed by robots.txt: ${targetUrl}. ` +
+            'Remove --obey-robots to bypass this check, or target a different URL.'
+          );
+          logger.error(error.message);
+          emitStructuredError(error);
+          process.exit(1);
+        }
+      }
     }
 
     // Validate required environment variables based on provider
