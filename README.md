@@ -709,14 +709,24 @@ Now you can watch exactly what the script is doing and see where it fails.
 | `BROWSER_HEADLESS` | true/false | false | Run browser headless |
 | `BROWSER_SLOWMO` | milliseconds | 100 | Slow down browser actions |
 | `BROWSER_TIMEOUT` | milliseconds | 30000 | Page load timeout |
+| `BROWSER_CHANNEL` | brave/chrome/msedge/arc/comet/chromium | _(chromium)_ | Browser to launch |
+| `BROWSER_EXECUTABLE_PATH` | path | — | Explicit browser binary (overrides `BROWSER_CHANNEL`) |
+| `OBEY_ROBOTS` | true/false | false | Check robots.txt before automation |
 | `DIALOG_AUTO_ACCEPT` | true/false | true | Auto-accept browser dialogs (alert/confirm/prompt) |
 | `DIALOG_BUFFER_CAPACITY` | number | 50000 | Max dialog events to buffer |
 | `DIALOG_DEFAULT_PROMPT_TEXT` | string | '' | Default text submitted for prompt() dialogs |
+
+### Daemon Configuration
+| Variable | Values | Default | Purpose |
+|----------|--------|---------|---------|
+| `IBR_DAEMON` | true/false | false | Enable persistent browser daemon |
+| `IBR_STATE_FILE` | path | `~/.ibr/server.json` | Daemon state file path |
 
 ### Observability
 | Variable | Values | Default | Purpose |
 |----------|--------|---------|---------|
 | `NDJSON_STREAM` | true/false | false | Stream browser events as NDJSON to stdout |
+| `ANNOTATED_SCREENSHOTS_ON_FAILURE` | true/false | false | Auto-capture annotated PNG on action failure |
 
 ### API Keys (REQUIRED)
 - `OPENAI_API_KEY` - For OpenAI provider
@@ -831,6 +841,20 @@ Requires Node >=20. Run once to produce `dist/ibr` and `dist/ibr-server`:
 Binaries are self-contained (no Node runtime needed). Native deps (Playwright,
 better-sqlite3, @boundaryml/baml) must still exist in `node_modules` alongside
 the binary; they cannot be embedded in the SEA blob.
+
+## Version & Upgrade
+
+```bash
+ibr version                  # human-readable version string
+ibr version --short          # version only — scriptable (e.g. in CI checks)
+ibr version --json           # JSON: version, node, platform, arch
+ibr upgrade                  # check for and install available updates
+ibr upgrade --auto           # non-interactive install
+ibr upgrade --quiet          # suppress output (use exit code only)
+ibr upgrade preamble         # emit agent skill preamble fragment (for AI agent configs)
+```
+
+---
 
 ## Related Tools
 
