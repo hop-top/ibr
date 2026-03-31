@@ -35,3 +35,9 @@ build-bundle:
 
 build-sea:
     node scripts/sea.mjs
+
+bench *args:
+    node bench/run.js {{args}}
+
+bench-report *args:
+    node bench/report.js {{args}}
