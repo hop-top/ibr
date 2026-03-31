@@ -1,0 +1,14 @@
+name: producthunt
+description: Search Product Hunt for products and extract name, tagline, upvotes, URL, and maker
+params:
+  - name: query
+    description: Product name or keyword to search for
+    required: true
+  - name: max_results
+    description: Maximum number of products to extract
+    default: "5"
+url: "https://www.producthunt.com/search?q={{query}}"
+instructions:
+  - wait for the search results to load
+  - extract up to {{max_results}} products from the results list
+  - for each product extract name, tagline, upvote count, product URL, and maker name

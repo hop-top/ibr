@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract package info: name, version, description, license, homepage, requires_python, author, last_release_date\"}]}",
+  "[{\"name\":\"requests\",\"version\":\"2.31.0\",\"description\":\"Python HTTP for Humans.\",\"license\":\"Apache 2.0\",\"homepage\":\"https://requests.readthedocs.io\",\"requires_python\":\">=3.7\",\"author\":\"Kenneth Reitz\",\"last_release_date\":\"2023-05-22\"}]"
+]

@@ -1,0 +1,13 @@
+name: pypi
+description: Fetch Python package metadata and latest changelog from PyPI
+params:
+  - name: package
+    description: PyPI package name (e.g. requests, flask)
+    required: true
+url: "https://pypi.org/project/{{package}}/"
+instructions:
+  - wait for the page to load
+  - extract the package name, latest version, short description, license,
+    homepage URL, requires-python version, author, and last release date
+  - if a changelog or release notes section exists in the project description,
+    extract the latest entry

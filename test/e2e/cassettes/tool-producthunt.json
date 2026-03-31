@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract product search results with name, tagline, upvotes, url, and maker\"}]}",
+  "[{\"name\":\"Notion\",\"tagline\":\"The all-in-one workspace\",\"upvotes\":4821,\"url\":\"https://www.producthunt.com/posts/notion-2\",\"maker\":\"Ivan Zhao\"},{\"name\":\"Notion AI\",\"tagline\":\"AI built right into your workspace\",\"upvotes\":3102,\"url\":\"https://www.producthunt.com/posts/notion-ai\",\"maker\":\"Ivan Zhao\"}]"
+]
