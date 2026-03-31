@@ -260,13 +260,16 @@ function printUsage() {
 async function run() {
   const rawArgs = process.argv.slice(2);
 
-  // Print help before any logger output so stdout/stderr stay clean.
+  // Short-circuit info subcommands before any logger output.
   if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
     printUsage();
     process.exit(0);
   }
-
-  logger.info('Starting ibr (Intent Browser Runtime)');
+  if (rawArgs[0] === 'version' || rawArgs[0] === 'upgrade') {
+    // Fall through to subcommand handlers below without printing the banner.
+  } else {
+    logger.info('Starting ibr (Intent Browser Runtime)');
+  }
 
   try {
     // Daemon mode routing — must come before any stateless setup
