@@ -750,6 +750,12 @@ Binaries are self-contained (no Node runtime needed). Native deps (Playwright,
 better-sqlite3, @boundaryml/baml) must still exist in `node_modules` alongside
 the binary; they cannot be embedded in the SEA blob.
 
+## Related Tools
+
+| Tool | Notes |
+|------|-------|
+| [LightPanda](https://github.com/lightpanda-io/browser) | Headless browser in Zig; 11x faster, 9x less memory than Chrome. CDP-compatible. Beta — CORS gap limits Playwright parity today. Potential future ibr backend for high-throughput scraping workloads. |
+
 ## License
 
 ISC
