@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/tool-results.html\",\"instructions\":[{\"name\":\"extract\",\"prompt\":\"extract main textual content of the archived page\"}]}",
+  "[{\"content\":\"Example Domain. This domain is for use in illustrative examples in documents.\",\"snapshot_date\":\"20240315120000\",\"original_url\":\"https://example.com\"}]"
+]

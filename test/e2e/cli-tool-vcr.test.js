@@ -572,3 +572,139 @@ describe('ibr tool producthunt (T-0019)', () => {
     expect(result.stdout + result.stderr).toMatch(/query|required param/i);
   }, 10000);
 });
+
+// ─── arxiv (T-0012) ───────────────────────────────────────────────────────────
+
+describe('ibr tool arxiv (T-0012)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-arxiv', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'arxiv', '--param', 'query=attention transformer'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('query is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'arxiv'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/query|required param/i);
+  }, 10000);
+});
+
+// ─── web-archive (T-0013) ─────────────────────────────────────────────────────
+
+describe('ibr tool web-archive (T-0013)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-web-archive', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'web-archive', '--param', 'url=https://example.com'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('url is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'web-archive'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/url|required param/i);
+  }, 10000);
+});
+
+// ─── web-search (story 058) ───────────────────────────────────────────────────
+
+describe('ibr tool web-search (story 058)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-web-search', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'web-search', '--param', 'query=playwright testing'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('query is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'web-search'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/query|required param/i);
+  }, 10000);
+});
+
+// ─── web-fetch (story 059) ────────────────────────────────────────────────────
+
+describe('ibr tool web-fetch (story 059)', () => {
+  let ai, web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+    ai = await startFromCassette('tool-web-fetch', { SERVER_URL: web.baseUrl });
+  }, 15000);
+
+  afterAll(async () => {
+    await ai.close();
+    await web.close();
+  });
+
+  it('exits 0 and completes extraction without error', async () => {
+    const result = await runIbr(
+      ['tool', 'web-fetch', '--param', 'url=https://example.com'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+  }, 30000);
+
+  it('url is required — missing → non-zero exit before browser', async () => {
+    const result = await runIbr(
+      ['tool', 'web-fetch'],
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stdout + result.stderr).toMatch(/url|required param/i);
+  }, 10000);
+});
