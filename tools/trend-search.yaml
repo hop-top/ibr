@@ -1,0 +1,23 @@
+name: trend-search
+description: Explore Google Trends to retrieve trending interest over time and related queries for a topic
+params:
+  - name: topic
+    description: Topic or keyword to search trends for
+    required: true
+  - name: region
+    description: Two-letter country code to scope results
+    default: "US"
+  - name: period
+    description: Time period for trend data (e.g. 1d, 7d, 30d, 90d, 12m, 5y)
+    default: "7d"
+url: "https://trends.google.com/trends/explore"
+instructions:
+  - navigate to https://trends.google.com/trends/explore
+  - type {{topic}} into the search box and press Enter
+  - if a region selector is visible, set it to {{region}}
+  - if a time period selector is visible, set it to {{period}}
+  - wait for the interest-over-time chart to fully render
+  - extract the interest-over-time data series (dates and values)
+  - scroll down to the "Related queries" section and wait for it to load
+  - extract the top rising and top related queries from both columns
+  - return: interest-over-time series, top rising queries, top related queries

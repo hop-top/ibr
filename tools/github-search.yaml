@@ -1,0 +1,23 @@
+name: github-search
+description: Search GitHub across repositories, code, issues, and users
+params:
+  - name: query
+    description: Search query
+    required: true
+  - name: type
+    description: Search type; one of repositories, code, issues, users
+    default: "repositories"
+  - name: count
+    description: Number of results to extract
+    default: "10"
+url: "https://github.com/search"
+instructions:
+  - navigate to https://github.com/search
+  - locate the search type filter (tabs or dropdown) and select {{type}}
+  - type {{query}} into the search input and press Enter
+  - wait for results to load
+  - extract the top {{count}} results; for each result include:
+      - if type is repositories: repo full name (owner/repo), description, star count, primary language
+      - if type is code: file path, repo full name, matching code snippet
+      - if type is issues: issue title, repo full name, issue number, open/closed status, creation date
+      - if type is users: username, display name, bio, follower count
