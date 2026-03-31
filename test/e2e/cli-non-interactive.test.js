@@ -3,6 +3,9 @@
  * Tests: prompt via stdin → exit 0; missing API key + no TTY → exit non-zero
  *        with error on stderr, no readline prompt.
  *
+ * Story 033 — CLI composition via stdin
+ * Tests: multiline stdin prompts, argv precedence over stdin, no-input failure.
+ *
  * NOTE: src/index.js currently reads the prompt from process.argv[2] only.
  * stdin piping tests are marked skip until stdin support is implemented.
  */
@@ -127,4 +130,104 @@ describe('cli non-interactive mode (story 016)', () => {
     await ai2.close();
     expect(result.code).toBe(0);
   }, 30000);
+});
+
+// ── Story 033 — CLI composition via stdin ────────────────────────────────────
+
+describe('cli composition via stdin (story 033)', () => {
+  let web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+  }, 15000);
+
+  afterAll(async () => {
+    await web.close();
+  });
+
+  it(
+    'multiline stdin prompt accepted intact → exit 0',
+    async () => {
+      const ai = await startFakeAIServerE2E([
+        JSON.stringify({
+          url: `${web.baseUrl}/product-page.html`,
+          instructions: [{ name: 'extract', prompt: 'get the title' }],
+        }),
+        JSON.stringify([{ text: 'Widget Pro' }]),
+      ]);
+      // Multiline YAML-style prompt piped via stdin
+      const prompt = [
+        `url: ${web.baseUrl}/product-page.html`,
+        'instructions:',
+        '  - extract the title',
+        '',
+      ].join('\n');
+      const result = await runIbr(
+        [],
+        {
+          ...BASE_ENV,
+          OPENAI_API_KEY: 'test-key',
+          OPENAI_BASE_URL: ai.baseUrl,
+        },
+        prompt,
+      );
+      await ai.close();
+      expect(result.code).toBe(0);
+    },
+    30000,
+  );
+
+  it(
+    'argv prompt takes precedence over stdin → argv prompt is used',
+    async () => {
+      const ai = await startFakeAIServerE2E([
+        JSON.stringify({
+          url: `${web.baseUrl}/product-page.html`,
+          instructions: [{ name: 'extract', prompt: 'get the title' }],
+        }),
+        JSON.stringify([{ text: 'Widget Pro' }]),
+      ]);
+      // Argv prompt (with url:) wins over stdin content
+      const argvPrompt =
+        `url: ${web.baseUrl}/product-page.html\ninstructions:\n  - extract the title`;
+      // Stdin prompt is deliberately invalid (no url:) to confirm it's ignored
+      const stdinPrompt = 'this is a different prompt with no url field\n';
+      const result = await runIbr(
+        [argvPrompt],
+        {
+          ...BASE_ENV,
+          OPENAI_API_KEY: 'test-key',
+          OPENAI_BASE_URL: ai.baseUrl,
+        },
+        stdinPrompt,
+      );
+      await ai.close();
+      // If argv wins, the url: prompt is used and the run succeeds
+      expect(result.code).toBe(0);
+    },
+    30000,
+  );
+
+  it(
+    'no argv and no stdin → exit non-zero with descriptive error',
+    async () => {
+      const env = { ...process.env };
+      delete env.OPENAI_API_KEY;
+      // Send empty stdin to simulate EOF without content
+      const result = await runIbr(
+        [],
+        {
+          ...env,
+          ...BASE_ENV,
+          OPENAI_API_KEY: 'test-key',
+          OPENAI_BASE_URL: 'http://127.0.0.1:19998',
+        },
+        '', // empty stdin
+      );
+      expect(result.code).not.toBe(0);
+      const combined = result.stdout + result.stderr;
+      expect(combined.toLowerCase()).toMatch(/error|fatal|prompt/i);
+    },
+    15000,
+  );
 });

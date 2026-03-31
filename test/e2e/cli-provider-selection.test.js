@@ -2,6 +2,9 @@
  * Story 005 — AI provider selection
  * Tests: anthropic without key → exit 2; unknown provider → exit non-zero;
  *        custom model with fake OpenAI → run completes.
+ *
+ * Story 032 — OpenAI-compatible gateway support
+ * Tests: OPENAI_BASE_URL routing, preserved error semantics, config validation.
  */
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -12,17 +15,22 @@ import { startStaticServer } from '../helpers/staticServer.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-function runIbr(args, env = {}) {
+function runIbr(args, env = {}, stdinData = null) {
   return new Promise((resolve) => {
     const proc = spawn('node', ['src/index.js', ...args], {
       env: { ...process.env, ...env },
       cwd: CWD,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
     proc.stdout.on('data', d => { stdout += d; });
     proc.stderr.on('data', d => { stderr += d; });
     proc.on('close', code => resolve({ code, stdout, stderr }));
+    if (stdinData !== null) {
+      proc.stdin.write(stdinData);
+    }
+    proc.stdin.end();
   });
 }
 
@@ -124,4 +132,130 @@ describe('cli provider selection (story 005)', () => {
 
     expect(result.code).toBe(0);
   }, 30000);
+});
+
+// ── Story 032 — OpenAI-compatible gateway support ────────────────────────────
+
+describe('cli openai-compatible gateway support (story 032)', () => {
+  let web;
+
+  beforeAll(async () => {
+    web = await startStaticServer();
+  }, 15000);
+
+  afterAll(async () => {
+    await web.close();
+  });
+
+  it(
+    'OPENAI_BASE_URL routes requests to custom gateway → exit 0',
+    async () => {
+      const ai = await startFakeAIServerE2E([
+        JSON.stringify({
+          url: `${web.baseUrl}/product-page.html`,
+          instructions: [{ name: 'extract', prompt: 'get the title' }],
+        }),
+        JSON.stringify([{ text: 'Widget Pro' }]),
+      ]);
+      const prompt =
+        `url: ${web.baseUrl}/product-page.html\ninstructions:\n  - extract the title\n`;
+      const result = await runIbr(
+        [],
+        {
+          ...BASE_ENV,
+          OPENAI_API_KEY: 'test-key',
+          OPENAI_BASE_URL: ai.baseUrl,
+          AI_PROVIDER: 'openai',
+        },
+        prompt,
+      );
+      await ai.close();
+      expect(result.code).toBe(0);
+    },
+    30000,
+  );
+
+  it(
+    'OPENAI_BASE_URL + AI_MODEL override → custom model accepted, exit 0',
+    async () => {
+      const ai = await startFakeAIServerE2E([
+        JSON.stringify({
+          url: `${web.baseUrl}/product-page.html`,
+          instructions: [{ name: 'extract', prompt: 'get the price' }],
+        }),
+        JSON.stringify([{ text: '$29.99' }]),
+      ]);
+      const prompt =
+        `url: ${web.baseUrl}/product-page.html\ninstructions:\n  - extract the price\n`;
+      const result = await runIbr(
+        [],
+        {
+          ...BASE_ENV,
+          OPENAI_API_KEY: 'test-key',
+          OPENAI_BASE_URL: ai.baseUrl,
+          AI_PROVIDER: 'openai',
+          AI_MODEL: 'my-gateway-model',
+        },
+        prompt,
+      );
+      await ai.close();
+      expect(result.code).toBe(0);
+    },
+    30000,
+  );
+
+  it(
+    'OPENAI_BASE_URL set but OPENAI_API_KEY missing → exit non-zero + error output',
+    async () => {
+      const env = { ...process.env };
+      delete env.OPENAI_API_KEY;
+      delete env.ANTHROPIC_API_KEY;
+      delete env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+      const prompt =
+        `url: ${web.baseUrl}/product-page.html\ninstructions:\n  - extract the title\n`;
+      const result = await runIbr(
+        [],
+        {
+          ...env,
+          ...BASE_ENV,
+          AI_PROVIDER: 'openai',
+          OPENAI_API_KEY: '',
+          OPENAI_BASE_URL: 'http://127.0.0.1:19999',
+        },
+        prompt,
+      );
+      expect(result.code).not.toBe(0);
+      const combined = result.stdout + result.stderr;
+      expect(combined.toLowerCase()).toMatch(/error|fatal/i);
+    },
+    15000,
+  );
+
+  it(
+    'AI_PROVIDER=openai missing key without OPENAI_BASE_URL → same error semantics',
+    async () => {
+      const env = { ...process.env };
+      delete env.OPENAI_API_KEY;
+      delete env.ANTHROPIC_API_KEY;
+      delete env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+      const prompt =
+        `url: ${web.baseUrl}/product-page.html\ninstructions:\n  - extract the title\n`;
+      const result = await runIbr(
+        [],
+        {
+          ...env,
+          ...BASE_ENV,
+          AI_PROVIDER: 'openai',
+          OPENAI_API_KEY: '',
+        },
+        prompt,
+      );
+      expect(result.code).not.toBe(0);
+      const combined = result.stdout + result.stderr;
+      expect(combined.toLowerCase()).toMatch(/error|fatal/i);
+    },
+    15000,
+  );
 });
