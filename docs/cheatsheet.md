@@ -201,6 +201,8 @@ ibr version --short          # version only (scriptable)
 ibr version --json           # JSON with node/platform info
 ibr upgrade                  # check for updates
 ibr upgrade --auto           # install if available
+ibr upgrade --quiet          # suppress output
+ibr upgrade preamble         # emit agent skill preamble fragment
 ```
 
 ---
@@ -215,8 +217,10 @@ ibr upgrade --auto           # install if available
 | `BROWSER_HEADLESS` | `false` | `true` = headless |
 | `BROWSER_SLOWMO` | `100` | ms between actions |
 | `BROWSER_TIMEOUT` | `30000` | ms per action |
-| `BROWSER_CHANNEL` | _(chromium)_ | `brave` / `chrome` / `msedge` / `arc` |
+| `BROWSER_CHANNEL` | _(chromium)_ | `brave` / `chrome` / `msedge` / `arc` / `comet` |
+| `BROWSER_EXECUTABLE_PATH` | — | Explicit browser binary path (overrides `BROWSER_CHANNEL`) |
 | `IBR_DAEMON` | `false` | Enable daemon mode |
+| `IBR_STATE_FILE` | `~/.ibr/server.json` | Daemon state file path |
 | `OBEY_ROBOTS` | `false` | Robots.txt compliance |
 | `NDJSON_STREAM` | `false` | Emit structured browser events |
 | `ANNOTATED_SCREENSHOTS_ON_FAILURE` | `false` | Auto-capture on failure |
