@@ -202,64 +202,74 @@ export function getOperationOptions(mode, annotate = false) {
 }
 
 /**
- * Print usage information
+ * Print usage information — plain text to stderr, no logger formatting.
  */
 function printUsage() {
-  logger.info('ibr - Intent Browser Runtime');
-  logger.info('');
-  logger.info('Usage:');
-  logger.info('  ibr [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"');
-  logger.info('  ibr [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)');
-  logger.info('  ibr snap <url> [flags]          - inspect DOM at URL');
-  logger.info('  ibr upgrade [--auto] [--quiet]  - check for and install updates');
-  logger.info('  ibr upgrade preamble            - print agent skill preamble fragment');
-  logger.info('  ibr version [--short|--json]    - print version information');
-  logger.info('');
-  logger.info('Flags:');
-  logger.info('  --daemon                         Use persistent browser daemon (opt-in)');
-  logger.info('  --cookies <browser>              Import all non-expired cookies from browser');
-  logger.info('  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only');
-  logger.info(`  Supported browsers: ${getSupportedCookieBrowsersHelpText()}`);
-  logger.info('  Note: --cookies and --mode are stateless-mode flags; not supported with --daemon');
-  logger.info('  --annotate, -a               Capture annotated screenshots after each find step');
-  logger.info('  --mode aria   Force ARIA accessibility tree (ariaSnapshot)');
-  logger.info('  --mode dom    Force DOM simplifier + XPath');
-  logger.info('  --mode auto   Auto-select based on quality (default)');
-  logger.info('  ANNOTATED_SCREENSHOTS_ON_FAILURE=true  Auto-capture on action failure');
-  logger.info('');
-  logger.info('snap subcommand flags:');
-  logger.info('  --aria                        - show ariaSnapshot (ARIA YAML) instead of DOM JSON');
-  logger.info('  -i                            - interactive elements only');
-  logger.info('  -a                            - annotated screenshot → /tmp/ibr-dom-annotated.png');
-  logger.info('  -d <N>                        - depth limit (dom mode only)');
-  logger.info('  -s <selector>                 - scope to CSS selector subtree (dom mode only)');
-  logger.info('');
-  logger.info('Examples:');
-  logger.info('  ibr "url: https://example.com\\ninstructions:\\n  - click submit button"');
-  logger.info('  ibr --cookies chrome "url: https://github.com\\ninstructions:\\n  - get repo list"');
-  logger.info('  ibr --mode dom "url: https://canvas-app.example.com\\ninstructions:\\n  - click submit"');
-  logger.info('  ibr snap https://example.com -i -d 5');
-  logger.info('  ibr snap --aria https://example.com');
-  logger.info('  ibr snap --aria -i https://example.com');
-  logger.info('');
-  logger.info('Configuration:');
-  logger.info('  AI_PROVIDER      - AI provider (openai, anthropic, google) [default: openai]');
-  logger.info('  AI_TEMPERATURE   - AI temperature 0-2 [default: 0]');
-  logger.info('  BROWSER_HEADLESS - Launch browser headless (true/false) [default: false]');
-  logger.info('  BROWSER_SLOWMO   - Slow down browser actions (ms) [default: 100]');
-  logger.info('  IBR_DAEMON       - Enable daemon mode (true/false) [default: false]');
-  logger.info('  IBR_STATE_FILE   - Override daemon state file path [default: ~/.ibr/server.json]');
-  logger.info('');
-  logger.info('See .env.example for all available configuration options');
+  const lines = [
+    'ibr - Intent Browser Runtime',
+    '',
+    'Usage:',
+    '  ibr [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"',
+    '  ibr [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)',
+    '  ibr snap <url> [flags]          - inspect DOM at URL',
+    '  ibr upgrade [--auto] [--quiet]  - check for and install updates',
+    '  ibr upgrade preamble            - print agent skill preamble fragment',
+    '  ibr version [--short|--json]    - print version information',
+    '',
+    'Flags:',
+    '  --daemon                         Use persistent browser daemon (opt-in)',
+    '  --cookies <browser>              Import all non-expired cookies from browser',
+    '  --cookies <browser>:<d1>,<d2>    Import cookies for specific domains only',
+    `  Supported browsers: ${getSupportedCookieBrowsersHelpText()}`,
+    '  Note: --cookies and --mode are stateless-mode flags; not supported with --daemon',
+    '  --annotate, -a               Capture annotated screenshots after each find step',
+    '  --mode aria   Force ARIA accessibility tree (ariaSnapshot)',
+    '  --mode dom    Force DOM simplifier + XPath',
+    '  --mode auto   Auto-select based on quality (default)',
+    '  ANNOTATED_SCREENSHOTS_ON_FAILURE=true  Auto-capture on action failure',
+    '',
+    'snap subcommand flags:',
+    '  --aria                        - show ariaSnapshot (ARIA YAML) instead of DOM JSON',
+    '  -i                            - interactive elements only',
+    '  -a                            - annotated screenshot → /tmp/ibr-dom-annotated.png',
+    '  -d <N>                        - depth limit (dom mode only)',
+    '  -s <selector>                 - scope to CSS selector subtree (dom mode only)',
+    '',
+    'Examples:',
+    '  ibr "url: https://example.com\\ninstructions:\\n  - click submit button"',
+    '  ibr --cookies chrome "url: https://github.com\\ninstructions:\\n  - get repo list"',
+    '  ibr --mode dom "url: https://canvas-app.example.com\\ninstructions:\\n  - click submit"',
+    '  ibr snap https://example.com -i -d 5',
+    '  ibr snap --aria https://example.com',
+    '  ibr snap --aria -i https://example.com',
+    '',
+    'Configuration:',
+    '  AI_PROVIDER      - AI provider (openai, anthropic, google) [default: openai]',
+    '  AI_TEMPERATURE   - AI temperature 0-2 [default: 0]',
+    '  BROWSER_HEADLESS - Launch browser headless (true/false) [default: false]',
+    '  BROWSER_SLOWMO   - Slow down browser actions (ms) [default: 100]',
+    '  IBR_DAEMON       - Enable daemon mode (true/false) [default: false]',
+    '  IBR_STATE_FILE   - Override daemon state file path [default: ~/.ibr/server.json]',
+    '',
+    'See .env.example for all available configuration options',
+  ];
+  process.stderr.write(lines.join('\n') + '\n');
 }
 
 
 async function run() {
+  const rawArgs = process.argv.slice(2);
+
+  // Print help before any logger output so stdout/stderr stay clean.
+  if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+    printUsage();
+    process.exit(0);
+  }
+
   logger.info('Starting ibr (Intent Browser Runtime)');
 
   try {
     // Daemon mode routing — must come before any stateless setup
-    const rawArgs = process.argv.slice(2);
     const daemonMode =
       process.env.IBR_DAEMON === 'true' || rawArgs.includes('--daemon');
 
