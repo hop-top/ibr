@@ -93,11 +93,23 @@ function getBrowserConfig() {
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
 
+  // BROWSER_CHANNEL shortcuts: map known browser names to executablePath
+  // because Playwright only supports a narrow set of channel strings.
+  const CHANNEL_PATHS = {
+    brave: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+    edge: '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    chromium: '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  };
+
+  const channelRaw = process.env.BROWSER_CHANNEL?.toLowerCase();
+  const executablePath = process.env.BROWSER_EXECUTABLE_PATH
+    || (channelRaw && CHANNEL_PATHS[channelRaw]);
+
   return validateBrowserConfig({
     headless,
     slowMo,
     timeout,
-    channel: process.env.BROWSER_CHANNEL
+    ...(executablePath ? { executablePath } : {}),
   });
 }
 

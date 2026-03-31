@@ -50,7 +50,18 @@ function getBrowserConfig() {
   const headless = process.env.BROWSER_HEADLESS?.toLowerCase() !== 'false'; // default true for daemon
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
-  return validateBrowserConfig({ headless, slowMo, timeout, channel: process.env.BROWSER_CHANNEL });
+  const CHANNEL_PATHS = {
+    brave: '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+    edge: '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    chromium: '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  };
+  const channelRaw = process.env.BROWSER_CHANNEL?.toLowerCase();
+  const executablePath = process.env.BROWSER_EXECUTABLE_PATH
+    || (channelRaw && CHANNEL_PATHS[channelRaw]);
+  return validateBrowserConfig({
+    headless, slowMo, timeout,
+    ...(executablePath ? { executablePath } : {}),
+  });
 }
 
 function getOperationOptions() {
