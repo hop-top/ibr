@@ -210,7 +210,7 @@ export function getOperationOptions(mode, annotate = false) {
 /**
  * Print usage information — plain text to stderr, no logger formatting.
  */
-function printUsage() {
+function printUsage(stream = process.stdout) {
   const lines = [
     'ibr - Intent Browser Runtime',
     '',
@@ -302,7 +302,7 @@ function printUsage() {
     '',
     'See .env.example for all available configuration options',
   ];
-  process.stderr.write(lines.join('\n') + '\n');
+  stream.write(lines.join('\n') + '\n');
 }
 
 
@@ -330,7 +330,7 @@ async function run() {
       const prompt = filteredArgs[0];
 
       if (!prompt || prompt === '--help' || prompt === '-h') {
-        printUsage();
+        printUsage(prompt ? process.stdout : process.stderr);
         process.exit(prompt ? 0 : 1);
       }
 
@@ -346,7 +346,7 @@ async function run() {
       cookiesConfig = parseCookiesFlag(process.argv);
     } catch (err) {
       logger.error(err.message);
-      printUsage();
+      printUsage(process.stderr);
       process.exit(1);
     }
 
@@ -383,7 +383,7 @@ async function run() {
       );
       logger.error(error.message);
       emitStructuredError(error);
-      printUsage();
+      printUsage(process.stderr);
       process.exit(1);
     }
 
