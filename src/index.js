@@ -719,7 +719,11 @@ async function run() {
 }
 
 // Only auto-run when invoked directly as a CLI (not imported as a module).
-const _isMain = process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]);
+// In a SEA binary, import.meta.url is shimmed by esbuild and does not match
+// process.argv[1]. Detect SEA via node:sea and always run in that context.
+let _isSea = false;
+try { _isSea = require('node:sea').isSea(); } catch (_) {}
+const _isMain = _isSea || (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]));
 if (_isMain) {
   run().catch(error => {
     const cliError = ensureCliError(error, 'RUNTIME_ERROR');
