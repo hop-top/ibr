@@ -204,7 +204,8 @@ export function getOperationOptions(mode, annotate = false) {
 }
 
 /**
- * Print usage information — plain text to stderr, no logger formatting.
+ * Print usage information — plain text, no logger formatting.
+ * Writes to `stream` (default: stdout so `ibr --help | less` works).
  */
 function printUsage(stream = process.stdout) {
   const lines = [
@@ -733,8 +734,10 @@ async function run() {
 // Only auto-run when invoked directly as a CLI (not imported as a module).
 // In a SEA binary, import.meta.url is shimmed by esbuild and does not match
 // process.argv[1]. Detect SEA via node:sea and always run in that context.
+// NOTE: bare `require()` is not defined in ESM modules; must use the
+// `_require` created via createRequire at the top of this file.
 let _isSea = false;
-try { _isSea = require('node:sea').isSea(); } catch (_) {}
+try { _isSea = _require('node:sea').isSea(); } catch (_) {}
 const _isMain = _isSea || (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]));
 if (_isMain) {
   run().catch(error => {

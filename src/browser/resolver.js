@@ -27,7 +27,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { canonicalizeChannel, getEntry, NATIVE_CHANNELS } from './registry.js';
+import { canonicalizeChannel, getEntry, listEntries, NATIVE_CHANNELS } from './registry.js';
 import * as playwrightLaunch from './launchers/playwright-launch.js';
 import * as acquirer from './acquirer.js';
 import {
@@ -177,7 +177,7 @@ function stepLocalProbe(channelId, { platform = os.platform(), exists = fs.exist
   if (!entry) {
     throw new Error(
       `Browser "${channelId}" is not a known registry entry. ` +
-      `Supported values: chrome, msedge, brave, chromium, arc (macOS), comet (macOS). ` +
+      `Supported values: ${listEntries().join(', ')}. ` +
       `Use BROWSER_EXECUTABLE_PATH to specify a custom path.`
     );
   }
@@ -194,7 +194,7 @@ function stepLocalProbe(channelId, { platform = os.platform(), exists = fs.exist
     }
     throw new Error(
       `Browser "${channelId}" is not supported on ${platform}. ` +
-      `Supported values: chrome, msedge, brave, chromium, arc (macOS), comet (macOS). ` +
+      `Supported values: ${listEntries().join(', ')}. ` +
       `Use BROWSER_EXECUTABLE_PATH to specify a custom path.`
     );
   }
@@ -250,12 +250,32 @@ function stepLocalProbe(channelId, { platform = os.platform(), exists = fs.exist
 //   - connect-only:  browser.close() only  (disconnect; no kill)
 //   - ibr-owned:     browser.close() + spawnHandle.kill()
 
+// ibr's browserConfig keys are launch-level only; they don't apply to
+// BrowserContext.newContext() (Playwright context options cover
+// viewport/userAgent/locale/permissions/etc, not headless/slowMo/timeout).
+// Split so the CDP connect path doesn't hand launch keys to newContext().
+const LAUNCH_ONLY_KEYS = new Set(['headless', 'slowMo', 'timeout', 'executablePath', 'channel']);
+function splitOverrides(overrides = {}) {
+  const launchOptions = {};
+  const contextOptions = {};
+  for (const [k, v] of Object.entries(overrides)) {
+    if (LAUNCH_ONLY_KEYS.has(k)) {
+      launchOptions[k] = v;
+    } else {
+      contextOptions[k] = v;
+    }
+  }
+  return { launchOptions, contextOptions };
+}
+
 async function dispatch(record, overrides, env) {
+  const { launchOptions, contextOptions } = splitOverrides(overrides);
+
   if (record.kind === 'chromium-launch') {
     const handle = await playwrightLaunch.launch({
       executablePath: record.executablePath ?? undefined,
       channel: record.channel ?? undefined,
-      launchOptions: overrides,
+      launchOptions,
     });
     handle.ownership = 'launch';
     return handle;
@@ -268,7 +288,7 @@ async function dispatch(record, overrides, env) {
       // Connect-only — user (or external daemon) owns the process.
       const connected = await connector.connect({
         wsEndpoint: record.wsEndpoint,
-        contextOptions: overrides,
+        contextOptions,
       });
       connected.ownership = 'connect-user';
       return connected;
@@ -291,7 +311,7 @@ async function dispatch(record, overrides, env) {
     try {
       connected = await connector.connect({
         wsEndpoint: spawnHandle.wsEndpoint,
-        contextOptions: overrides,
+        contextOptions,
       });
     } catch (err) {
       try { spawnHandle.kill(); } catch { /* already gone */ }

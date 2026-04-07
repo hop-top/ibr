@@ -188,7 +188,7 @@ export function isResolvedFresh(entry) {
  */
 export async function pruneOldVersions(channel, { keep = 5 } = {}) {
   const dir = channelDir(channel);
-  const removed = { versions: [], partials: [], locks: [] };
+  const removed = { versions: [], partials: [], locks: [], freed: 0 };
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -213,15 +213,19 @@ export async function pruneOldVersions(channel, { keep = 5 } = {}) {
     }
     if (ent.isFile() && ent.name.endsWith('.partial')) {
       try {
+        // Sum size before unlink so freed bytes include orphans too.
+        const st = await fs.stat(full);
         await fs.unlink(full);
         removed.partials.push(ent.name);
+        removed.freed += st.size || 0;
       } catch {
         // ignore
       }
     }
   }
 
-  // 2. Keep newest N version dirs
+  // 2. Keep newest N version dirs (listVersions reads meta.size so
+  //    we already know each victim's recorded byte count)
   const versions = await listVersions(channel);
   const victims = versions.slice(keep);
   for (const v of victims) {
@@ -229,6 +233,7 @@ export async function pruneOldVersions(channel, { keep = 5 } = {}) {
     try {
       await fs.rm(vdir, { recursive: true, force: true });
       removed.versions.push(v.version);
+      removed.freed += v.sizeBytes || 0;
     } catch {
       // ignore
     }

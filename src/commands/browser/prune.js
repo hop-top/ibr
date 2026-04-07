@@ -176,14 +176,18 @@ export async function run(args = []) {
     } else if (opts.dryRun) {
       // eslint-disable-next-line no-await-in-loop
       const versions = await cache.listVersions(ch);
-      const victims = versions.slice(5).map((v) => v.version);
-      perChannel.push({ channel: ch, removed: victims, freed: 0 });
-      totalRemoved += victims.length;
+      const victimEntries = versions.slice(5);
+      const victimNames = victimEntries.map((v) => v.version);
+      const dryFreed = victimEntries.reduce((sum, v) => sum + (v.sizeBytes || 0), 0);
+      perChannel.push({ channel: ch, removed: victimNames, freed: dryFreed });
+      totalRemoved += victimNames.length;
+      totalFreed += dryFreed;
     } else {
       // eslint-disable-next-line no-await-in-loop
       const r = await cache.pruneOldVersions(ch, { keep: 5 });
-      perChannel.push({ channel: ch, removed: r.versions, freed: 0 });
+      perChannel.push({ channel: ch, removed: r.versions, freed: r.freed || 0 });
       totalRemoved += r.versions.length;
+      totalFreed += r.freed || 0;
     }
   }
 

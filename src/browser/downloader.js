@@ -87,7 +87,11 @@ export async function resolveVersion(entry, channelSpec, { env = process.env } =
       version: stripV(resolved.tag || version),
       assetUrl: resolved.assetUrl,
       sha256: resolved.sha256 || null,
-      requireChecksum: requireChecksumGlobal || !!releases.requireChecksum,
+      // Provider returns per-channel requireChecksum from the registry
+      // channelEntry; honor it (plus global env override + legacy
+      // top-level entry.releases.requireChecksum fallback).
+      requireChecksum:
+        requireChecksumGlobal || !!resolved.requireChecksum || !!releases.requireChecksum,
       channel: version,
     };
   }
@@ -103,7 +107,13 @@ export async function resolveVersion(entry, channelSpec, { env = process.env } =
       version: cached.version,
       assetUrl: cached.assetUrl,
       sha256: cached.sha256 || null,
-      requireChecksum: requireChecksumGlobal || !!releases.requireChecksum,
+      // Cached TTL entry carries its own requireChecksum (persisted below
+      // via entryOut). Fall back to registry if upgrading from an older
+      // cache that lacks the field.
+      requireChecksum:
+        requireChecksumGlobal ||
+        !!cached.requireChecksum ||
+        !!releases.requireChecksum,
       channel: canonicalChannel,
     };
   }
@@ -130,7 +140,10 @@ export async function resolveVersion(entry, channelSpec, { env = process.env } =
         version: cached.version,
         assetUrl: cached.assetUrl,
         sha256: cached.sha256 || null,
-        requireChecksum: requireChecksumGlobal || !!releases.requireChecksum,
+        requireChecksum:
+          requireChecksumGlobal ||
+          !!cached.requireChecksum ||
+          !!releases.requireChecksum,
         channel: canonicalChannel,
       };
     }
@@ -144,6 +157,10 @@ export async function resolveVersion(entry, channelSpec, { env = process.env } =
     version,
     assetUrl: networkResolved.assetUrl,
     sha256: networkResolved.sha256 || null,
+    // Persist per-channel requireChecksum into the cache so the fresh
+    // path + net-fail fallback both observe the same policy without
+    // re-resolving via the provider.
+    requireChecksum: !!networkResolved.requireChecksum,
     resolvedAt: new Date().toISOString(),
     ttlMs: 24 * 60 * 60 * 1000,
   };
@@ -158,7 +175,10 @@ export async function resolveVersion(entry, channelSpec, { env = process.env } =
     version,
     assetUrl: networkResolved.assetUrl,
     sha256: networkResolved.sha256 || null,
-    requireChecksum: requireChecksumGlobal || !!releases.requireChecksum,
+    requireChecksum:
+      requireChecksumGlobal ||
+      !!networkResolved.requireChecksum ||
+      !!releases.requireChecksum,
     channel: canonicalChannel,
   };
 }
@@ -232,6 +252,28 @@ export async function download(
   const hash = crypto.createHash('sha256');
   const isTTY = Boolean(process.stdout && process.stdout.isTTY);
 
+  // Throttle NDJSON progress events — per-chunk emission spams stderr
+  // (thousands of lines for a multi-MB binary) and overwhelms CI log
+  // parsers. Emit at most once per second AND at each 10% milestone.
+  // TTY progress bar update is cheap and stays per-chunk for smooth UX.
+  let lastProgressEmitMs = 0;
+  let lastProgressEmitPct = -1;
+  const PROGRESS_EMIT_INTERVAL_MS = 1000;
+  function shouldEmitProgress(pct) {
+    const now = Date.now();
+    if (now - lastProgressEmitMs >= PROGRESS_EMIT_INTERVAL_MS) {
+      lastProgressEmitMs = now;
+      lastProgressEmitPct = pct;
+      return true;
+    }
+    if (pct >= lastProgressEmitPct + 10) {
+      lastProgressEmitMs = now;
+      lastProgressEmitPct = pct;
+      return true;
+    }
+    return false;
+  }
+
   const ws = fs.createWriteStream(partialPath);
 
   // Node's fetch() exposes a web ReadableStream on body; convert to a node stream.
@@ -261,15 +303,17 @@ export async function download(
             hash.update(value);
             bytes += value.length;
             const pct = total ? Math.floor((bytes / total) * 100) : 0;
-            emitProgress({
-              event: 'browser.downloaded',
-              channel,
-              version,
-              url: assetUrl,
-              bytes,
-              total,
-              pct,
-            });
+            if (shouldEmitProgress(pct)) {
+              emitProgress({
+                event: 'browser.downloaded',
+                channel,
+                version,
+                url: assetUrl,
+                bytes,
+                total,
+                pct,
+              });
+            }
             if (isTTY) {
               try {
                 process.stderr.write(
@@ -286,19 +330,35 @@ export async function download(
         for await (const chunk of body) {
           hash.update(chunk);
           bytes += chunk.length;
-          emitProgress({
-            event: 'browser.downloaded',
-            channel,
-            version,
-            url: assetUrl,
-            bytes,
-            total,
-            pct: total ? Math.floor((bytes / total) * 100) : 0,
-          });
+          const pct = total ? Math.floor((bytes / total) * 100) : 0;
+          if (shouldEmitProgress(pct)) {
+            emitProgress({
+              event: 'browser.downloaded',
+              channel,
+              version,
+              url: assetUrl,
+              bytes,
+              total,
+              pct,
+            });
+          }
           tap.push(chunk);
         }
       } else {
         throw new Error('download: unsupported body stream shape');
+      }
+      // Final 100% event + newline for TTY bar.
+      emitProgress({
+        event: 'browser.downloaded',
+        channel,
+        version,
+        url: assetUrl,
+        bytes,
+        total: total || bytes,
+        pct: 100,
+      });
+      if (isTTY) {
+        try { process.stderr.write('\n'); } catch { /* ignore */ }
       }
       tap.push(null);
     } catch (err) {
