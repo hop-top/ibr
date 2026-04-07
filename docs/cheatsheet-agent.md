@@ -292,3 +292,27 @@ fi
 
 snap flags: `--aria` (semantic tree), `-i` (interactive only), `-d N` (depth),
 `-s <selector>` (scope), `-a` (annotated screenshot → `/tmp/ibr-dom-annotated.png`).
+
+---
+
+## Lightpanda (fast headless, beta)
+
+Zig-built headless browser; ~9× faster startup, ~16× less memory than Chromium.
+Opt-in, auto-downloaded on first use.
+
+- `BROWSER_CHANNEL=lightpanda` — auto-download + spawn + connect via CDP
+- Recommended during beta: `BROWSER_FALLBACK=chromium` — silently retries on
+  chromium when lightpanda hits an unimplemented Web API. Failures recorded
+  in `~/.cache/ibr/browsers/lightpanda/capabilities.json` for future
+  pre-flight warnings
+- Pre-warm in CI: `ibr browser pull lightpanda stable`
+- Inspect resolver: `ibr browser which` (dry-run; no spawn)
+- Cache GC: `ibr browser prune --older-than 30d`
+- Connect-only mode: `BROWSER_CDP_URL=ws://127.0.0.1:9222` (skip spawn;
+  caller manages lifecycle). `LIGHTPANDA_WS` is a deprecated alias
+- Strict gating: `BROWSER_STRICT=true` refuses launch if capability manifest
+  has known-broken entries for the current version
+- Known limitation: CORS not implemented upstream; cross-origin
+  `page.evaluate(() => fetch(...))` calls will fail. Use fallback
+- Telemetry: disabled by default; opt-in via `LIGHTPANDA_TELEMETRY=true`
+- See `docs/testing-lightpanda.md` for the gated e2e suite (`BROWSER_E2E=lightpanda`)

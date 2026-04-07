@@ -7,6 +7,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) / [Conventional
 
 ## [Unreleased]
 
+### Added
+
+- **Browser-manager subsystem** (track: adopt-lightpanda). New `src/browser/`
+  module replaces the narrow `src/utils/browserChannel.js` with a resolution
+  chain, managed cache, and lifecycle dispatch.
+- **Lightpanda support** via `BROWSER_CHANNEL=lightpanda` (aliases `panda`,
+  `lp`). Auto-downloads stable/nightly releases from GitHub; spawns the child
+  process and connects via Playwright CDP. Three lifecycle modes: connect-only
+  (`BROWSER_CDP_URL`), daemon-owned, one-shot.
+- **`ibr browser` CLI subcommand group**: `list`, `pull`, `prune`, `which`
+  for cache management and resolver debugging.
+- **Self-healing capability manifest**: records known-broken lightpanda flows
+  when `BROWSER_FALLBACK` succeeds; `BROWSER_STRICT=true` refuses pre-launch
+  if entries exist for the current version.
+- **Gated e2e suite**: `BROWSER_E2E=lightpanda` enables 6 happy-path scenarios.
+  See `docs/testing-lightpanda.md`.
+- New env vars: `BROWSER_CDP_URL`, `BROWSER_VERSION`, `BROWSER_DOWNLOAD_URL`,
+  `BROWSER_FALLBACK`, `BROWSER_STRICT`, `BROWSER_REQUIRE_CHECKSUM`,
+  `LIGHTPANDA_TELEMETRY`.
+
+### Changed
+
+- `src/utils/browserChannel.js` is now a thin shim delegating to the new
+  resolver. Public API unchanged.
+- `src/server.js`, `src/index.js`, `src/commands/snap.js` direct
+  `chromium.launch()` call sites migrated to `resolveBrowser(env)`.
+
+### Deprecated
+
+- `LIGHTPANDA_WS` env var — use `BROWSER_CDP_URL` instead. Emits a warning
+  on use.
+
 ### feat
 
 - **`ibr tool` subcommand — YAML-defined browser tools (T-0002)**

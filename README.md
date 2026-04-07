@@ -553,6 +553,60 @@ ibr snap https://example.com -i -a > dom.json
 
 ---
 
+## Lightpanda — fast headless mode
+
+[Lightpanda](https://github.com/lightpanda-io/browser) is a Zig-built headless
+browser with roughly 9× faster startup and 16× less memory than Chromium. ibr
+can auto-download it and drive it via Playwright CDP — no manual install.
+
+**One-liner** (auto-downloads stable release on first run, caches under
+`~/.cache/ibr/browsers/lightpanda/`):
+
+```bash
+BROWSER_CHANNEL=lightpanda ibr "go to example.com and extract the heading"
+```
+
+**With fallback** (recommended during lightpanda beta — ibr silently retries
+on chromium when a scenario hits an unimplemented Web API and records the
+failure in a capability manifest for future pre-flight warnings):
+
+```bash
+BROWSER_CHANNEL=lightpanda BROWSER_FALLBACK=chromium ibr "..."
+```
+
+**Pre-warm the cache in CI** (avoids first-run download latency):
+
+```bash
+ibr browser pull lightpanda stable
+```
+
+**Inspect current resolver decision**:
+
+```bash
+ibr browser which
+```
+
+**Lifecycle modes**
+
+- **Connect-only** — set `BROWSER_CDP_URL=ws://127.0.0.1:9222` to connect to
+  an already-running CDP server (you manage the lifecycle).
+- **Daemon-owned** — long-running `IBR_DAEMON=true`; the server spawns +
+  reuses the browser across requests.
+- **One-shot** — default CLI mode; spawn + connect + teardown per invocation.
+
+See `docs/testing-lightpanda.md` for the gated e2e suite and known compat gaps.
+
+### `ibr browser` subcommands
+
+```
+ibr browser list                     Show registry + cache state
+ibr browser pull [channel] [version] Pre-warm browser cache
+ibr browser prune [--older-than]     GC old cache entries
+ibr browser which                    Print resolver decision for current env
+```
+
+---
+
 ## Snapshot Diffing (Automatic)
 
 **Internal optimization — no user action required.**
@@ -709,8 +763,16 @@ Now you can watch exactly what the script is doing and see where it fails.
 | `BROWSER_HEADLESS` | true/false | false | Run browser headless |
 | `BROWSER_SLOWMO` | milliseconds | 100 | Slow down browser actions |
 | `BROWSER_TIMEOUT` | milliseconds | 30000 | Page load timeout |
-| `BROWSER_CHANNEL` | brave/chrome/msedge/arc/comet/chromium | _(chromium)_ | Browser to launch |
-| `BROWSER_EXECUTABLE_PATH` | path | — | Explicit browser binary (overrides `BROWSER_CHANNEL`) |
+| `BROWSER_CHANNEL` | chrome/brave/arc/comet/chromium/msedge/lightpanda | _(chromium)_ | Browser to launch |
+| `BROWSER_EXECUTABLE_PATH` | path | — | Direct binary override; bypasses probe + cache |
+| `BROWSER_CDP_URL` | ws URL | — | Connect to running CDP server; skips spawn |
+| `LIGHTPANDA_WS` | ws URL | — | **Deprecated** alias of `BROWSER_CDP_URL` |
+| `BROWSER_VERSION` | stable/nightly/latest/exact | stable | Version for downloadable browsers |
+| `BROWSER_DOWNLOAD_URL` | URL | — | Mirror / air-gap binary source |
+| `BROWSER_FALLBACK` | channel name | — | Fallback channel on lightpanda failure |
+| `BROWSER_STRICT` | true/false | false | Refuse launch on known-broken capability entries |
+| `BROWSER_REQUIRE_CHECKSUM` | true/false | false | Refuse install without sha256 checksum |
+| `LIGHTPANDA_TELEMETRY` | true/false | false | Opt-in lightpanda upstream telemetry |
 | `OBEY_ROBOTS` | true/false | false | Check robots.txt before automation |
 | `DIALOG_AUTO_ACCEPT` | true/false | true | Auto-accept browser dialogs (alert/confirm/prompt) |
 | `DIALOG_BUFFER_CAPACITY` | number | 50000 | Max dialog events to buffer |
