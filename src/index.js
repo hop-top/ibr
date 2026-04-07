@@ -305,6 +305,20 @@ function printUsage(stream = process.stdout) {
 async function run() {
   const rawArgs = process.argv.slice(2);
 
+  // Subcommand: ibr browser <subcmd> — dispatch early, no banner, no AI setup.
+  // Must run BEFORE the global --help short-circuit so per-subcommand --help works.
+  if (rawArgs[0] === 'browser') {
+    try {
+      const browserCmd = await import('./commands/browser/index.js');
+      const code = await browserCmd.run(rawArgs.slice(1));
+      process.exit(code ?? 0);
+    } catch (err) {
+      const cliError = ensureCliError(err, 'RUNTIME_ERROR');
+      process.stderr.write(`ibr browser: ${cliError.message}\n`);
+      emitStructuredError(cliError);
+      process.exit(1);
+    }
+  }
   // Short-circuit info subcommands before any logger output.
   if (rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs[0] === 'help') {
     printUsage();
