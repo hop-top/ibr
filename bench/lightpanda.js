@@ -24,7 +24,6 @@ import { fileURLToPath } from 'node:url';
 import { resolveBrowser } from '../src/browser/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
 
 const ALL_BACKENDS = ['chromium', 'lightpanda'];
 const ALL_SCENARIOS = ['static-scrape', 'dom-extract', 'annotate-screenshot'];

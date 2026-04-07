@@ -46,12 +46,10 @@ export async function withLock(
   await fsp.mkdir(path.dirname(lockPath), { recursive: true });
 
   const start = Date.now();
-  let acquired = false;
 
-  while (!acquired) {
+  while (true) {
     try {
       tryCreateLock(lockPath);
-      acquired = true;
       break;
     } catch (err) {
       if (err && err.code === 'EEXIST') {

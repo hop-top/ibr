@@ -131,7 +131,6 @@ if (!E2E_ENABLED) {
     // temp cache will do — test 1 populated it).
     const channelDir = cache.channelDir('lightpanda');
     const fs = await import('node:fs');
-    const path = await import('node:path');
     const versions = fs
       .readdirSync(channelDir, { withFileTypes: true })
       .filter((d) => d.isDirectory())

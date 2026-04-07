@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import os from 'os';
 
 import {
-  ENTRIES,
-  ALIASES,
   NATIVE_CHANNELS,
   canonicalizeChannel,
   getEntry,
