@@ -161,8 +161,50 @@ export const ENTRIES = {
     launcher: 'playwright-launch',
   },
 
-  // Populated by T-0027:
-  // lightpanda
+  // ── CDP-server browsers (downloadable) ────────────────────────────────────
+  lightpanda: {
+    id: 'lightpanda',
+    kind: 'cdp-server',
+    aliases: ['panda', 'lp'],
+    downloadable: true,
+    launcher: 'playwright-connect',
+    spawner: 'lightpanda-spawner',
+    localProbe: {
+      darwin: [
+        path.join(HOME, '.p/sandbox/panda/zig-out/bin/lightpanda'),
+        '/opt/homebrew/bin/lightpanda',
+        '/usr/local/bin/lightpanda',
+      ],
+      linux: [
+        path.join(HOME, '.p/sandbox/panda/zig-out/bin/lightpanda'),
+        '/usr/local/bin/lightpanda',
+        '/usr/bin/lightpanda',
+      ],
+      win32: [],
+    },
+    releases: {
+      provider: 'github',
+      repo: 'lightpanda-io/browser',
+      channels: {
+        nightly: {
+          resolver: 'tag',
+          tag: 'nightly',
+          assetPattern: 'lightpanda-{arch}-{os}',
+          requireChecksum: false,
+        },
+        stable: {
+          resolver: 'newest-non-prerelease',
+          assetPattern: 'lightpanda-{arch}-{os}',
+          requireChecksum: true,
+        },
+        latest: {
+          resolver: 'alias',
+          aliasOf: 'stable',
+          requireChecksum: true,
+        },
+      },
+    },
+  },
 };
 
 // ── [SECTION: PUBLIC_API] ────────────────────────────────────────────────────

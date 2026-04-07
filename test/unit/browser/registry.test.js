@@ -13,7 +13,15 @@ import {
 describe('registry — ENTRIES', () => {
   it('contains the expected channel ids', () => {
     const ids = listEntries().sort();
-    expect(ids).toEqual(['arc', 'brave', 'chrome', 'chromium', 'comet', 'msedge']);
+    expect(ids).toEqual([
+      'arc',
+      'brave',
+      'chrome',
+      'chromium',
+      'comet',
+      'lightpanda',
+      'msedge',
+    ]);
   });
 
   it('every entry has the required shape', () => {
@@ -21,13 +29,30 @@ describe('registry — ENTRIES', () => {
       const e = getEntry(id);
       expect(e).toBeTruthy();
       expect(e.id).toBe(id);
-      expect(e.kind).toBe('chromium-launch');
-      expect(e.launcher).toBe('playwright-launch');
+      expect(['chromium-launch', 'cdp-server']).toContain(e.kind);
+      if (e.kind === 'chromium-launch') {
+        expect(e.launcher).toBe('playwright-launch');
+      }
       expect(e.localProbe).toBeTypeOf('object');
       expect(Array.isArray(e.localProbe.darwin)).toBe(true);
       expect(Array.isArray(e.localProbe.linux)).toBe(true);
       expect(Array.isArray(e.localProbe.win32)).toBe(true);
     }
+  });
+
+  it('lightpanda is a downloadable cdp-server with github releases config', () => {
+    const lp = getEntry('lightpanda');
+    expect(lp).toBeTruthy();
+    expect(lp.kind).toBe('cdp-server');
+    expect(lp.downloadable).toBe(true);
+    expect(lp.launcher).toBe('playwright-connect');
+    expect(lp.spawner).toBe('lightpanda-spawner');
+    expect(lp.releases.provider).toBe('github');
+    expect(lp.releases.repo).toBe('lightpanda-io/browser');
+    expect(lp.releases.channels.stable.resolver).toBe('newest-non-prerelease');
+    expect(lp.releases.channels.nightly.resolver).toBe('tag');
+    expect(lp.releases.channels.latest.resolver).toBe('alias');
+    expect(lp.localProbe.win32).toEqual([]);
   });
 
   it('chrome and msedge are flagged as native channels', () => {
