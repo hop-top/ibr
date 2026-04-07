@@ -227,9 +227,11 @@ process.stdout.write(JSON.stringify(opts ?? null) + '\\n');
 
 describe('sdk-export — CLI subprocess exits cleanly (story 037)', () => {
     it('ibr --help exits 0 and prints usage', async () => {
-        const { code, stderr } = await runIbr(['--help']);
+        // Help output moved from stderr → stdout in commit 2eb3104
+        // (fix(cli): route help output to stdout instead of stderr).
+        const { code, stdout } = await runIbr(['--help']);
         expect(code).toBe(0);
-        expect(stderr).toMatch(/ibr|usage|instructions/i);
+        expect(stdout).toMatch(/ibr|usage|instructions/i);
     });
 
     it('ibr with no args exits non-zero with CONFIG_ERROR (not a hang)', async () => {

@@ -12,6 +12,7 @@ import { resolve, dirname } from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startFromCassette } from './helpers/vcr.js';
 import { startStaticServer } from '../helpers/staticServer.js';
+import { startFakeAIServerE2E } from '../helpers/fakeAIServerE2E.js';
 
 const CWD = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
