@@ -237,7 +237,13 @@ export async function download(
   // Node's fetch() exposes a web ReadableStream on body; convert to a node stream.
   const body = res.body;
   if (!body) {
-    ws.close();
+    // destroy (not close) to release fd immediately; unlink orphan .partial
+    ws.destroy();
+    try {
+      await fsp.unlink(partialPath);
+    } catch {
+      // ignore — orphan cleanup is best-effort
+    }
     throw new Error(`download: empty response body for ${assetUrl}`);
   }
 

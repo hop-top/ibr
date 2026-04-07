@@ -407,6 +407,11 @@ export function resolveProbeOnly(channelRaw) {
   if (!channelRaw) return {};
   const channelId = canonicalizeChannel(channelRaw);
   const record = stepLocalProbe(channelId);
+  // stepLocalProbe returns null for downloadable entries (e.g. lightpanda)
+  // on probe miss — the shim treats that as "not locally installed" and
+  // returns the legacy empty shape so callers fall through to bundled
+  // chromium, matching pre-subsystem behavior.
+  if (!record) return {};
   const out = {};
   if (record.channel) out.channel = record.channel;
   if (record.executablePath) out.executablePath = record.executablePath;

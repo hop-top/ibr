@@ -141,6 +141,19 @@ describe('resolveProbeOnly', () => {
       existsSpy.mockRestore();
     }
   });
+
+  // Regression for post-impl review finding C-1: resolveProbeOnly used to
+  // crash with "Cannot read properties of null" when stepLocalProbe returned
+  // null for a downloadable entry (lightpanda) with no local install.
+  it('returns {} for downloadable channel with no local probe hit', () => {
+    const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    try {
+      expect(resolveProbeOnly('lightpanda')).toEqual({});
+      expect(resolveProbeOnly('panda')).toEqual({}); // alias
+    } finally {
+      existsSpy.mockRestore();
+    }
+  });
 });
 
 // ── emitResolved event shape ─────────────────────────────────────────────────

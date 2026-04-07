@@ -105,7 +105,17 @@ function findBinaryAsset(release, channelEntry, platform, arch) {
   }
   const expected = substituteAssetPattern(pattern, platform, arch);
   const assets = release.assets || [];
-  const match = assets.find((a) => a.name && a.name.includes(expected));
+
+  // Prefer exact match to avoid false-positives on variants like
+  // `lightpanda-aarch64-macos-debug` or `...-signed`. Fall back to an
+  // extension-suffix match (`<expected>.tar.gz`, `.zip`, etc.) so the
+  // resolver still works if upstream starts shipping archived binaries.
+  const exact = assets.find((a) => a.name === expected);
+  const extSuffix = exact
+    ? null
+    : assets.find((a) => a.name && a.name.startsWith(expected + '.'));
+  const match = exact ?? extSuffix;
+
   if (!match) {
     const names = assets.map((a) => a.name).join(', ') || '(none)';
     throw new Error(

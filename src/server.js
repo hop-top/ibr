@@ -102,9 +102,11 @@ function attachDisconnectHandler(browserConfig) {
         browserHandle = newHandle;
         browser = newHandle.browser;
         if (pool) {
-          // ContextPool stores the browser as `_browser`; mutate it so new
-          // checkouts see the fresh browser without re-creating the pool.
-          pool._browser = browser;
+          // Swap the browser reference. In-flight _allocate() calls against
+          // the dead browser will throw; ContextPool catches, decrements
+          // active, and the client gets a retryable error. See
+          // ContextPool#replaceBrowser for the race contract.
+          pool.replaceBrowser(browser);
         }
         attachDisconnectHandler(browserConfig);
         return;
