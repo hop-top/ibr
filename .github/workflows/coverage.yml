@@ -30,6 +30,11 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run tests with coverage
+        env:
+          # Skip tests that are flaky under full-suite coverage runs
+          # (typically subprocess-timeout sensitive). They still run in
+          # the e2e:fast workflow; coverage doesn't need 100% e2e.
+          IBR_SKIP_FLAKY_COVERAGE: 'true'
         run: npm run test:coverage
 
       # Upload full coverage report as an artifact for inspection; summary
