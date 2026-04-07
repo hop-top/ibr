@@ -16,12 +16,12 @@
     "test:unit": "node node_modules/vitest/vitest.mjs run --config test/vitest.config.js test/unit/",
     "test:integration": "node node_modules/vitest/vitest.mjs run --config test/vitest.config.js test/integration/",
     "test:e2e": "node node_modules/vitest/vitest.mjs run --config test/vitest.config.js test/e2e/",
-    "test:e2e:fast": "E2E_TAGS=fast node node_modules/vitest/vitest.mjs run --config test/vitest.config.js test/e2e/",
+    "test:e2e:fast": "cross-env E2E_TAGS=fast node node_modules/vitest/vitest.mjs run --config test/vitest.config.js test/e2e/",
     "test:coverage": "node node_modules/vitest/vitest.mjs run --coverage --config test/vitest.config.js",
     "judge:e2e": "node src/commands/judge-e2e.js",
-    "build":        "node scripts/build.mjs && node scripts/sea.mjs",
+    "build": "node scripts/build.mjs && node scripts/sea.mjs",
     "build:bundle": "node scripts/build.mjs",
-    "build:sea":    "node scripts/sea.mjs"
+    "build:sea": "node scripts/sea.mjs"
   },
   "keywords": [
     "scraping",
@@ -33,6 +33,7 @@
   "description": "Intent Browser Runtime - AI-powered instruction parser for automated web interactions",
   "devDependencies": {
     "@vitest/coverage-v8": "^2.0.0",
+    "cross-env": "^10.1.0",
     "esbuild": "^0.27.4",
     "postject": "1.0.0-alpha.6",
     "vitest": "^2.0.0"

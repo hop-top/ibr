@@ -15,9 +15,8 @@ import os from 'os';
 import path from 'path';
 import dotenv from 'dotenv';
 
-import { chromium } from 'playwright';
 import { validateBrowserConfig } from './utils/validation.js';
-import { resolveBrowserChannel } from './utils/browserChannel.js';
+import { resolveBrowser } from './browser/index.js';
 import { ContextPool, DEFAULT_MAX_CLIENTS, DEFAULT_QUEUE_TIMEOUT_MS } from './server/ContextPool.js';
 import logger from './utils/logger.js';
 
@@ -40,6 +39,7 @@ const IDLE_TIMEOUT_MS = 30 * 60_000; // 30 min
 // ---------------------------------------------------------------------------
 
 let browser = null;
+let browserHandle = null;
 let pool = null;
 let serverToken = null;
 let startedAt = Date.now();
@@ -54,10 +54,10 @@ function getBrowserConfig() {
   const headless = process.env.BROWSER_HEADLESS?.toLowerCase() !== 'false'; // default true for daemon
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
-  const channelOpts = process.env.BROWSER_EXECUTABLE_PATH
-    ? { executablePath: process.env.BROWSER_EXECUTABLE_PATH }
-    : resolveBrowserChannel(process.env.BROWSER_CHANNEL);
-  return validateBrowserConfig({ headless, slowMo, timeout, ...channelOpts });
+  // Channel + executablePath are resolved by src/browser/resolver.js from
+  // the env (BROWSER_CHANNEL / BROWSER_EXECUTABLE_PATH). We only return the
+  // generic launch options here.
+  return validateBrowserConfig({ headless, slowMo, timeout });
 }
 
 function getOperationOptions() {
@@ -70,6 +70,62 @@ function getOperationOptions() {
     );
   }
   return { temperature };
+}
+
+/**
+ * Emit a single NDJSON line to stderr. Best-effort; never throws.
+ * Mirrors the helper used in launchers + resolver.
+ */
+function emitNdjson(obj) {
+  try {
+    process.stderr.write(JSON.stringify(obj) + '\n');
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Attach a `disconnected` handler to the current browser. Distinguishes
+ * ibr-owned lightpanda spawns (one restart attempt) from launch / connect-user
+ * (preserve historical exit-1 behaviour).
+ */
+function attachDisconnectHandler(browserConfig) {
+  if (!browser) return;
+  browser.on('disconnected', async () => {
+    const ownership = browserHandle && browserHandle.ownership;
+
+    if (ownership === 'spawn-ibr') {
+      logger.warn('lightpanda disconnected; attempting one restart');
+      emitNdjson({ event: 'browser.restarted', reason: 'disconnected' });
+      try {
+        const newHandle = await resolveBrowser(process.env, browserConfig);
+        browserHandle = newHandle;
+        browser = newHandle.browser;
+        if (pool) {
+          // Swap the browser reference. In-flight _allocate() calls against
+          // the dead browser will throw; ContextPool catches, decrements
+          // active, and the client gets a retryable error. See
+          // ContextPool#replaceBrowser for the race contract.
+          pool.replaceBrowser(browser);
+        }
+        attachDisconnectHandler(browserConfig);
+        return;
+      } catch (err) {
+        logger.error('lightpanda restart failed; exiting', { error: err && err.message });
+        emitNdjson({ event: 'browser.restart_failed', error: err && err.message });
+        removeStateFile().finally(() => process.exit(1));
+        return;
+      }
+    }
+
+    // launch + connect-user: preserve historical exit-1 behaviour.
+    logger.error(
+      'Browser disconnected unexpectedly. ' +
+      'The Chromium process may have crashed or been killed externally. ' +
+      'Restart the daemon with "ibr --daemon" or check system resource limits.'
+    );
+    removeStateFile().finally(() => process.exit(1));
+  });
 }
 
 function getPoolConfig() {
@@ -124,7 +180,9 @@ async function shutdown(reason = 'signal') {
   if (pool) {
     await pool.drain();
   }
-  if (browser) {
+  if (browserHandle) {
+    try { await browserHandle.close(); } catch { /* ignore */ }
+  } else if (browser) {
     try { await browser.close(); } catch { /* ignore */ }
   }
   process.exit(0);
@@ -325,19 +383,13 @@ async function main() {
     process.exit(1);
   }
 
-  // Launch browser
+  // Launch browser via the browser-manager subsystem.
   logger.info('Launching browser');
   const browserConfig = getBrowserConfig();
-  browser = await chromium.launch(browserConfig);
+  browserHandle = await resolveBrowser(process.env, browserConfig);
+  browser = browserHandle.browser;
 
-  browser.on('disconnected', () => {
-    logger.error(
-      'Browser disconnected unexpectedly. ' +
-      'The Chromium process may have crashed or been killed externally. ' +
-      'Restart the daemon with "ibr --daemon" or check system resource limits.'
-    );
-    removeStateFile().finally(() => process.exit(1));
-  });
+  attachDisconnectHandler(browserConfig);
 
   // Create context pool
   const operationOptions = getOperationOptions();

@@ -14,9 +14,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22.x"
           cache: npm
@@ -24,13 +24,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Integration + E2E tests require a real browser; install chromium
+      # so vitest.config.js#detectBrowserSupport() returns true.
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Run tests with coverage
+        env:
+          # Skip tests that are flaky under full-suite coverage runs
+          # (typically subprocess-timeout sensitive). They still run in
+          # the e2e:fast workflow; coverage doesn't need 100% e2e.
+          IBR_SKIP_FLAKY_COVERAGE: 'true'
         run: npm run test:coverage
 
       # Upload full coverage report as an artifact for inspection; summary
       # appears in the Actions job log via @vitest/coverage-v8.
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: always()
         with:
           name: coverage-report

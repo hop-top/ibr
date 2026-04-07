@@ -125,6 +125,26 @@ export class ContextPool {
     logger.debug('ContextPool drained', { active: this._active });
   }
 
+  /**
+   * Swap the underlying browser after a lifecycle event (e.g. lightpanda
+   * crash + restart). Future checkouts and future _allocate() calls see
+   * the new browser immediately.
+   *
+   * **Race contract (intentional):** any in-flight _allocate() that has
+   * already read the previous `_browser` reference will complete its
+   * newContext() call against the dead browser and throw. _allocate()'s
+   * catch block decrements `_active` on failure, so the slot is released
+   * and the client receives a retryable error. This is the correct
+   * outcome — in-flight calls were made against a browser that no longer
+   * exists; retrying is the only safe action.
+   *
+   * @param {import('playwright').Browser} browser - fresh browser instance
+   */
+  replaceBrowser(browser) {
+    this._browser = browser;
+    logger.debug('ContextPool: browser replaced', { active: this._active });
+  }
+
   get activeCount() { return this._active; }
   get queueDepth() { return this._queue.length; }
 

@@ -1,4 +1,3 @@
-import { chromium } from 'playwright';
 import dotenv from 'dotenv';
 import { once } from 'node:events';
 import fs from 'node:fs';
@@ -12,7 +11,7 @@ import { loadAndBuildPrompt, listTools, parseToolArgs } from './commands/tool.js
 import { wsmAdapter } from './services/WsmAdapter.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
 import { createUpgrader } from './utils/upgrader.js';
-import { resolveBrowserChannel } from './utils/browserChannel.js';
+import { resolveBrowser } from './browser/index.js';
 import { checkRobots } from './utils/robotsCheck.js';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -96,12 +95,9 @@ function getBrowserConfig() {
   const headless = process.env.BROWSER_HEADLESS?.toLowerCase() === 'true';
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
-
-  const channelOpts = process.env.BROWSER_EXECUTABLE_PATH
-    ? { executablePath: process.env.BROWSER_EXECUTABLE_PATH }
-    : resolveBrowserChannel(process.env.BROWSER_CHANNEL);
-
-  return validateBrowserConfig({ headless, slowMo, timeout, ...channelOpts });
+  // Channel + executablePath are resolved by src/browser/resolver.js from
+  // the env (BROWSER_CHANNEL / BROWSER_EXECUTABLE_PATH).
+  return validateBrowserConfig({ headless, slowMo, timeout });
 }
 
 function emitStructuredError(error) {
@@ -208,9 +204,10 @@ export function getOperationOptions(mode, annotate = false) {
 }
 
 /**
- * Print usage information — plain text to stderr, no logger formatting.
+ * Print usage information — plain text, no logger formatting.
+ * Writes to `stream` (default: stdout so `ibr --help | less` works).
  */
-function printUsage() {
+function printUsage(stream = process.stdout) {
   const lines = [
     'ibr - Intent Browser Runtime',
     '',
@@ -302,13 +299,27 @@ function printUsage() {
     '',
     'See .env.example for all available configuration options',
   ];
-  process.stderr.write(lines.join('\n') + '\n');
+  stream.write(lines.join('\n') + '\n');
 }
 
 
 async function run() {
   const rawArgs = process.argv.slice(2);
 
+  // Subcommand: ibr browser <subcmd> — dispatch early, no banner, no AI setup.
+  // Must run BEFORE the global --help short-circuit so per-subcommand --help works.
+  if (rawArgs[0] === 'browser') {
+    try {
+      const browserCmd = await import('./commands/browser/index.js');
+      const code = await browserCmd.run(rawArgs.slice(1));
+      process.exit(code ?? 0);
+    } catch (err) {
+      const cliError = ensureCliError(err, 'RUNTIME_ERROR');
+      process.stderr.write(`ibr browser: ${cliError.message}\n`);
+      emitStructuredError(cliError);
+      process.exit(1);
+    }
+  }
   // Short-circuit info subcommands before any logger output.
   if (rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs[0] === 'help') {
     printUsage();
@@ -330,7 +341,7 @@ async function run() {
       const prompt = filteredArgs[0];
 
       if (!prompt || prompt === '--help' || prompt === '-h') {
-        printUsage();
+        printUsage(prompt ? process.stdout : process.stderr);
         process.exit(prompt ? 0 : 1);
       }
 
@@ -346,7 +357,7 @@ async function run() {
       cookiesConfig = parseCookiesFlag(process.argv);
     } catch (err) {
       logger.error(err.message);
-      printUsage();
+      printUsage(process.stderr);
       process.exit(1);
     }
 
@@ -383,7 +394,7 @@ async function run() {
       );
       logger.error(error.message);
       emitStructuredError(error);
-      printUsage();
+      printUsage(process.stderr);
       process.exit(1);
     }
 
@@ -582,9 +593,10 @@ async function run() {
     logger.debug('Browser configuration', { ...browserConfig, channel: browserConfig.channel || 'default' });
     logger.debug('Operation options', operationOptions);
 
-    // Launch the browser
+    // Launch the browser via the browser-manager subsystem.
     logger.info('Launching browser');
-    const browser = await chromium.launch(browserConfig);
+    const browserHandle = await resolveBrowser(process.env, browserConfig);
+    const browser = browserHandle.browser;
 
     try {
       // Create a new browser context and page
@@ -703,9 +715,10 @@ async function run() {
         process.exit(1);
       }
     } finally {
-      // Close the browser
+      // Close the browser via the handle so the launcher can clean up
+      // any subprocess (CDP server, lightpanda, etc.) it spawned.
       logger.debug('Closing browser');
-      await browser.close();
+      await browserHandle.close();
     }
   } catch (error) {
     const cliError = ensureCliError(error, 'RUNTIME_ERROR');
@@ -719,7 +732,13 @@ async function run() {
 }
 
 // Only auto-run when invoked directly as a CLI (not imported as a module).
-const _isMain = process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]);
+// In a SEA binary, import.meta.url is shimmed by esbuild and does not match
+// process.argv[1]. Detect SEA via node:sea and always run in that context.
+// NOTE: bare `require()` is not defined in ESM modules; must use the
+// `_require` created via createRequire at the top of this file.
+let _isSea = false;
+try { _isSea = _require('node:sea').isSea(); } catch (_) {}
+const _isMain = _isSea || (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]));
 if (_isMain) {
   run().catch(error => {
     const cliError = ensureCliError(error, 'RUNTIME_ERROR');

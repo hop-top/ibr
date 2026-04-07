@@ -20,9 +20,9 @@ jobs:
         browser: [chromium]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22.x"
           cache: npm
@@ -33,7 +33,7 @@ jobs:
       # Cache Playwright browser binaries keyed on Playwright version +
       # browser list; avoids re-downloading ~100 MB per run.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: pw-cache
         with:
           path: |
@@ -56,9 +56,9 @@ jobs:
     needs: e2e-fast
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22.x"
           cache: npm
@@ -67,7 +67,7 @@ jobs:
         run: npm ci
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: pw-cache
         with:
           path: ~/.cache/ms-playwright

@@ -16,8 +16,8 @@
  * With -a (dom): writes PNG and prints path to stderr.
  */
 
-import { chromium } from 'playwright';
 import { DomSimplifier } from '../DomSimplifier.js';
+import { resolveBrowser } from '../browser/index.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -150,10 +150,11 @@ async function takeAnnotatedScreenshot(page, xpaths, outPath) {
 export async function runDomCommand(args, browserConfig = {}) {
   const opts = parseDomArgs(args);
 
-  const browser = await chromium.launch({
+  const browserHandle = await resolveBrowser(process.env, {
     headless: true,
     ...browserConfig,
   });
+  const browser = browserHandle.browser;
 
   try {
     const context = await browser.newContext();
@@ -199,7 +200,7 @@ export async function runDomCommand(args, browserConfig = {}) {
       process.stdout.write(json + '\n');
     }
   } finally {
-    await browser.close();
+    await browserHandle.close();
   }
 }
 

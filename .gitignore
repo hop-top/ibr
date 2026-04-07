@@ -1,6 +1,7 @@
 # Dependencies
 node_modules
-package-lock.json
+# package-lock.json is tracked — required by CI (actions/setup-node cache: npm)
+# and for reproducible installs. Only one lockfile format allowed at a time.
 pnpm-lock.yaml
 yarn.lock
 

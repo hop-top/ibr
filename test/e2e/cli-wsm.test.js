@@ -85,7 +85,11 @@ describe('cli-wsm — WSM integration graceful degradation (story 023)', () => {
     });
 });
 
-describe('cli-wsm — WsmAdapter.available reflects binary presence', () => {
+// TODO(pre-existing): this describe block writes a shell script
+// (#!/bin/sh) and chmod +x's it to simulate a wsm binary. Neither
+// works on Windows. Skip on win32 until the fake binary strategy
+// is made platform-aware (e.g. a .cmd shim or a Node script).
+describe.skipIf(process.platform === 'win32')('cli-wsm — WsmAdapter.available reflects binary presence', () => {
     let tmpDir;
     let fakeBin;
     let argvFile;
