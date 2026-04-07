@@ -72,6 +72,60 @@ function getOperationOptions() {
   return { temperature };
 }
 
+/**
+ * Emit a single NDJSON line to stderr. Best-effort; never throws.
+ * Mirrors the helper used in launchers + resolver.
+ */
+function emitNdjson(obj) {
+  try {
+    process.stderr.write(JSON.stringify(obj) + '\n');
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Attach a `disconnected` handler to the current browser. Distinguishes
+ * ibr-owned lightpanda spawns (one restart attempt) from launch / connect-user
+ * (preserve historical exit-1 behaviour).
+ */
+function attachDisconnectHandler(browserConfig) {
+  if (!browser) return;
+  browser.on('disconnected', async () => {
+    const ownership = browserHandle && browserHandle.ownership;
+
+    if (ownership === 'spawn-ibr') {
+      logger.warn('lightpanda disconnected; attempting one restart');
+      emitNdjson({ event: 'browser.restarted', reason: 'disconnected' });
+      try {
+        const newHandle = await resolveBrowser(process.env, browserConfig);
+        browserHandle = newHandle;
+        browser = newHandle.browser;
+        if (pool) {
+          // ContextPool stores the browser as `_browser`; mutate it so new
+          // checkouts see the fresh browser without re-creating the pool.
+          pool._browser = browser;
+        }
+        attachDisconnectHandler(browserConfig);
+        return;
+      } catch (err) {
+        logger.error('lightpanda restart failed; exiting', { error: err && err.message });
+        emitNdjson({ event: 'browser.restart_failed', error: err && err.message });
+        removeStateFile().finally(() => process.exit(1));
+        return;
+      }
+    }
+
+    // launch + connect-user: preserve historical exit-1 behaviour.
+    logger.error(
+      'Browser disconnected unexpectedly. ' +
+      'The Chromium process may have crashed or been killed externally. ' +
+      'Restart the daemon with "ibr --daemon" or check system resource limits.'
+    );
+    removeStateFile().finally(() => process.exit(1));
+  });
+}
+
 function getPoolConfig() {
   const maxClients = parseInt(process.env.IBR_DAEMON_MAX_CLIENTS || String(DEFAULT_MAX_CLIENTS), 10);
   const queueTimeoutMs = parseInt(
@@ -333,14 +387,7 @@ async function main() {
   browserHandle = await resolveBrowser(process.env, browserConfig);
   browser = browserHandle.browser;
 
-  browser.on('disconnected', () => {
-    logger.error(
-      'Browser disconnected unexpectedly. ' +
-      'The Chromium process may have crashed or been killed externally. ' +
-      'Restart the daemon with "ibr --daemon" or check system resource limits.'
-    );
-    removeStateFile().finally(() => process.exit(1));
-  });
+  attachDisconnectHandler(browserConfig);
 
   // Create context pool
   const operationOptions = getOperationOptions();

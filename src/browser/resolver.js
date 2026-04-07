@@ -29,20 +29,80 @@ import path from 'path';
 
 import { canonicalizeChannel, getEntry, NATIVE_CHANNELS } from './registry.js';
 import * as playwrightLaunch from './launchers/playwright-launch.js';
+import * as acquirer from './acquirer.js';
 
 // ── [SECTION: CHAIN] ─────────────────────────────────────────────────────────
 // T-0025: implement step 1 (exec-path) and step 3 (local probe).
 // T-0026: implement step 4 (cache) and step 5 (download).
-// T-0030: implement step 2 (cdp-url).
+// T-0030: implement step 2 (cdp-url) + cdp-server lifecycle dispatch.
+
+/**
+ * Emit a deprecation NDJSON event to stderr. Best-effort; never throws.
+ * @param {string} envName
+ * @param {string} replacement
+ */
+function emitDeprecation(envName, replacement) {
+  try {
+    process.stderr.write(
+      JSON.stringify({ event: 'browser.deprecation', env: envName, use: replacement }) + '\n',
+    );
+  } catch {
+    // never fail on telemetry
+  }
+}
+
+/**
+ * Step 2: BROWSER_CDP_URL / LIGHTPANDA_WS — connect-only mode.
+ * @param {object} env
+ * @returns {object|null}
+ */
+function stepCdpUrl(env) {
+  const cdpUrl = env.BROWSER_CDP_URL;
+  if (cdpUrl) {
+    return {
+      kind: 'cdp-server',
+      source: 'cdp-url',
+      version: null,
+      wsEndpoint: cdpUrl,
+      channel: 'lightpanda',
+    };
+  }
+  const legacy = env.LIGHTPANDA_WS;
+  if (legacy) {
+    emitDeprecation('LIGHTPANDA_WS', 'BROWSER_CDP_URL');
+    return {
+      kind: 'cdp-server',
+      source: 'cdp-url',
+      version: null,
+      wsEndpoint: legacy,
+      channel: 'lightpanda',
+    };
+  }
+  return null;
+}
 
 /**
  * Step 1: BROWSER_EXECUTABLE_PATH override.
+ *
+ * Special case: if BROWSER_CHANNEL=lightpanda is also set, treat the exec path
+ * as a lightpanda binary and produce a cdp-server record (ibr-owned spawn).
+ *
  * @param {object} env
  * @returns {object|null}
  */
 function stepExecPath(env) {
   const ep = env.BROWSER_EXECUTABLE_PATH;
   if (!ep) return null;
+  const channelId = canonicalizeChannel(env.BROWSER_CHANNEL);
+  if (channelId === 'lightpanda') {
+    return {
+      kind: 'cdp-server',
+      source: 'exec-path',
+      version: null,
+      executablePath: ep,
+      channel: 'lightpanda',
+    };
+  }
   return {
     kind: 'chromium-launch',
     source: 'exec-path',
@@ -120,6 +180,10 @@ function stepLocalProbe(channelId, { platform = os.platform(), exists = fs.exist
     : platformCandidatesRaw;
 
   if (platformCandidates.length === 0) {
+    if (entry.downloadable) {
+      // Defer to acquirer (cache/download) when no probe candidates exist.
+      return null;
+    }
     throw new Error(
       `Browser "${channelId}" is not supported on ${platform}. ` +
       `Supported values: chrome, msedge, brave, chromium, arc (macOS), comet (macOS). ` +
@@ -129,11 +193,27 @@ function stepLocalProbe(channelId, { platform = os.platform(), exists = fs.exist
 
   const found = probePaths(platformCandidates, exists);
   if (!found) {
+    if (entry.downloadable) {
+      // Defer to acquirer (cache/download).
+      return null;
+    }
     throw new Error(
       `Browser "${channelId}" not found on this system. Searched:\n` +
       platformCandidates.map(p => `  ${p}`).join('\n') + '\n' +
       `Install the browser or set BROWSER_EXECUTABLE_PATH to its executable.`
     );
+  }
+
+  // cdp-server entries (lightpanda) get a cdp-server record so dispatch
+  // wires the spawner + connector instead of playwright.launch().
+  if (entry.kind === 'cdp-server') {
+    return {
+      kind: 'cdp-server',
+      source: 'probe',
+      version: null,
+      executablePath: found,
+      channel: entry.id,
+    };
   }
 
   return {
@@ -146,20 +226,82 @@ function stepLocalProbe(channelId, { platform = os.platform(), exists = fs.exist
 }
 
 // ── [SECTION: LIFECYCLE_DISPATCH] ────────────────────────────────────────────
-// T-0025 stub: only `chromium-launch` is supported. T-0030 adds the other
-// kinds + a dispatch table.
+// T-0025: chromium-launch via static playwright-launch import.
+// T-0030: cdp-server via lazy lightpanda-spawner + playwright-connect imports.
 //
-// Launcher modules are imported lazily so test mocks via vi.mock() take
-// effect when the resolver is loaded once at module level.
+// playwright-launch is statically imported to preserve test timing assumptions
+// in test/unit/index.flags.test.js (lazy import would defer Playwright module
+// load past flag-handling and break those tests). cdp-server launchers are
+// lazy so vi.mock() in dispatch tests can substitute them at resolver-load
+// time without forcing Playwright load on every chain test.
+//
+// Three lifecycle modes for cdp-server (all return BrowserHandle shape):
+//   1. connect-only       (record.source === 'cdp-url') — user owns process
+//   2. ibr-owned spawn    (probe / cache / download)    — ibr spawns + kills
+// In all three, close() varies:
+//   - connect-only:  browser.close() only  (disconnect; no kill)
+//   - ibr-owned:     browser.close() + spawnHandle.kill()
 
-function dispatch(record, overrides) {
+async function dispatch(record, overrides, env) {
   if (record.kind === 'chromium-launch') {
-    return playwrightLaunch.launch({
+    const handle = await playwrightLaunch.launch({
       executablePath: record.executablePath ?? undefined,
       channel: record.channel ?? undefined,
       launchOptions: overrides,
     });
+    handle.ownership = 'launch';
+    return handle;
   }
+
+  if (record.kind === 'cdp-server') {
+    const connector = await import('./launchers/playwright-connect.js');
+
+    if (record.source === 'cdp-url') {
+      // Connect-only — user (or external daemon) owns the process.
+      const connected = await connector.connect({
+        wsEndpoint: record.wsEndpoint,
+        contextOptions: overrides,
+      });
+      connected.ownership = 'connect-user';
+      return connected;
+    }
+
+    // ibr-owned spawn (source: probe | cache | download | exec-path).
+    if (!record.executablePath) {
+      throw new Error(
+        `resolver: cdp-server record missing executablePath (source=${record.source})`,
+      );
+    }
+    const spawner = await import('./launchers/lightpanda-spawner.js');
+    const spawnHandle = await spawner.spawn({
+      binPath: record.executablePath,
+      obeyRobots: env && env.OBEY_ROBOTS === 'true',
+      env,
+    });
+
+    let connected;
+    try {
+      connected = await connector.connect({
+        wsEndpoint: spawnHandle.wsEndpoint,
+        contextOptions: overrides,
+      });
+    } catch (err) {
+      try { spawnHandle.kill(); } catch { /* already gone */ }
+      throw err;
+    }
+
+    return {
+      browser: connected.browser,
+      context: connected.context,
+      ownership: 'spawn-ibr',
+      spawnHandle,
+      close: async () => {
+        try { await connected.close(); } catch { /* disconnect may throw after child exit */ }
+        try { spawnHandle.kill(); } catch { /* already dead */ }
+      },
+    };
+  }
+
   throw new Error(`Unsupported backend kind: ${record.kind}`);
 }
 
@@ -201,22 +343,35 @@ export function emitResolved(record, channelId) {
  * @returns {{ record: object, channelId: string|null }}
  */
 export function resolveRecord(env) {
-  // Step 1: BROWSER_EXECUTABLE_PATH override
+  // Step 1: BROWSER_EXECUTABLE_PATH override (with lightpanda special case).
   const exec = stepExecPath(env);
   if (exec) {
-    return { record: exec, channelId: null };
+    const channelId = canonicalizeChannel(env.BROWSER_CHANNEL);
+    return { record: exec, channelId: exec.channel ?? channelId ?? null };
   }
 
-  // Step 2 (T-0030): BROWSER_CDP_URL — not yet wired.
+  // Step 2 (T-0030): BROWSER_CDP_URL / LIGHTPANDA_WS — connect-only.
+  const cdp = stepCdpUrl(env);
+  if (cdp) {
+    return { record: cdp, channelId: cdp.channel ?? null };
+  }
 
   // Step 3: local probe (only when channel is set).
   const channelId = canonicalizeChannel(env.BROWSER_CHANNEL);
   if (channelId) {
     const probed = stepLocalProbe(channelId);
     if (probed) return { record: probed, channelId };
+    // Probe miss for a downloadable entry — caller (resolve()) must run
+    // the acquirer chain. We mark this with a sentinel record so resolve()
+    // can branch without re-walking the chain.
+    const entry = getEntry(channelId);
+    if (entry?.downloadable) {
+      return {
+        record: { kind: '__needs_acquire__', entry, channelId },
+        channelId,
+      };
+    }
   }
-
-  // Steps 4 + 5 (T-0026): cache + download — not yet wired.
 
   // Default: Playwright's bundled Chromium, no exec path / no channel.
   return {
@@ -259,7 +414,38 @@ export function resolveProbeOnly(channelRaw) {
  * @returns {Promise<import('./index.js').BrowserHandle>}
  */
 export async function resolve(env, overrides = {}) {
-  const { record, channelId } = resolveRecord(env);
+  let { record, channelId } = resolveRecord(env);
+
+  // Steps 4 + 5: cache + download via acquirer (cdp-server downloadable only).
+  if (record.kind === '__needs_acquire__') {
+    const { entry } = record;
+    let acquired;
+    try {
+      acquired = await acquirer.acquire(entry, { env });
+    } catch (err) {
+      throw new Error(
+        `resolver: failed to acquire "${entry.id}": ${err && err.message ? err.message : String(err)}`,
+      );
+    }
+    if (entry.kind === 'cdp-server') {
+      record = {
+        kind: 'cdp-server',
+        source: acquired.source,
+        version: acquired.version ?? null,
+        executablePath: acquired.executablePath,
+        channel: entry.id,
+      };
+    } else {
+      record = {
+        kind: 'chromium-launch',
+        source: acquired.source,
+        version: acquired.version ?? null,
+        executablePath: acquired.executablePath,
+        channel: null,
+      };
+    }
+  }
+
   emitResolved(record, channelId);
-  return dispatch(record, overrides);
+  return dispatch(record, overrides, env);
 }
