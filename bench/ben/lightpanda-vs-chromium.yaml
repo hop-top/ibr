@@ -1,0 +1,47 @@
+name: lightpanda-vs-chromium
+description: >
+  Compare lightpanda and bundled chromium on representative ibr scrape flows.
+  Measures wall time, startup time, and peak RSS across static-scrape,
+  dom-extract, and annotate-screenshot scenarios. Each candidate invokes the
+  Node harness (bench/lightpanda.js) scoped to a single backend + single
+  scenario so ben can attribute latency_ms / exit_code / output_size to one
+  cell of the matrix.
+version: 1
+
+task:
+  prompt: "ibr browser backend comparison — speed and footprint"
+  input:
+    iterations: 3
+
+candidates:
+  - name: chromium-static-scrape
+    adapter: cli
+    cmd: "node bench/lightpanda.js --backends chromium --scenarios static-scrape --iterations {{input.iterations}}"
+  - name: lightpanda-static-scrape
+    adapter: cli
+    cmd: "node bench/lightpanda.js --backends lightpanda --scenarios static-scrape --iterations {{input.iterations}}"
+  - name: chromium-dom-extract
+    adapter: cli
+    cmd: "node bench/lightpanda.js --backends chromium --scenarios dom-extract --iterations {{input.iterations}}"
+  - name: lightpanda-dom-extract
+    adapter: cli
+    cmd: "node bench/lightpanda.js --backends lightpanda --scenarios dom-extract --iterations {{input.iterations}}"
+  - name: chromium-annotate-screenshot
+    adapter: cli
+    cmd: "node bench/lightpanda.js --backends chromium --scenarios annotate-screenshot --iterations {{input.iterations}}"
+  - name: lightpanda-annotate-screenshot
+    adapter: cli
+    cmd: "node bench/lightpanda.js --backends lightpanda --scenarios annotate-screenshot --iterations {{input.iterations}}"
+
+metrics:
+  - latency_ms
+  - exit_code
+  - output_size
+
+scorer:
+  strategy: single
+  weights:
+    latency_ms: 1.0
+
+registry:
+  push: false
