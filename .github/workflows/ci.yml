@@ -19,14 +19,16 @@ jobs:
       matrix:
         # Cross-platform smoke: Linux is primary; macOS and Windows catch
         # platform-specific path/binary issues early.
+        # Node 20 left active LTS in April 2026 — test 22 (active LTS)
+        # and 24 (current). Drop 20 to halve matrix cost.
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node: ["20.x", "22.x"]
+        node: ["22.x", "24.x"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node ${{ matrix.node }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: npm
