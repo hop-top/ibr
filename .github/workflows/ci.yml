@@ -34,6 +34,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Integration tests exercise real Playwright flows; install the
+      # bundled chromium so vitest.config.js#detectBrowserSupport() returns
+      # true and test/integration/** is included (otherwise the filter hits
+      # zero files and vitest exits 1).
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Unit tests
         run: npm run test:unit
 

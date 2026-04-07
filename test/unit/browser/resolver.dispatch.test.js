@@ -12,6 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
+import os from 'os';
 
 const launchMock = vi.fn();
 const connectMock = vi.fn();
@@ -32,6 +33,7 @@ vi.mock('../../../src/browser/launchers/lightpanda-spawner.js', () => ({
 import { resolve } from '../../../src/browser/resolver.js';
 
 let stderrSpy;
+let platformSpy;
 
 beforeEach(() => {
   launchMock.mockReset();
@@ -45,10 +47,14 @@ beforeEach(() => {
   });
 
   stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  // Force darwin so tests asserting darwin-specific probe paths
+  // (e.g. /opt/homebrew/bin/lightpanda) behave identically across CI hosts.
+  platformSpy = vi.spyOn(os, 'platform').mockReturnValue('darwin');
 });
 
 afterEach(() => {
   stderrSpy.mockRestore();
+  platformSpy.mockRestore();
 });
 
 function ndjsonLines() {

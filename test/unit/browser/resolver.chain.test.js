@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
+import os from 'os';
 
 const launchMock = vi.fn();
 vi.mock('../../../src/browser/launchers/playwright-launch.js', () => ({
@@ -14,6 +15,7 @@ import {
 } from '../../../src/browser/resolver.js';
 
 let stderrSpy;
+let platformSpy;
 
 beforeEach(() => {
   launchMock.mockReset();
@@ -23,10 +25,14 @@ beforeEach(() => {
     close: vi.fn(),
   });
   stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  // Force darwin in the probe logic so these tests behave identically on
+  // any CI host. The tests assert darwin-specific paths (Brave.app, etc).
+  platformSpy = vi.spyOn(os, 'platform').mockReturnValue('darwin');
 });
 
 afterEach(() => {
   stderrSpy.mockRestore();
+  platformSpy.mockRestore();
 });
 
 // ── Step 1: BROWSER_EXECUTABLE_PATH override ────────────────────────────────

@@ -13,6 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
+import os from 'os';
 
 const launchMock = vi.fn();
 const connectMock = vi.fn();
@@ -46,6 +47,7 @@ import { resolve } from '../../../src/browser/resolver.js';
 
 let stderrSpy;
 let existsSpy;
+let platformSpy;
 
 beforeEach(() => {
   launchMock.mockReset();
@@ -56,11 +58,15 @@ beforeEach(() => {
 
   stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   existsSpy = vi.spyOn(fs, 'existsSync');
+  // Force darwin so the fs.existsSync mocks (which assert macOS paths
+  // like /opt/homebrew/bin/*) behave identically on any CI host.
+  platformSpy = vi.spyOn(os, 'platform').mockReturnValue('darwin');
 });
 
 afterEach(() => {
   stderrSpy.mockRestore();
   existsSpy.mockRestore();
+  platformSpy.mockRestore();
 });
 
 function ndjsonLines() {
