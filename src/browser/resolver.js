@@ -30,6 +30,14 @@ import path from 'path';
 import { canonicalizeChannel, getEntry, NATIVE_CHANNELS } from './registry.js';
 import * as playwrightLaunch from './launchers/playwright-launch.js';
 import * as acquirer from './acquirer.js';
+import {
+  isKnownBroken,
+  recordBroken,
+  versionKey,
+  detectPlaywrightVersion,
+  fingerprintError,
+} from './capability-manifest.js';
+import { signature as buildSignature } from './capability-signature.js';
 
 // ── [SECTION: CHAIN] ─────────────────────────────────────────────────────────
 // T-0025: implement step 1 (exec-path) and step 3 (local probe).
@@ -409,11 +417,18 @@ export function resolveProbeOnly(channelRaw) {
  * Resolve env → BrowserHandle. Walks chain, dispatches to launcher,
  * emits a `browser.resolved` NDJSON event.
  *
+ * Public entry point — delegates to resolveWithCapability(), which wraps
+ * resolveInner() with self-healing fallback logic. See [SECTION: CAPABILITY].
+ *
  * @param {object} env
  * @param {object} [overrides]  Playwright launch options merged in
  * @returns {Promise<import('./index.js').BrowserHandle>}
  */
 export async function resolve(env, overrides = {}) {
+  return resolveWithCapability(env, overrides);
+}
+
+async function resolveInner(env, overrides = {}) {
   let { record, channelId } = resolveRecord(env);
 
   // Steps 4 + 5: cache + download via acquirer (cdp-server downloadable only).
@@ -448,4 +463,197 @@ export async function resolve(env, overrides = {}) {
 
   emitResolved(record, channelId);
   return dispatch(record, overrides, env);
+}
+
+// ── [SECTION: CAPABILITY] ────────────────────────────────────────────────────
+// T-0031: self-healing capability manifest hooks.
+//
+// Two layers of protection wrap resolveInner():
+//
+//   1. Strict-mode preflight (launch-level only)
+//      If BROWSER_STRICT=true and BROWSER_CHANNEL=lightpanda, refuse to
+//      even attempt launch when the manifest already has launch-time
+//      known-broken entries for the current (lp, pw) version key.
+//
+//   2. Fallback wrapper
+//      If lightpanda fails to launch and BROWSER_FALLBACK is set, retry
+//      on the fallback channel. On fallback success, record the launch
+//      failure under a canonical "launch" signature and emit
+//      `capability.learned` + `browser.fallback` NDJSON. On fallback
+//      failure, propagate the fallback's error WITHOUT polluting the
+//      manifest.
+//
+// LIMITATION — coarse launch-time entries:
+//   At launch failure time we usually don't know the lightpanda version
+//   (resolveInner threw before acquirer could surface it). We therefore
+//   fall back to lightpandaVersion='unknown' in versionKey(), which means
+//   different lightpanda releases collapse into the same bucket for
+//   launch-level evidence. observedCount + lastSeen still distinguish
+//   recent failures, and op-time callers (preflightCheck) get version-
+//   accurate buckets via their own version source. Future work can plumb
+//   the partial version through resolveInner so launch entries also become
+//   version-accurate.
+
+const LAUNCH_SELECTOR = Object.freeze({
+  role: null,
+  tagName: 'browser',
+  hasText: false,
+  depth: 0,
+});
+
+/**
+ * Build the canonical launch-time signature. Version-independent so
+ * different launch failures coalesce into a single signature row whose
+ * observedCount tracks how often launches misbehave for this lightpanda
+ * install.
+ *
+ * @returns {string}
+ */
+function signatureLaunch() {
+  return buildSignature({
+    opKind: 'launch',
+    selector: LAUNCH_SELECTOR,
+    stepTemplate: 'launch lightpanda',
+  });
+}
+
+/**
+ * Best-effort NDJSON emit to stderr. Mirrors emitResolved but for
+ * capability/fallback events.
+ * @param {object} payload
+ */
+function emitCapabilityEvent(payload) {
+  try {
+    process.stderr.write(JSON.stringify(payload) + '\n');
+  } catch {
+    // never fail a launch on telemetry
+  }
+}
+
+/**
+ * Op-level preflight check for callers (Operations.js, etc.). NOT wired
+ * into the resolver chain itself — caller invokes this around each
+ * specific operation it's about to dispatch.
+ *
+ * Returns:
+ *   { status: 'ok' }                       — no record found
+ *   { status: 'warn',   entry, reason }    — known-broken (advisory)
+ *   { status: 'refuse', entry, reason }    — known-broken + STRICT mode
+ *
+ * @param {object} env
+ * @param {object} args
+ * @param {string} args.opKind
+ * @param {object} args.selector
+ * @param {string} args.stepTemplate
+ * @param {string} [args.lightpandaVersion]
+ * @returns {Promise<{status: 'ok'|'warn'|'refuse', reason?: string, entry?: object}>}
+ */
+export async function preflightCheck(env, { opKind, selector, stepTemplate, lightpandaVersion } = {}) {
+  if (canonicalizeChannel(env?.BROWSER_CHANNEL) !== 'lightpanda') {
+    return { status: 'ok' };
+  }
+  let sig;
+  try {
+    sig = buildSignature({ opKind, selector, stepTemplate });
+  } catch {
+    return { status: 'ok' };
+  }
+  const key = versionKey(lightpandaVersion || 'unknown', detectPlaywrightVersion());
+  const entry = await isKnownBroken(key, sig);
+  if (!entry) return { status: 'ok' };
+  if (env.BROWSER_STRICT === 'true') {
+    return {
+      status: 'refuse',
+      entry,
+      reason:
+        `Refusing to run ${opKind} on lightpanda: signature ${sig} is known-broken ` +
+        `(observed ${entry.observedCount}x, last seen ${entry.lastSeen}). ` +
+        `Set BROWSER_FALLBACK=<channel> or unset BROWSER_STRICT to retry.`,
+    };
+  }
+  return {
+    status: 'warn',
+    entry,
+    reason:
+      `lightpanda ${opKind} signature ${sig} is known-broken ` +
+      `(observed ${entry.observedCount}x). Will attempt anyway.`,
+  };
+}
+
+/**
+ * Public resolve() body. Wraps resolveInner with strict preflight (launch
+ * level only) and the on-failure fallback path.
+ */
+async function resolveWithCapability(env, overrides) {
+  const channel = canonicalizeChannel(env?.BROWSER_CHANNEL);
+
+  // Strict-mode launch-level preflight: refuse before even trying
+  // lightpanda when the manifest has launch entries for the current
+  // (lp, pw) bucket. lightpandaVersion is unknown at this point — we
+  // check the 'unknown|<pw>' bucket. Op-level strict checks are the
+  // caller's responsibility (see preflightCheck above).
+  if (env?.BROWSER_STRICT === 'true' && channel === 'lightpanda') {
+    try {
+      const key = versionKey('unknown', detectPlaywrightVersion());
+      const launchSig = signatureLaunch();
+      const hit = await isKnownBroken(key, launchSig);
+      if (hit) {
+        const reason =
+          `Refusing to launch lightpanda under BROWSER_STRICT=true: launch signature is ` +
+          `known-broken (observed ${hit.observedCount}x, last seen ${hit.lastSeen}). ` +
+          `Set BROWSER_FALLBACK=<channel> or unset BROWSER_STRICT to retry.`;
+        const err = new Error(reason);
+        err.code = 'BROWSER_STRICT_REFUSE';
+        throw err;
+      }
+    } catch (err) {
+      if (err && err.code === 'BROWSER_STRICT_REFUSE') throw err;
+      // manifest read failure — degrade open, do not block launch
+    }
+  }
+
+  try {
+    return await resolveInner(env, overrides);
+  } catch (err) {
+    if (channel !== 'lightpanda' || !env?.BROWSER_FALLBACK) throw err;
+
+    const fallback = env.BROWSER_FALLBACK;
+    const fallbackEnv = { ...env, BROWSER_CHANNEL: fallback };
+    delete fallbackEnv.BROWSER_FALLBACK;
+
+    let handle;
+    try {
+      handle = await resolveInner(fallbackEnv, overrides);
+    } catch (fallbackErr) {
+      // Don't pollute manifest if fallback also fails — propagate the
+      // fallback's error so the user sees the most relevant failure.
+      throw fallbackErr;
+    }
+
+    // Fallback succeeded: learn from the failure.
+    const fingerprint = fingerprintError(err);
+    try {
+      await recordBroken(versionKey('unknown', detectPlaywrightVersion()), {
+        signature: signatureLaunch(),
+        opKind: 'launch',
+        errorFingerprint: fingerprint,
+        fallbackSucceededOn: fallback,
+      });
+    } catch {
+      // recording failure must not break the live request
+    }
+    emitCapabilityEvent({
+      event: 'capability.learned',
+      channel: 'lightpanda',
+      fallback,
+      opKind: 'launch',
+    });
+    emitCapabilityEvent({
+      event: 'browser.fallback',
+      from: 'lightpanda',
+      to: fallback,
+      reason: fingerprint,
+    });
+    return handle;
+  }
 }
