@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head><title>ibr e2e fixture</title></head>
+  <body>
+    <h1 id="heading">Hello E2E</h1>
+    <p class="intro">This is a test page for ibr lightpanda e2e.</p>
+    <button id="submit">Click me</button>
+    <form>
+      <label>Name: <input type="text" id="name" name="name" /></label>
+    </form>
+    <div id="result"></div>
+    <script>
+      document.getElementById('submit').addEventListener('click', () => {
+        document.getElementById('result').textContent = 'clicked!';
+      });
+    </script>
+  </body>
+</html>
