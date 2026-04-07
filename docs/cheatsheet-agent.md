@@ -154,6 +154,30 @@ List available tools (machine-readable):
 ibr tool --list 2>/dev/null
 ```
 
+### Built-in Tools
+
+| Tool | Required Params | Optional Params |
+|------|----------------|-----------------|
+| `web-search` | `query` | `count` (5) |
+| `web-fetch` | `url` | `selector` |
+| `trend-search` | `topic` | `region` (US), `period` (7d) |
+| `github-search` | `query` | `type` (repositories), `count` (10) |
+| `github-trending` | _(none)_ | `language`, `period` (daily), `count` (10) |
+| `github-starred` | `username` | `query`, `count` (10) |
+| `context7` | `library`, `question` | `version` |
+| `arxiv` | `query` | `max_results` (5), `category` |
+| `web-archive` | `url` | `date` (YYYYMMDD) |
+| `wikipedia` | `topic` | `section`, `lang` (en) |
+| `amazon` | `query` | `max_results` (5), `country` (com) |
+| `ebay` | `query` | `max_results` (5), `sold` (false), `country` (com) |
+| `npm` | `package` | — |
+| `pypi` | `package` | — |
+| `producthunt` | `query` | `max_results` (5) |
+| `reddit` | `query` | `subreddit`, `sort` (relevance), `max_results` (5) |
+| `hackernews` | `query` | `type` (story), `sort` (popularity), `max_results` (10) |
+| `yahoo-finance` | `ticker` | — |
+| `dockerhub` | `image` | `max_results` (5), `show_tags` (false) |
+
 ---
 
 ## Invocation Patterns
