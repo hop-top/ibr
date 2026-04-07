@@ -53,11 +53,19 @@ function makeEntry(overrides = {}) {
   };
 }
 
+// All acquire calls in this file default to platform='linux' so they
+// behave identically on any CI host (the entry.id === 'lightpanda' +
+// win32 hard-gate would otherwise fire on Windows runners and mask the
+// test's real assertion). The dedicated win32 test below overrides this.
+async function doAcquire(entry, opts = {}) {
+  return acquirer.acquire(entry, { platform: 'linux', ...opts });
+}
+
 describe('acquirer.acquire — probe', () => {
   it('returns probe hit early', async () => {
     const probePath = path.join(probeDir, 'lightpanda');
     await fs.writeFile(probePath, 'fake-bin');
-    const result = await acquirer.acquire(makeEntry({ localProbe: [probePath] }));
+    const result = await doAcquire(makeEntry({ localProbe: [probePath] }));
     expect(result.source).toBe('probe');
     expect(result.executablePath).toBe(probePath);
     expect(downloaderMock.resolveVersion).not.toHaveBeenCalled();
@@ -65,7 +73,7 @@ describe('acquirer.acquire — probe', () => {
 
   it('throws on miss when not downloadable', async () => {
     await expect(
-      acquirer.acquire(makeEntry({ downloadable: false, localProbe: ['/nope/x'] })),
+      doAcquire(makeEntry({ downloadable: false, localProbe: ['/nope/x'] })),
     ).rejects.toThrow(/not downloadable/);
   });
 });
@@ -88,7 +96,7 @@ describe('acquirer.acquire — download chain', () => {
       await cache.writeMeta(channel, args.version, meta);
       return { executablePath: exe, meta };
     });
-    const result = await acquirer.acquire(makeEntry(), { env: {} });
+    const result = await doAcquire(makeEntry(), { env: {} });
     expect(result.source).toBe('download');
     expect(result.version).toBe('0.2.8');
     expect(downloaderMock.download).toHaveBeenCalledTimes(1);
@@ -114,7 +122,7 @@ describe('acquirer.acquire — download chain', () => {
       requireChecksum: false,
     });
 
-    const result = await acquirer.acquire(makeEntry(), { env: {} });
+    const result = await doAcquire(makeEntry(), { env: {} });
     expect(result.source).toBe('cache');
     expect(downloaderMock.download).not.toHaveBeenCalled();
   });
@@ -148,8 +156,8 @@ describe('acquirer.acquire — download chain', () => {
     });
 
     const [r1, r2] = await Promise.all([
-      acquirer.acquire(makeEntry(), { env: {} }),
-      acquirer.acquire(makeEntry(), { env: {} }),
+      doAcquire(makeEntry(), { env: {} }),
+      doAcquire(makeEntry(), { env: {} }),
     ]);
     expect(downloadCount).toBe(1);
     const sources = [r1.source, r2.source].sort();
@@ -159,14 +167,22 @@ describe('acquirer.acquire — download chain', () => {
 
 describe('acquirer.acquire — platform gating', () => {
   it('throws on win32 + lightpanda', async () => {
-    const orig = Object.getOwnPropertyDescriptor(process, 'platform');
-    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
-    try {
-      await expect(acquirer.acquire(makeEntry())).rejects.toThrow(
-        /Lightpanda is not supported on Windows/,
-      );
-    } finally {
-      Object.defineProperty(process, 'platform', orig);
-    }
+    await expect(
+      acquirer.acquire(makeEntry(), { platform: 'win32' }),
+    ).rejects.toThrow(/Lightpanda is not supported on Windows/);
+  });
+
+  it('does not gate non-lightpanda entries on win32', async () => {
+    // Regression: the win32 gate must only fire for entry.id === 'lightpanda'.
+    // A non-lightpanda entry on Windows must still go through probe/cache
+    // normally.
+    const probePath = path.join(probeDir, 'fake-browser');
+    await fs.writeFile(probePath, 'bin');
+    const result = await acquirer.acquire(
+      makeEntry({ id: 'fake', localProbe: [probePath] }),
+      { platform: 'win32' },
+    );
+    expect(result.source).toBe('probe');
+    expect(result.executablePath).toBe(probePath);
   });
 });

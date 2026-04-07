@@ -50,13 +50,17 @@ function deriveChannelSpec(env, downloadUrl, version) {
  * @param {NodeJS.ProcessEnv} [opts.env]
  * @param {string} [opts.downloadUrl] - Override download URL.
  * @param {string} [opts.version] - Override version.
+ * @param {NodeJS.Platform} [opts.platform] - Override process.platform (tests).
  * @returns {Promise<{ executablePath: string, source: 'probe'|'cache'|'download', version: string, meta?: object }>}
  */
-export async function acquire(entry, { env = process.env, downloadUrl, version } = {}) {
+export async function acquire(
+  entry,
+  { env = process.env, downloadUrl, version, platform = process.platform } = {},
+) {
   if (!entry) throw new Error('acquire: entry is required');
 
   // Hard gate: Lightpanda on win32.
-  if (entry.id === 'lightpanda' && process.platform === 'win32') {
+  if (entry.id === 'lightpanda' && platform === 'win32') {
     throw new Error('Lightpanda is not supported on Windows');
   }
 
