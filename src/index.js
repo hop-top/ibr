@@ -1,4 +1,3 @@
-import { chromium } from 'playwright';
 import dotenv from 'dotenv';
 import { once } from 'node:events';
 import fs from 'node:fs';
@@ -12,7 +11,7 @@ import { loadAndBuildPrompt, listTools, parseToolArgs } from './commands/tool.js
 import { wsmAdapter } from './services/WsmAdapter.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
 import { createUpgrader } from './utils/upgrader.js';
-import { resolveBrowserChannel } from './utils/browserChannel.js';
+import { resolveBrowser } from './browser/index.js';
 import { checkRobots } from './utils/robotsCheck.js';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -96,12 +95,9 @@ function getBrowserConfig() {
   const headless = process.env.BROWSER_HEADLESS?.toLowerCase() === 'true';
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
-
-  const channelOpts = process.env.BROWSER_EXECUTABLE_PATH
-    ? { executablePath: process.env.BROWSER_EXECUTABLE_PATH }
-    : resolveBrowserChannel(process.env.BROWSER_CHANNEL);
-
-  return validateBrowserConfig({ headless, slowMo, timeout, ...channelOpts });
+  // Channel + executablePath are resolved by src/browser/resolver.js from
+  // the env (BROWSER_CHANNEL / BROWSER_EXECUTABLE_PATH).
+  return validateBrowserConfig({ headless, slowMo, timeout });
 }
 
 function emitStructuredError(error) {
@@ -582,9 +578,10 @@ async function run() {
     logger.debug('Browser configuration', { ...browserConfig, channel: browserConfig.channel || 'default' });
     logger.debug('Operation options', operationOptions);
 
-    // Launch the browser
+    // Launch the browser via the browser-manager subsystem.
     logger.info('Launching browser');
-    const browser = await chromium.launch(browserConfig);
+    const browserHandle = await resolveBrowser(process.env, browserConfig);
+    const browser = browserHandle.browser;
 
     try {
       // Create a new browser context and page
@@ -703,9 +700,10 @@ async function run() {
         process.exit(1);
       }
     } finally {
-      // Close the browser
+      // Close the browser via the handle so the launcher can clean up
+      // any subprocess (CDP server, lightpanda, etc.) it spawned.
       logger.debug('Closing browser');
-      await browser.close();
+      await browserHandle.close();
     }
   } catch (error) {
     const cliError = ensureCliError(error, 'RUNTIME_ERROR');

@@ -11,7 +11,29 @@
  * Implemented by: T-0025
  */
 
-// TODO(T-0025)
-export async function launch({ executablePath, channel, launchOptions = {} }) {
-  throw new Error('src/browser/launchers/playwright-launch.js not yet implemented');
+import { chromium } from 'playwright';
+
+/**
+ * Launch a Chromium-family browser via Playwright's chromium.launch().
+ *
+ * @param {object}   args
+ * @param {string}  [args.executablePath] - Direct path override
+ * @param {string}  [args.channel]        - Playwright-native channel name
+ * @param {object}  [args.launchOptions]  - Other options merged into launch()
+ * @returns {Promise<{browser: import('playwright').Browser, context: null, close: () => Promise<void>}>}
+ */
+export async function launch({ executablePath, channel, launchOptions = {} } = {}) {
+  const opts = { ...launchOptions };
+  if (executablePath) opts.executablePath = executablePath;
+  if (channel) opts.channel = channel;
+
+  const browser = await chromium.launch(opts);
+
+  return {
+    browser,
+    context: null,
+    close: async () => {
+      try { await browser.close(); } catch { /* already closed */ }
+    },
+  };
 }
