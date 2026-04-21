@@ -291,6 +291,7 @@ function printUsage(stream = process.stdout) {
     '  AI_TEMPERATURE        - AI temperature 0-2 [default: 0]',
     '  BROWSER_CHANNEL       - Browser to use: brave, chrome, msedge, chromium, arc, comet',
     '  BROWSER_EXECUTABLE_PATH - Explicit path to browser binary (overrides BROWSER_CHANNEL)',
+    '  BROWSER_PROFILE       - Browser profile for cookie import [default: Default]',
     '  BROWSER_HEADLESS      - Run headless (true/false) [default: false]',
     '  BROWSER_SLOWMO        - Slow down actions (ms) [default: 100]',
     '  OBEY_ROBOTS           - Check robots.txt before automation (true/false) [default: false]',
@@ -615,7 +616,8 @@ async function run() {
       if (cookiesConfig) {
         logger.info(`Importing cookies from ${cookiesConfig.browser}...`);
         try {
-          const result = await importCookies(cookiesConfig.browser, cookiesConfig.domains);
+          const profile = process.env.BROWSER_PROFILE || 'Default';
+          const result = await importCookies(cookiesConfig.browser, cookiesConfig.domains, profile);
           if (result.count > 0) {
             await context.addCookies(result.cookies);
             logger.info(`Loaded ${result.count} cookies from ${cookiesConfig.browser}`, {
