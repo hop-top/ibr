@@ -31,9 +31,13 @@ vi.mock('../../../src/browser/launchers/lightpanda-spawner.js', () => ({
 }));
 
 import { resolve } from '../../../src/browser/resolver.js';
+import { infraManager } from '../../../src/browser/resolvers/InfraManager.js';
 
 let stderrSpy;
 let platformSpy;
+let originalInfraConfig;
+let originalInfraInitialized;
+let originalInfraIndices;
 
 beforeEach(() => {
   launchMock.mockReset();
@@ -50,11 +54,24 @@ beforeEach(() => {
   // Force darwin so tests asserting darwin-specific probe paths
   // (e.g. /opt/homebrew/bin/lightpanda) behave identically across CI hosts.
   platformSpy = vi.spyOn(os, 'platform').mockReturnValue('darwin');
+
+  originalInfraConfig = infraManager.config;
+  originalInfraInitialized = infraManager.initialized;
+  originalInfraIndices = infraManager.indices;
+  infraManager.config = {
+    providers: {},
+    routing: { default: 'local', policies: [] },
+  };
+  infraManager.initialized = true;
+  infraManager.indices = {};
 });
 
 afterEach(() => {
   stderrSpy.mockRestore();
   platformSpy.mockRestore();
+  infraManager.config = originalInfraConfig;
+  infraManager.initialized = originalInfraInitialized;
+  infraManager.indices = originalInfraIndices;
 });
 
 function ndjsonLines() {
@@ -156,6 +173,79 @@ describe('dispatch — cdp-server connect-only (BROWSER_CDP_URL)', () => {
     });
     const evts = ndjsonLines();
     expect(evts.find((e) => e.event === 'browser.deprecation')).toBeUndefined();
+  });
+});
+
+// ── cloud-server routing via InfraManager ───────────────────────────────────
+describe('dispatch — cloud-server routing', () => {
+  it('proactive routing connects to the resolved provider endpoint', async () => {
+    const closeFn = vi.fn();
+    connectMock.mockResolvedValue({
+      browser: { close: vi.fn() },
+      context: null,
+      close: closeFn,
+    });
+    infraManager.config = {
+      providers: {
+        browserless: {
+          accounts: [{ name: 'test-browserless', key: 'token-123' }],
+        },
+      },
+      routing: {
+        default: 'local',
+        policies: [
+          {
+            urlPattern: 'scrape-me\\.com',
+            providers: ['browserless'],
+            stage: 'proactive',
+          },
+        ],
+      },
+    };
+
+    const handle = await resolve({ TARGET_URL: 'https://scrape-me.com' }, {});
+
+    expect(connectMock).toHaveBeenCalledOnce();
+    expect(connectMock).toHaveBeenCalledWith({
+      wsEndpoint: 'wss://chrome.browserless.io?token=token-123',
+      contextOptions: {},
+    });
+    expect(handle.browser).toBeTruthy();
+
+    await handle.close();
+    expect(closeFn).toHaveBeenCalledOnce();
+  });
+
+  it('explicit provider override connects to the provider endpoint', async () => {
+    const closeFn = vi.fn();
+    connectMock.mockResolvedValue({
+      browser: { close: vi.fn() },
+      context: null,
+      close: closeFn,
+    });
+    infraManager.config = {
+      providers: {
+        'browser-use': {
+          accounts: [{ name: 'test-browser-use', key: 'api-key-123' }],
+        },
+      },
+      routing: {
+        default: 'local',
+        policies: [],
+      },
+    };
+
+    const handle = await resolve({}, { BROWSER_CHANNEL: 'browser-use' });
+
+    expect(connectMock).toHaveBeenCalledOnce();
+    expect(connectMock).toHaveBeenCalledWith({
+      wsEndpoint: 'wss://cloud.browser-use.com/connect?api_key=api-key-123',
+      contextOptions: {},
+    });
+    expect(handle.browser).toBeTruthy();
+
+    await handle.close();
+    expect(closeFn).toHaveBeenCalledOnce();
   });
 });
 

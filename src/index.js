@@ -9,6 +9,7 @@ import { importCookies, getSupportedCookieBrowsersHelpText } from './utils/cooki
 import { runDomCommand } from './commands/snap.js';
 import { loadAndBuildPrompt, listTools, parseToolArgs } from './commands/tool.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
+import { infraManager } from './browser/resolvers/InfraManager.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
 import { createUpgrader } from './utils/upgrader.js';
 import { resolveBrowser } from './browser/index.js';
@@ -101,7 +102,7 @@ function getBrowserConfig() {
 }
 
 function emitStructuredError(error) {
-  process.stderr.write(`\n${JSON.stringify(serializeCliError(error))}\n`);
+  fs.writeSync(process.stderr.fd, `\n${JSON.stringify(serializeCliError(error))}\n`);
 }
 
 async function readPromptFromStdin() {
@@ -146,12 +147,43 @@ function parseExecutionTimeoutMs() {
   return timeoutMs;
 }
 
+function normalizePromptUrl(candidate) {
+  if (!candidate) return null;
+
+  const cleaned = String(candidate).trim().replace(/^[("'[]+|['")\].,!?;:]+$/g, '');
+  if (!cleaned) return null;
+
+  if (/^https?:\/\//i.test(cleaned)) {
+    return cleaned;
+  }
+
+  if (/^(?:www\.)?[a-z0-9.-]+\.(?:com|org|net|io|dev|app|co)(?:\/\S*)?$/i.test(cleaned)) {
+    return `https://${cleaned}`;
+  }
+
+  return null;
+}
+
+function extractTargetUrlFromPrompt(prompt) {
+  const structuredMatch = prompt.match(/^\s*url\s*:\s*(\S+)/im);
+  const structuredUrl = normalizePromptUrl(structuredMatch?.[1]);
+  if (structuredUrl) return structuredUrl;
+
+  const absoluteUrlMatch = prompt.match(/\bhttps?:\/\/[^\s'")\]]+/i);
+  const absoluteUrl = normalizePromptUrl(absoluteUrlMatch?.[0]);
+  if (absoluteUrl) return absoluteUrl;
+
+  const hostnameMatch =
+    prompt.match(/\b(?:www\.[^\s'")\]]+|[a-z0-9.-]+\.(?:com|org|net|io|dev|app|co)(?:\/[^\s'")\]]*)?)/i);
+  return normalizePromptUrl(hostnameMatch?.[0]);
+}
+
 const VALID_MODES = new Set(['aria', 'dom', 'auto']);
 
 /**
  * Parse CLI flags from argv.
  * Strips recognised flags and returns remaining positional args + parsed options.
- * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean, obeyRobots: boolean }}
+ * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean, obeyRobots: boolean, ignoreAugmentations: boolean }}
  */
 function parseCliFlags() {
   const argv = process.argv.slice(2);
@@ -159,6 +191,7 @@ function parseCliFlags() {
   let mode = 'auto';
   let annotate = false;
   let obeyRobots = process.env.OBEY_ROBOTS === 'true';
+  let ignoreAugmentations = false;
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--mode' && argv[i + 1]) {
@@ -175,21 +208,24 @@ function parseCliFlags() {
       annotate = true;
     } else if (argv[i] === '--obey-robots') {
       obeyRobots = true;
+    } else if (argv[i] === '--raw' || argv[i] === '--ignore-augmentations') {
+      ignoreAugmentations = true;
     } else {
       remaining.push(argv[i]);
     }
   }
 
-  return { args: remaining, mode, annotate, obeyRobots };
+  return { args: remaining, mode, annotate, obeyRobots, ignoreAugmentations };
 }
 
 /**
  * Get operation options from environment + CLI flags
  * @param {string} mode - mode from CLI flags
  * @param {boolean} annotate - annotate mode from CLI flags
+ * @param {boolean} ignoreAugmentations - ignore augmentations from CLI flags
  * @returns {Object} Operation options
  */
-export function getOperationOptions(mode, annotate = false) {
+export function getOperationOptions(mode, annotate = false, ignoreAugmentations = false) {
   const temperature = parseFloat(process.env.AI_TEMPERATURE || '0');
 
   if (isNaN(temperature) || temperature < 0 || temperature > 2) {
@@ -200,7 +236,7 @@ export function getOperationOptions(mode, annotate = false) {
     );
   }
 
-  return { temperature, mode, annotate };
+  return { temperature, mode, annotate, ignoreAugmentations };
 }
 
 /**
@@ -232,6 +268,7 @@ function printUsage(stream = process.stdout) {
     '  --mode aria   Force ARIA accessibility tree (ariaSnapshot)',
     '  --mode dom    Force DOM simplifier + XPath',
     '  --mode auto   Auto-select based on quality (default)',
+    '  --raw, --ignore-augmentations   Skip domain-specific augmentations',
     '  ANNOTATED_SCREENSHOTS_ON_FAILURE=true  Auto-capture on action failure',
     '',
     'snap subcommand flags:',
@@ -375,7 +412,7 @@ async function run() {
     // parseCliFlags reads process.argv, so we temporarily shadow it
     const savedArgv = process.argv;
     process.argv = ['node', 'src/index.js', ...effectiveArgv.slice(2)];
-    const { args, mode, annotate, obeyRobots } = parseCliFlags();
+    const { args, mode, annotate, obeyRobots, ignoreAugmentations } = parseCliFlags();
     process.argv = savedArgv;
 
     // The prompt is the first remaining positional argument
@@ -540,23 +577,38 @@ async function run() {
       process.exit(1);
     }
 
+    const targetUrl = extractTargetUrlFromPrompt(prompt);
+    if (targetUrl) {
+      process.env.TARGET_URL = targetUrl;
+    }
+
     // robots.txt compliance check (opt-in via --obey-robots or OBEY_ROBOTS=true)
-    if (obeyRobots) {
-      const urlMatch = prompt.match(/https?:\/\/\S+/);
-      const targetUrl = urlMatch ? urlMatch[0].replace(/['")\]]+$/, '') : null;
-      if (targetUrl) {
-        const robotsResult = await checkRobots(targetUrl);
-        if (!robotsResult.allowed) {
-          const error = new CliError(
-            'ROBOTS_DISALLOWED',
-            `Target URL is disallowed by robots.txt: ${targetUrl}. ` +
-            'Remove --obey-robots to bypass this check, or target a different URL.'
-          );
-          logger.error(error.message);
-          emitStructuredError(error);
-          process.exit(1);
-        }
+    if (obeyRobots && targetUrl) {
+      const robotsResult = await checkRobots(targetUrl);
+      if (!robotsResult.allowed) {
+        const error = new CliError(
+          'ROBOTS_DISALLOWED',
+          `Target URL is disallowed by robots.txt: ${targetUrl}. ` +
+          'Remove --obey-robots to bypass this check, or target a different URL.'
+        );
+        logger.error(error.message);
+        emitStructuredError(error);
+        process.exit(1);
       }
+    }
+
+    // Get browser and operation configuration before any AI calls so
+    // invalid local config fails before provider auth or prompt parsing.
+    logger.debug('Loading configuration');
+    let browserConfig;
+    let operationOptions;
+    try {
+      browserConfig = getBrowserConfig();
+      operationOptions = getOperationOptions(mode, annotate, ignoreAugmentations);
+    } catch (err) {
+      logger.error(err.message);
+      emitStructuredError(ensureCliError(err, 'CONFIG_ERROR'));
+      process.exit(1);
     }
 
     // Validate required environment variables based on provider
@@ -575,28 +627,19 @@ async function run() {
     // Initialize AI provider
     logger.debug('Initializing AI provider');
     const aiProvider = createAIProvider();
-
-    // Get browser and operation configuration
-    logger.debug('Loading configuration');
-    let browserConfig;
-    let operationOptions;
-    try {
-      browserConfig = getBrowserConfig();
-      operationOptions = getOperationOptions(mode, annotate);
-    } catch (err) {
-      logger.error(err.message);
-      emitStructuredError(ensureCliError(err, 'CONFIG_ERROR'));
-      process.exit(1);
-    }
+    const ops = new Operations({ aiProvider }, operationOptions);
 
     const executionTimeoutMs = parseExecutionTimeoutMs();
 
     logger.debug('Browser configuration', { ...browserConfig, channel: browserConfig.channel || 'default' });
     logger.debug('Operation options', operationOptions);
 
+    // Initialize InfraManager before resolving browser to enable proactive routing
+    await infraManager.init();
+
     // Launch the browser via the browser-manager subsystem.
     logger.info('Launching browser');
-    const browserHandle = await resolveBrowser(process.env, browserConfig);
+    const browserHandle = await resolveBrowser({ ...process.env }, browserConfig);
     const browser = browserHandle.browser;
 
     try {
@@ -642,21 +685,18 @@ async function run() {
 
       const page = await context.newPage();
 
-      // Create Operations instance with context and options
-      const operations = new Operations(
-        {
-          aiProvider: aiProvider,
-          page: page,
-        },
-        operationOptions
-      );
+      // Update operations with real handle/page
+      ops.ctx.page = page;
+      ops.domSimplifier.page = page;
+      ops.annotationService.page = page;
+      ops.dialogManager.page = page;
+      ops.ctx.browserHandle = browserHandle;
 
-      // Parse task description
       logger.info('Parsing task description');
       let taskDescription;
 
       try {
-        taskDescription = await operations.parseTaskDescription(prompt);
+        taskDescription = await ops.parseTaskDescription(prompt);
       } catch (error) {
         const cliError = ensureCliError(error, 'AI_PARSE_ERROR');
         logger.error('Failed to parse task description. ' +
@@ -669,14 +709,15 @@ async function run() {
         process.exit(1);
       }
 
-      logger.info('Task description parsed');
-      logger.debug('Parsed task', JSON.stringify(taskDescription, null, 2));
+      if (taskDescription?.url) {
+        process.env.TARGET_URL = taskDescription.url;
+      }
 
       // Execute task
       try {
         logger.info('Starting task execution');
         if (executionTimeoutMs == null) {
-          await operations.executeTask(taskDescription);
+          await ops.executeTask(taskDescription);
         } else {
           let timeoutId;
           const timeoutPromise = new Promise((_, reject) => {
@@ -690,20 +731,20 @@ async function run() {
           });
 
           try {
-            await Promise.race([operations.executeTask(taskDescription), timeoutPromise]);
+            await Promise.race([ops.executeTask(taskDescription), timeoutPromise]);
           } finally {
             clearTimeout(timeoutId);
           }
         }
 
         logger.info('Task execution completed');
-        logger.info('Extracted data:', JSON.stringify(operations.extracts, null, 2));
+        logger.info('Extracted data:', JSON.stringify(ops.extracts, null, 2));
 
         // Report token usage
         logger.info('Token usage summary', {
-          promptTokens: operations.tokenUsage.prompt,
-          completionTokens: operations.tokenUsage.completion,
-          totalTokens: operations.tokenUsage.total
+          promptTokens: ops.tokenUsage.prompt,
+          completionTokens: ops.tokenUsage.completion,
+          totalTokens: ops.tokenUsage.total
         });
       } catch (error) {
         const cliError = ensureCliError(error, 'RUNTIME_ERROR');

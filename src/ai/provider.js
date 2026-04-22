@@ -2,6 +2,7 @@ import { openai, createOpenAI } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { google } from '@ai-sdk/google';
 import { generateText } from 'ai';
+import { xrrService } from '../services/XrrService.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -136,6 +137,10 @@ export function createAIProvider() {
  * @returns {Promise<Object>} Normalized response with content and usage
  */
 export async function generateAIResponse(modelInstance, messages, options = {}) {
+  return xrrService.recordAiCall(messages, options, () => _generateAIResponse(modelInstance, messages, options));
+}
+
+async function _generateAIResponse(modelInstance, messages, options = {}) {
   let lastError;
   let attempt = 0;
 

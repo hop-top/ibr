@@ -27,9 +27,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import logger from '../utils/logger.js';
 import { canonicalizeChannel, getEntry, listEntries, NATIVE_CHANNELS } from './registry.js';
 import * as playwrightLaunch from './launchers/playwright-launch.js';
 import * as acquirer from './acquirer.js';
+import { infraManager } from './resolvers/InfraManager.js';
 import {
   isKnownBroken,
   recordBroken,
@@ -254,11 +256,21 @@ function stepLocalProbe(channelId, { platform = os.platform(), exists = fs.exist
 // BrowserContext.newContext() (Playwright context options cover
 // viewport/userAgent/locale/permissions/etc, not headless/slowMo/timeout).
 // Split so the CDP connect path doesn't hand launch keys to newContext().
-const LAUNCH_ONLY_KEYS = new Set(['headless', 'slowMo', 'timeout', 'executablePath', 'channel']);
+const LAUNCH_ONLY_KEYS = new Set([
+  'headless',
+  'slowMo',
+  'timeout',
+  'executablePath',
+  'channel',
+]);
+const INTERNAL_OVERRIDE_KEYS = new Set(['BROWSER_CHANNEL']);
 function splitOverrides(overrides = {}) {
   const launchOptions = {};
   const contextOptions = {};
   for (const [k, v] of Object.entries(overrides)) {
+    if (INTERNAL_OVERRIDE_KEYS.has(k)) {
+      continue;
+    }
     if (LAUNCH_ONLY_KEYS.has(k)) {
       launchOptions[k] = v;
     } else {
@@ -279,6 +291,16 @@ async function dispatch(record, overrides, env) {
     });
     handle.ownership = 'launch';
     return handle;
+  }
+
+  if (record.kind === 'cloud-server') {
+    const connector = await import('./launchers/playwright-connect.js');
+    const connected = await connector.connect({
+      wsEndpoint: record.wsEndpoint,
+      contextOptions,
+    });
+    connected.ownership = 'connect-cloud';
+    return connected;
   }
 
   if (record.kind === 'cdp-server') {
@@ -370,12 +392,36 @@ export function emitResolved(record, channelId) {
  * @param {object} env
  * @returns {{ record: object, channelId: string|null }}
  */
-export function resolveRecord(env) {
+export function resolveRecord(env, overrides = {}) {
+  // Step 0: Check explicit override from caller (e.g. switch_provider during heal)
+  if (overrides.BROWSER_CHANNEL) {
+      const providerId = canonicalizeChannel(overrides.BROWSER_CHANNEL);
+      const cloudRecord = infraManager.resolveProvider(providerId);
+      if (cloudRecord) {
+          logger.debug('resolver: using explicit provider override', { providerId });
+          return { record: { ...cloudRecord, source: 'override' }, channelId: providerId };
+      }
+  }
+
+  // Step 0.1: Check InfraManager for proactive cloud routing if URL is provided in env
+  if (env && env.TARGET_URL) {
+      const strategy = infraManager.getStrategyForUrl(env.TARGET_URL);
+      logger.debug('resolver: infrastructure strategy for URL', { url: env.TARGET_URL, strategy });
+      if (strategy.stage === 'proactive' && strategy.providers[0] !== 'local') {
+          const providerId = strategy.providers[0];
+          const cloudRecord = infraManager.resolveProvider(providerId);
+          if (cloudRecord) {
+              logger.debug('resolver: applying proactive cloud routing policy', { providerId });
+              return { record: { ...cloudRecord, source: 'infra-policy' }, channelId: providerId };
+          }
+      }
+  }
+
   // Step 1: BROWSER_EXECUTABLE_PATH override (with lightpanda special case).
   const exec = stepExecPath(env);
   if (exec) {
-    const channelId = canonicalizeChannel(env.BROWSER_CHANNEL);
-    return { record: exec, channelId: exec.channel ?? channelId ?? null };
+    const channelId = exec.channel ?? canonicalizeChannel(env.BROWSER_CHANNEL) ?? null;
+    return { record: exec, channelId };
   }
 
   // Step 2 (T-0030): BROWSER_CDP_URL / LIGHTPANDA_WS — connect-only.
@@ -454,7 +500,7 @@ export async function resolve(env, overrides = {}) {
 }
 
 async function resolveInner(env, overrides = {}) {
-  let { record, channelId } = resolveRecord(env);
+  let { record, channelId } = resolveRecord(env, overrides);
 
   // Steps 4 + 5: cache + download via acquirer (cdp-server downloadable only).
   if (record.kind === '__needs_acquire__') {

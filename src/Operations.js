@@ -23,6 +23,9 @@ import { ObservabilityBuffer } from './observability/ObservabilityBuffer.js';
 import { AnnotationService } from './services/AnnotationService.js';
 import { streamer } from './observability/NdjsonStreamer.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
+import { augmentationEngine } from './services/AugmentationEngine.js';
+import { HealingService } from './services/HealingService.js';
+import { infraManager } from './browser/resolvers/InfraManager.js';
 import { CliError, ensureCliError } from './utils/cliErrors.js';
 
 /** Strip query params from URL before emitting to NDJSON stream (avoid leaking tokens/keys). */
@@ -55,6 +58,9 @@ export class Operations {
         this._requestStartTimes = new WeakMap();
         this.annotationService = new AnnotationService(ctx.page);
         this.annotateMode = !!options.annotate;
+        this.ignoreAugmentations = !!options.ignoreAugmentations;
+        this.augmentationEngine = augmentationEngine;
+        this.healingService = new HealingService(this);
         this.dialogManager = new DialogManager(ctx.page, {
             autoAccept: DIALOG_AUTO_ACCEPT,
             defaultPromptText: DIALOG_DEFAULT_PROMPT_TEXT,
@@ -141,6 +147,22 @@ export class Operations {
         }
     }
 
+    #getCurrentPageUrl() {
+        const pageUrl = this.ctx?.page?.url;
+        if (typeof pageUrl === 'function') {
+            try {
+                const resolved = pageUrl.call(this.ctx.page);
+                if (typeof resolved === 'string' && resolved.length > 0) {
+                    return resolved;
+                }
+            } catch (error) {
+                logger.debug('Failed to read current page url', { error: error.message });
+            }
+        }
+
+        return typeof this.url === 'string' && this.url.length > 0 ? this.url : null;
+    }
+
     async #executeInstructions(instructions) {
         for (const instruction of instructions) {
             this.executionIndex++;
@@ -158,8 +180,11 @@ export class Operations {
         const taskStartMs = Date.now();
         streamer.taskStart({ prompt: taskDescription.url });
 
-        // Initialize cache
+        // Initialize cache, augmentation engine and infra manager
         await this.cacheManager.init();
+        await this.augmentationEngine.init();
+        await this.healingService.init();
+        await infraManager.init();
         this.url = taskDescription.url;
 
         // Reset observability buffer; set page origin for cross-origin detection
@@ -645,26 +670,94 @@ export class Operations {
                     await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
 
                     const actionType = action.type?.toLowerCase();
-                    switch (actionType) {
-                        case 'click':
-                            logger.info(`${context}: Clicking element`, { locator: locatorDesc });
-                            await locator.click();
-                            break;
-                        case 'fill':
-                            logger.info(`${context}: Filling element with text`, { locator: locatorDesc, valueLength: action.value?.length || 0 });
-                            await locator.fill(action.value);
-                            break;
-                        case 'type':
-                            logger.info(`${context}: Typing into element`, { locator: locatorDesc, valueLength: action.value?.length || 0 });
-                            await locator.type(action.value);
-                            break;
-                        case 'press':
-                            logger.info(`${context}: Pressing key`, { locator: locatorDesc, key: action.value });
-                            await locator.press(action.value);
-                            break;
-                        default:
-                            logger.warn(`${context}: Unknown action type`, { actionType });
+                    const performAction = async () => {
+                        switch (actionType) {
+                            case 'click':
+                                logger.info(`${context}: Clicking element`, { locator: locatorDesc });
+                                await locator.click();
+                                break;
+                            case 'fill':
+                                logger.info(`${context}: Filling element with text`, { locator: locatorDesc, valueLength: action.value?.length || 0 });
+                                await locator.fill(action.value);
+                                break;
+                            case 'type':
+                                logger.info(`${context}: Typing into element`, { locator: locatorDesc, valueLength: action.value?.length || 0 });
+                                await locator.type(action.value);
+                                break;
+                            case 'press':
+                                logger.info(`${context}: Pressing key`, { locator: locatorDesc, key: action.value });
+                                await locator.press(action.value);
+                                break;
+                            default:
+                                logger.warn(`${context}: Unknown action type`, { actionType });
+                        }
+                    };
+
+                    try {
+                        await performAction();
+                    } catch (actionError) {
+                        // Attempt to heal if not already raw/ignored
+                        if (!this.ignoreAugmentations) {
+                            const fix = await this.healingService.attemptHeal(this.ctx.page, instruction, locator, actionError);
+                            if (fix) {
+                                if (fix.action === 'switch_provider') {
+                                    logger.info(`${context}: Switching infrastructure`, { provider: fix.provider });
+                                    // 1. Resolve new infra
+                                    const providerRecord = infraManager.resolveProvider(fix.provider);
+                                    if (providerRecord) {
+                                        // 2. Extract current state (cookies)
+                                        const cookies = await this.ctx.page.context().cookies();
+                                        
+                                        // 3. Teardown current browser
+                                        await this.ctx.browserHandle.close();
+                                        
+                                        // 4. Connect to new infra
+                                        // We need resolveBrowser to handle this record kind or similar logic
+                                        // Actually, I should update resolveBrowser to support direct record kinds
+                                        // But for now, let's assume we can trigger a re-resolve with overrides
+                                        const { resolve } = await import('./browser/resolver.js');
+                                        const newHandle = await resolve(process.env, { 
+                                            // Force the new provider via env override or direct record
+                                            BROWSER_CHANNEL: fix.provider
+                                        });
+                                        
+                                        // 5. Restore state
+                                        await newHandle.context.addCookies(cookies);
+                                        const newPage = await newHandle.context.newPage();
+                                        
+                                        const resumeUrl = this.#getCurrentPageUrl();
+
+                                        // 6. Update context and resume
+                                        this.ctx.browserHandle = newHandle;
+                                        this.ctx.page = newPage;
+                                        this.annotationService.page = newPage;
+                                        this.dialogManager.page = newPage;
+                                        this.domSimplifier.page = newPage;
+
+                                        if (resumeUrl) {
+                                            await newPage.goto(resumeUrl, { waitUntil: 'networkidle' });
+                                        }
+                                        
+                                        // Re-resolve the locator on the new page
+                                        // Note: this assumes descriptor is still valid
+                                        locator = resolveElement(newPage, descriptor);
+                                        await performAction();
+                                        return;
+                                    }
+                                }
+
+                                await this.augmentationEngine.upsertRule(fix);
+                                // Retry action ONCE
+                                logger.info(`${context}: Retrying action after successful heal`, { ruleId: fix.id });
+                                await performAction();
+                            } else {
+                                throw actionError;
+                            }
+                        } else {
+                            throw actionError;
+                        }
                     }
+
                     streamer.action({
                         actionType: actionType || instruction.name,
                         selector: locatorDesc,
@@ -764,6 +857,61 @@ export class Operations {
      * Returns {context: string, domTree: Object|null, isAria: boolean}
      */
     async #getPageContext() {
+        const url = this.#getCurrentPageUrl();
+        const activeRules = url ? this.augmentationEngine.getRulesForUrl(url) : [];
+
+        if (!this.ignoreAugmentations && activeRules.length > 0) {
+            const ruleIds = activeRules.map(r => r.id);
+            logger.info('Applying augmentations to page', { url, count: activeRules.length, rules: ruleIds });
+            await this.ctx.page.evaluate((rules) => {
+                rules.forEach(rule => {
+                    // 1. DOM Mutations: Remove
+                    rule.domMutations?.remove?.forEach(sel => {
+                        document.querySelectorAll(sel).forEach(el => el.remove());
+                    });
+
+                    // 2. DOM Mutations: Isolate
+                    if (rule.domMutations?.isolate?.length > 0) {
+                        const targets = rule.domMutations.isolate.flatMap(sel => 
+                            Array.from(document.querySelectorAll(sel))
+                        );
+                        if (targets.length > 0) {
+                            // Keep only targets and their ancestors
+                            const keep = new Set();
+                            targets.forEach(t => {
+                                let curr = t;
+                                while (curr) {
+                                    keep.add(curr);
+                                    curr = curr.parentElement;
+                                }
+                            });
+                            const all = document.querySelectorAll('*');
+                            all.forEach(el => {
+                                if (!keep.has(el) && el.parentElement && el.tagName !== 'HTML' && el.tagName !== 'BODY' && el.tagName !== 'HEAD') {
+                                    el.remove();
+                                }
+                            });
+                        }
+                    }
+
+                    // 3. DOM Mutations: AddClass
+                    rule.domMutations?.addClass?.forEach(({ selector, class: className }) => {
+                        document.querySelectorAll(selector).forEach(el => el.classList.add(className));
+                    });
+
+                    // 4. Scripting: evaluateBeforeSnapshot
+                    if (rule.scripting?.evaluateBeforeSnapshot) {
+                        try {
+                            // Indirect eval to run in global scope
+                            (0, eval)(rule.scripting.evaluateBeforeSnapshot);
+                        } catch (err) {
+                            console.error(`Augmentation script error [${rule.id}]:`, err.message);
+                        }
+                    }
+                });
+            }, activeRules);
+        }
+
         const snapshot = await getSnapshot(this.ctx.page);
         const { mode, reason } = selectMode(snapshot, this.mode);
 
