@@ -90,10 +90,14 @@ function stripCookiesFlag(argv) {
 
 /**
  * Get browser configuration from environment or use defaults
+ * @param {boolean} interactive - Force non-headless if true
  * @returns {Object} Browser configuration
  */
-function getBrowserConfig() {
-  const headless = process.env.BROWSER_HEADLESS?.toLowerCase() === 'true';
+function getBrowserConfig(interactive = false) {
+  let headless = process.env.BROWSER_HEADLESS?.toLowerCase() !== 'false';
+  if (interactive) {
+    headless = false;
+  }
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
   // Channel + executablePath are resolved by src/browser/resolver.js from
@@ -183,7 +187,7 @@ const VALID_MODES = new Set(['aria', 'dom', 'auto']);
 /**
  * Parse CLI flags from argv.
  * Strips recognised flags and returns remaining positional args + parsed options.
- * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean, obeyRobots: boolean, ignoreAugmentations: boolean }}
+ * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean, obeyRobots: boolean, ignoreAugmentations: boolean, interactive: boolean }}
  */
 function parseCliFlags() {
   const argv = process.argv.slice(2);
@@ -192,6 +196,7 @@ function parseCliFlags() {
   let annotate = false;
   let obeyRobots = process.env.OBEY_ROBOTS === 'true';
   let ignoreAugmentations = false;
+  let interactive = false;
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--mode' && argv[i + 1]) {
@@ -206,6 +211,8 @@ function parseCliFlags() {
       mode = val;
     } else if (argv[i] === '--annotate' || argv[i] === '-a') {
       annotate = true;
+    } else if (argv[i] === '--interactive' || argv[i] === '-i') {
+      interactive = true;
     } else if (argv[i] === '--obey-robots') {
       obeyRobots = true;
     } else if (argv[i] === '--raw' || argv[i] === '--ignore-augmentations') {
@@ -215,7 +222,7 @@ function parseCliFlags() {
     }
   }
 
-  return { args: remaining, mode, annotate, obeyRobots, ignoreAugmentations };
+  return { args: remaining, mode, annotate, obeyRobots, ignoreAugmentations, interactive };
 }
 
 /**
@@ -305,8 +312,8 @@ function printUsage(stream = process.stdout) {
     '  instructions:',
     '    - get my account name"',
     '',
-    '  # Headless mode (CI/scripts)',
-    '  BROWSER_HEADLESS=true ibr "url: https://example.com',
+    '  # Show browser (non-headless)
+    '  BROWSER_HEADLESS=false ibr "url: https://example.com',
     '  instructions:',
     '    - extract the page title"',
     '',
@@ -329,8 +336,10 @@ function printUsage(stream = process.stdout) {
     '  BROWSER_CHANNEL       - Browser to use: brave, chrome, msedge, chromium, arc, comet',
     '  BROWSER_EXECUTABLE_PATH - Explicit path to browser binary (overrides BROWSER_CHANNEL)',
     '  BROWSER_PROFILE       - Browser profile for cookie import [default: Default]',
-    '  BROWSER_HEADLESS      - Run headless (true/false) [default: false]',
+    '  BROWSER_HEADLESS      - Run headless (true/false) [default: true]',
+    '  --interactive, -i     - Run in interactive mode (show browser, enable HITM)',
     '  BROWSER_SLOWMO        - Slow down actions (ms) [default: 100]',
+
     '  OBEY_ROBOTS           - Check robots.txt before automation (true/false) [default: false]',
     '  IBR_DAEMON            - Enable daemon mode (true/false) [default: false]',
     '  IBR_STATE_FILE        - Daemon state file path [default: ~/.ibr/server.json]',
@@ -412,7 +421,7 @@ async function run() {
     // parseCliFlags reads process.argv, so we temporarily shadow it
     const savedArgv = process.argv;
     process.argv = ['node', 'src/index.js', ...effectiveArgv.slice(2)];
-    const { args, mode, annotate, obeyRobots, ignoreAugmentations } = parseCliFlags();
+    const { args, mode, annotate, obeyRobots, ignoreAugmentations, interactive } = parseCliFlags();
     process.argv = savedArgv;
 
     // The prompt is the first remaining positional argument
@@ -603,7 +612,7 @@ async function run() {
     let browserConfig;
     let operationOptions;
     try {
-      browserConfig = getBrowserConfig();
+      browserConfig = getBrowserConfig(interactive);
       operationOptions = getOperationOptions(mode, annotate, ignoreAugmentations);
     } catch (err) {
       logger.error(err.message);

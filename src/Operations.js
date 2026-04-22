@@ -9,6 +9,7 @@ import {
     makeExtractInstructionMessageDom,
 } from "./utils/prompts.js";
 import { DomSimplifier } from './DomSimplifier.js';
+import readline from 'readline';
 import { SnapshotDiffer } from './utils/SnapshotDiffer.js';
 import { getSnapshot, resolveElement, selectMode } from './utils/ariaSimplifier.js';
 import { INSTRUCTION_EXECUTION_DELAY_MS, INSTRUCTION_EXECUTION_JITTER_MS, PAGE_LOADING_DELAY_MS, DIALOG_AUTO_ACCEPT, DIALOG_BUFFER_CAPACITY, DIALOG_DEFAULT_PROMPT_TEXT } from "./utils/constants.js";
@@ -138,6 +139,10 @@ export class Operations {
             case 'press':
             case 'scroll':
                 return await this.#actionInstruction(instruction);
+            case 'wait_for_human':
+                return await this.#waitForHumanInstruction(instruction);
+            case 'wait':
+                return await this.#waitInstruction(instruction);
             default:
                 throw new Error(
                     `Unknown instruction type: "${instruction.name}". ` +
@@ -1132,5 +1137,41 @@ export class Operations {
                 ? error
                 : ensureCliError(error, 'RUNTIME_ERROR', { message: errMsg });
         }
+    }
+
+    async #waitForHumanInstruction(instruction) {
+        const context = createErrorContext('wait for human instruction', {
+            instructionIndex: this.executionIndex
+        });
+
+        const reason = instruction.prompt || 'Manual intervention needed';
+        logger.warn(`${context}: PAUSED - ${reason}`);
+        console.warn(`\n[ibr] PAUSED: ${reason}`);
+        console.warn(`[ibr] Please perform the necessary actions in the browser window.`);
+        console.warn(`[ibr] Press ENTER in this terminal when ready to resume...`);
+
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+
+        return new Promise((resolve) => {
+            rl.on('line', () => {
+                rl.close();
+                logger.info(`${context} resumed`);
+                resolve();
+            });
+        });
+    }
+
+    async #waitInstruction(instruction) {
+        const context = createErrorContext('wait instruction', {
+            instructionIndex: this.executionIndex
+        });
+
+        const seconds = parseInt(instruction.prompt, 10) || 5;
+        logger.info(`${context}: Waiting for ${seconds} seconds`);
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        logger.info(`${context} completed`);
     }
 }

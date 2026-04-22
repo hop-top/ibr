@@ -18,7 +18,7 @@ natural language prompts into structured action plans.
 ## Acceptance Criteria
 
 - All instruction types (click, fill, type, press, extract, repeatedly,
-  if found) parsed correctly in unit tests.
+  if found, wait_for_human, wait) parsed correctly in unit tests.
 - Malformed prompts produce parse errors with descriptive messages.
 - Tests run without a real browser or AI API call (mocked AI responses).
 

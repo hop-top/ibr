@@ -43,6 +43,18 @@ Each instruction object in the "instructions" array must follow one of these for
     "prompt": "what element or action to interact with"
     }
 
+    Wait for human intervention:
+    {
+    "name": "wait_for_human",
+    "prompt": "reason for waiting (e.g. 'solve the captcha')"
+    }
+
+    Wait for duration:
+    {
+    "name": "wait",
+    "prompt": "duration in seconds (e.g. '5')"
+    }
+
 Guidelines:
 
     Identify and extract the URL exactly as written.

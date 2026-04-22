@@ -20,7 +20,7 @@ natural language.
 
 - `ibr` accepts YAML-like prompt string as CLI argument.
 - Navigates to `url` before executing instructions.
-- Executes `click`, `fill`, `type`, `press` in sequence.
+- Executes `click`, `fill`, `type`, `press`, `wait_for_human`, `wait` in sequence.
 - Times out gracefully with an actionable error if element not found.
 
 ## E2E Coverage

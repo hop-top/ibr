@@ -1,5 +1,5 @@
 name: web-search
-description: Search the web and return ranked results with titles, URLs, and snippets
+description: Search the web and return ranked results with titles, URLs, and snippets using DuckDuckGo Lite (fast, headless-friendly)
 params:
   - name: query
     description: Search query
@@ -7,8 +7,6 @@ params:
   - name: count
     description: Number of results to extract
     default: "5"
-url: "https://www.google.com"
+url: "https://html.duckduckgo.com/html/?q={{query}}"
 instructions:
-  - type {{query}} into the search box and press Enter
-  - wait for results to load
-  - extract the top {{count}} results; for each result include title, URL, and snippet
+  - extract the top {{count}} results from the results list; for each result include title, URL, and snippet
