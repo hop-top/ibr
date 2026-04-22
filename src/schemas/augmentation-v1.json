@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AugmentationProfile",
+  "description": "Rules for augmenting web pages before processing",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the augmentation rule"
+    },
+    "urlPattern": {
+      "type": "string",
+      "description": "Regex pattern to match the URL"
+    },
+    "priority": {
+      "type": "integer",
+      "default": 100,
+      "description": "Execution priority (higher numbers run first)"
+    },
+    "domMutations": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "remove": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "CSS selectors of elements to remove"
+        },
+        "isolate": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "CSS selectors of elements to keep (removes everything else)"
+        },
+        "addClass": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "selector": { "type": "string" },
+              "class": { "type": "string" }
+            },
+            "required": ["selector", "class"]
+          }
+        }
+      }
+    },
+    "scripting": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "evaluateBeforeSnapshot": {
+          "type": "string",
+          "description": "JavaScript code to execute in the page before taking a snapshot"
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "lastVerified": { "type": "string", "format": "date-time" },
+        "failureVotes": { "type": "integer", "default": 0 }
+      }
+    }
+  },
+  "required": ["id", "urlPattern"]
+}

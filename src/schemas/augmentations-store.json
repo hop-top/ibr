@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AugmentationsStore",
+  "description": "Schema for the augmentations.json file",
+  "type": "object",
+  "properties": {
+    "version": { "type": "integer", "default": 1 },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "augmentation-v1.json" }
+    }
+  },
+  "required": ["rules"]
+}

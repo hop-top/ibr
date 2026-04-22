@@ -11,6 +11,12 @@ import {
 // vars, returning the exported values via stdout JSON.
 function evalConstants(env) {
   const root = fileURLToPath(new URL('../../..', import.meta.url));
+  const childEnv = { ...process.env, ...env };
+  for (const [key, value] of Object.entries(childEnv)) {
+    if (value === null) {
+      delete childEnv[key];
+    }
+  }
   const script = [
     `import('./src/utils/constants.js').then(m => {`,
     `  process.stdout.write(JSON.stringify({`,
@@ -26,7 +32,7 @@ function evalConstants(env) {
     {
       input: script,
       encoding: 'utf-8',
-      env: { ...process.env, ...env },
+      env: childEnv,
       cwd: root,
     }
   );
@@ -88,37 +94,37 @@ describe('constants', () => {
   // with the supplied env vars (vitest module cache cannot be re-evaluated).
 
   describe('parseEnvMs — regression: NaN/empty falls back to default', () => {
-    it('empty string → falls back to hard-coded default (2500 / 2000 / 500)', () => {
+    const defaultVals = evalConstants({
+      PAGE_LOADING_DELAY_MS: null,
+      INSTRUCTION_EXECUTION_DELAY_MS: null,
+      INSTRUCTION_EXECUTION_JITTER_MS: null,
+    });
+
+    it('empty string → falls back to module defaults', () => {
       const vals = evalConstants({
         PAGE_LOADING_DELAY_MS: '',
         INSTRUCTION_EXECUTION_DELAY_MS: '',
         INSTRUCTION_EXECUTION_JITTER_MS: '',
       });
-      expect(vals.PAGE_LOADING_DELAY_MS).toBe(2500);
-      expect(vals.INSTRUCTION_EXECUTION_DELAY_MS).toBe(2000);
-      expect(vals.INSTRUCTION_EXECUTION_JITTER_MS).toBe(500);
+      expect(vals).toEqual(defaultVals);
     });
 
-    it('non-numeric string → falls back to hard-coded default', () => {
+    it('non-numeric string → falls back to module defaults', () => {
       const vals = evalConstants({
         PAGE_LOADING_DELAY_MS: 'banana',
         INSTRUCTION_EXECUTION_DELAY_MS: 'NaN',
         INSTRUCTION_EXECUTION_JITTER_MS: 'undefined',
       });
-      expect(vals.PAGE_LOADING_DELAY_MS).toBe(2500);
-      expect(vals.INSTRUCTION_EXECUTION_DELAY_MS).toBe(2000);
-      expect(vals.INSTRUCTION_EXECUTION_JITTER_MS).toBe(500);
+      expect(vals).toEqual(defaultVals);
     });
 
-    it('negative integer → falls back to hard-coded default', () => {
+    it('negative integer → falls back to module defaults', () => {
       const vals = evalConstants({
         PAGE_LOADING_DELAY_MS: '-1',
         INSTRUCTION_EXECUTION_DELAY_MS: '-500',
         INSTRUCTION_EXECUTION_JITTER_MS: '-100',
       });
-      expect(vals.PAGE_LOADING_DELAY_MS).toBe(2500);
-      expect(vals.INSTRUCTION_EXECUTION_DELAY_MS).toBe(2000);
-      expect(vals.INSTRUCTION_EXECUTION_JITTER_MS).toBe(500);
+      expect(vals).toEqual(defaultVals);
     });
 
     it('valid non-negative integer → uses supplied value', () => {

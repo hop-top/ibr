@@ -13,11 +13,14 @@ describe('registry — ENTRIES', () => {
     expect(ids).toEqual([
       'arc',
       'brave',
+      'browser-use',
+      'browserless',
       'chrome',
       'chromium',
       'comet',
       'lightpanda',
       'msedge',
+      'pod',
     ]);
   });
 
@@ -26,14 +29,25 @@ describe('registry — ENTRIES', () => {
       const e = getEntry(id);
       expect(e).toBeTruthy();
       expect(e.id).toBe(id);
-      expect(['chromium-launch', 'cdp-server']).toContain(e.kind);
+      expect(['chromium-launch', 'cdp-server', 'cloud-server']).toContain(e.kind);
       if (e.kind === 'chromium-launch') {
         expect(e.launcher).toBe('playwright-launch');
+        expect(e.localProbe).toBeTypeOf('object');
+        expect(Array.isArray(e.localProbe.darwin)).toBe(true);
+        expect(Array.isArray(e.localProbe.linux)).toBe(true);
+        expect(Array.isArray(e.localProbe.win32)).toBe(true);
       }
-      expect(e.localProbe).toBeTypeOf('object');
-      expect(Array.isArray(e.localProbe.darwin)).toBe(true);
-      expect(Array.isArray(e.localProbe.linux)).toBe(true);
-      expect(Array.isArray(e.localProbe.win32)).toBe(true);
+      if (e.kind === 'cdp-server') {
+        expect(e.launcher).toBe('playwright-connect');
+        expect(e.localProbe).toBeTypeOf('object');
+        expect(Array.isArray(e.localProbe.darwin)).toBe(true);
+        expect(Array.isArray(e.localProbe.linux)).toBe(true);
+        expect(Array.isArray(e.localProbe.win32)).toBe(true);
+      }
+      if (e.kind === 'cloud-server') {
+        expect(e.launcher).toBe('playwright-connect');
+        expect(e.urlTemplate).toBeTypeOf('string');
+      }
     }
   });
 
@@ -95,6 +109,11 @@ describe('registry — canonicalizeChannel', () => {
   it('trims whitespace', () => {
     expect(canonicalizeChannel('  brave  ')).toBe('brave');
   });
+
+  it('normalizes cloud provider aliases', () => {
+    expect(canonicalizeChannel('browser-use')).toBe('browser-use');
+    expect(canonicalizeChannel('browserless')).toBe('browserless');
+  });
 });
 
 describe('registry — getEntry', () => {
@@ -104,5 +123,15 @@ describe('registry — getEntry', () => {
 
   it('returns the entry by canonical id', () => {
     expect(getEntry('brave').id).toBe('brave');
+  });
+
+  it('returns cloud-server entries with url templates', () => {
+    expect(getEntry('browser-use')).toMatchObject({
+      id: 'browser-use',
+      kind: 'cloud-server',
+      launcher: 'playwright-connect',
+    });
+    expect(getEntry('browserless').urlTemplate).toContain('{{key}}');
+    expect(getEntry('pod').urlTemplate).toBe('{{key}}');
   });
 });

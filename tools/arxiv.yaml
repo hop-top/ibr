@@ -12,7 +12,6 @@ params:
     default: ""
 url: "https://arxiv.org/search/?searchtype=all&query={{query}}"
 instructions:
-  - wait for the search results to load
   - if {{category}} is not empty, look for a category filter and select {{category}}
   - extract up to {{max_results}} papers from the results list
   - for each paper extract title, authors (as a list), abstract, and arXiv URL

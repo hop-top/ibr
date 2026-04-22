@@ -35,20 +35,24 @@ export const ALIASES = {
   'microsoft edge': 'msedge',
   'panda': 'lightpanda',
   'lp': 'lightpanda',
+  'browser-use': 'browser-use',
+  'browserless': 'browserless',
 };
 
 // ── [SECTION: ENTRIES] ───────────────────────────────────────────────────────
 // Edit this section when adding new browsers.
 // T-0025 populates chrome/brave/arc/chromium/comet from EXEC_CANDIDATES.
 // T-0027 populates lightpanda entry.
+// T-0045 populates cloud-server entries.
 //
 // Entry shape:
 //   id            canonical id (matches key)
-//   kind          chromium-launch | cdp-server | native-channel
+//   kind          chromium-launch | cdp-server | native-channel | cloud-server
 //   nativeChannel optional Playwright `channel:` string passthrough
 //   localProbe    { [os.platform()]: string[] } — ordered candidate exec paths
 //   downloadable  bool (T-0026)
-//   launcher      module name under ./launchers/ for chromium-launch kind
+//   launcher      module name under ./launchers/
+//   urlTemplate   (for cloud-server) template for WebSocket URL
 
 const HOME = os.homedir();
 
@@ -204,6 +208,26 @@ export const ENTRIES = {
         },
       },
     },
+  },
+
+  // ── Cloud-server browsers ─────────────────────────────────────────────────
+  'browser-use': {
+    id: 'browser-use',
+    kind: 'cloud-server',
+    launcher: 'playwright-connect',
+    urlTemplate: 'wss://cloud.browser-use.com/connect?api_key={{key}}',
+  },
+  'browserless': {
+    id: 'browserless',
+    kind: 'cloud-server',
+    launcher: 'playwright-connect',
+    urlTemplate: 'wss://chrome.browserless.io?token={{key}}',
+  },
+  'pod': {
+    id: 'pod',
+    kind: 'cloud-server',
+    launcher: 'playwright-connect',
+    urlTemplate: '{{key}}', // For pod, key is the full SSH or WS URL
   },
 };
 
