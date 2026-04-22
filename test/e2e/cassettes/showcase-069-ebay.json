@@ -1,0 +1,4 @@
+[
+  "{\n  \"url\": \"https://www.ebay.com/itm/335261546747\",\n  \"instructions\": [\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"the price\"\n    }\n  ]\n}",
+  "[]"
+]

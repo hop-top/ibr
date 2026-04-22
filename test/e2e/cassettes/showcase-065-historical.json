@@ -1,0 +1,5 @@
+[
+  "{\n  \"url\": \"https://web.archive.org/web/20220101000000*/https://miniflux.app/blog\",\n  \"instructions\": [\n    {\n      \"name\": \"click\",\n      \"prompt\": \"the first snapshot from January 2022\"\n    },\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"the main headline\"\n    }\n  ]\n}",
+  "{\n  \"elements\": [],\n  \"type\": \"click\"\n}",
+  "[]"
+]

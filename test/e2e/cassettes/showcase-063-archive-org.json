@@ -1,0 +1,5 @@
+[
+  "{\n  \"url\": \"https://web.archive.org/save\",\n  \"instructions\": [\n    {\n      \"name\": \"fill\",\n      \"prompt\": \"URL to save with https://miniflux.app/blog\"\n    },\n    {\n      \"name\": \"click\",\n      \"prompt\": \"SAVE PAGE\"\n    }\n  ]\n}",
+  "{\n  \"elements\": [\n    {\n      \"role\": \"textbox\",\n      \"name\": \"https://\"\n    }\n  ],\n  \"type\": \"fill\",\n  \"value\": \"https://miniflux.app/blog\"\n}",
+  "{\n  \"elements\": [\n    {\n      \"role\": \"button\",\n      \"name\": \"SAVE PAGE\"\n    }\n  ],\n  \"type\": \"click\"\n}"
+]

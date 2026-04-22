@@ -1,0 +1,4 @@
+[
+  "{\n  \"url\": \"https://github.com/microsoft/playwright\",\n  \"instructions\": [\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"the number of stars\"\n    }\n  ]\n}",
+  "[ \"87k\" ]"
+]

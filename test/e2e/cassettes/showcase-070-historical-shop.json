@@ -1,0 +1,4 @@
+[
+  "{\n  \"url\": \"https://web.archive.org/web/20210601000000/https://miniflux.app/pricing\",\n  \"instructions\": [\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"the price listed on the page\"\n    }\n  ]\n}",
+  "[]"
+]

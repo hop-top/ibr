@@ -1,0 +1,4 @@
+[
+  "{\n  \"url\": \"https://www.amazon.com/dp/B0CXBB82YP\",\n  \"instructions\": [\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"the product title\"\n    }\n  ]\n}",
+  "[\"Dogs of Amazon\"]"
+]

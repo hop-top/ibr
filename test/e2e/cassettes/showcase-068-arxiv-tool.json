@@ -1,0 +1,8 @@
+[
+  "{\n  \"url\": \"https://arxiv.org/search/?searchtype=all&query=cat:cs.AI AND browser agents\",\n  \"instructions\": [\n    {\n      \"name\": \"click\",\n      \"prompt\": \"wait for the search results to load\"\n    },\n    {\n      \"name\": \"condition\",\n      \"prompt\": \"if results are not empty\",\n      \"success_instructions\": [\n        {\n          \"name\": \"click\",\n          \"prompt\": \"look for a category filter and select\"\n        }\n      ],\n      \"failure_instructions\": []\n    },\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"up to 5 papers from the results list\"\n    },\n    {\n      \"name\": \"loop\",\n      \"prompt\": \"for each paper\",\n      \"instructions\": [\n        {\n          \"name\": \"extract\",\n          \"prompt\": \"title\"\n        },\n        {\n          \"name\": \"extract\",\n          \"prompt\": \"authors (as a list)\"\n        },\n        {\n          \"name\": \"extract\",\n          \"prompt\": \"abstract\"\n        },\n        {\n          \"name\": \"extract\",\n          \"prompt\": \"arXiv URL\"\n        }\n      ]\n    }\n  ]\n}",
+  "{\"elements\":[],\"type\":\"scroll\"}",
+  "[{\"role\": \"paragraph\", \"name\": \"Sorry, your query for all: cat:cs.AI AND browser agents produced no results.\"}]",
+  "{\n  \"elements\": [\n    {\n      \"role\": \"combobox\",\n      \"name\": \"Field to search\"\n    }\n  ],\n  \"type\": \"click\"\n}",
+  "[]",
+  "[]"
+]

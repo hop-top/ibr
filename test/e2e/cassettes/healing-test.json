@@ -1,0 +1,6 @@
+[
+  "{\"url\": \"{SERVER_URL}/paywall-a.html\", \"instructions\": [{\"name\": \"click\", \"prompt\": \"click #target\"}]}",
+  "{\"elements\": [{\"role\": \"button\", \"name\": \"I am the content\"}], \"type\": \"click\"}",
+  "{\"id\": \"auto-fix-paywall\", \"urlPattern\": \".*paywall-a\\\\.html\", \"domMutations\": { \"remove\": [\".modal\"] }}",
+  "{\"elements\": [{\"role\": \"button\", \"name\": \"I am the content\"}], \"type\": \"click\"}"
+]

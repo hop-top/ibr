@@ -1,0 +1,3 @@
+[
+  "{\n  \"url\": \"https://www.google.com\",\n  \"instructions\": [\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"title\"\n    }\n  ]\n}"
+]

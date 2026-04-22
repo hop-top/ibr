@@ -20,8 +20,32 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Dialog Handling**: Auto-accepts browser dialogs; buffers history for inspection
 - **Comprehensive Logging**: Detailed execution logs for debugging
 - **NDJSON Streaming**: `NDJSON_STREAM=true` emits structured browser events for pipeline integration
+- **Augmentation Engine**: URL-aware DOM mutations (remove, isolate, addClass) and scripting to pre-process pages
+- **Self-Healing**: Autonomous bypass of obstructions (paywalls, modals) using `@hop-top/fit` SDK
+- **Run Recording**: Deterministic record/replay of AI interactions using `@hop-top/xrr` cassettes
+- **Contextual Learning**: Healing logic learns from previous successful bypasses on similar page structures
+- **Cloud Orchestration**: Multi-provider account pooling and rotation (browser-use, browserless, etc.)
+- **Proactive Infra Routing**: URL-aware infrastructure selection (e.g. force Cloud for Jira or high-entropy domains)
+- **Infra-Switching**: Autonomous migration from local to cloud browser during self-healing
 
 ## Setup
+
+### Setup prompt
+
+Paste into Claude Code or Codex:
+
+```text
+Set up https://github.com/hop-top/ibr for me.
+
+Follow the README.md to install dependencies and run the browser installation. Configure the environment by copying `.env.example` to `.env` and ask me for my preferred AI provider and its API key. 
+
+After it is installed, verify the setup by running:
+ibr "url: https://github.com/hop-top/ibr
+instructions:
+  - extract the repository description"
+
+If the interaction works and I am logged in to GitHub (check via `--cookies chrome`), ask me whether you should star the repository for me as a quick demo.
+```
 
 ### 1. Clone and Install
 
@@ -625,6 +649,160 @@ sending the full page representation to the AI on every step, it sends only what
 
 No configuration needed. Token savings are logged at DEBUG level per `#findElements`
 call (`usedDiff`, `diffSummary`).
+
+---
+
+## Augmentations & Self-Healing
+
+`ibr` can automatically pre-process web pages to remove noise (paywalls, cookie banners) and autonomously heal itself when an action is blocked.
+
+### Augmentation Engine
+
+Site-specific rules are defined in `~/.ibr/augmentations.json`. When `ibr` navigates to a URL matching a rule's `urlPattern`, it applies DOM mutations and scripts before the AI sees the page.
+
+#### Example `augmentations.json`
+
+```json
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "clean-news-site",
+      "urlPattern": "^https://(www\\.)?news-site\\.com/.*",
+      "domMutations": {
+        "remove": [".paywall-modal", ".newsletter-popup"],
+        "isolate": ["article.main-content"]
+      },
+      "scripting": {
+        "evaluateBeforeSnapshot": "document.querySelectorAll('time').forEach(t => t.innerText = new Date().toISOString());"
+      }
+    }
+  ]
+}
+```
+
+- **remove**: Array of CSS selectors to delete from the DOM.
+- **isolate**: Array of CSS selectors to keep; everything else is removed.
+- **evaluateBeforeSnapshot**: JavaScript string executed in the browser context to normalize data or clean the UI.
+
+#### Bypass with `--raw`
+
+Use the `--raw` or `--ignore-augmentations` flag to bypass all site-specific rules:
+
+```bash
+ibr --raw "url: https://example.com\ninstructions:\n - extract title"
+```
+
+### Self-Healing (`fit` SDK)
+
+When an operation fails (e.g., a button is obscured by a modal), `ibr` enters **Heal Mode**. 
+
+1.  **Hypothesize**: It asks the AI to identify the blocking element.
+2.  **Test**: It removes the element and re-verifies if the target is now clickable.
+3.  **Learn**: Successful fixes are saved to `~/.ibr/learnings.json` indexed by the page's **structural signature**.
+4.  **Intuition**: If Site B looks structurally similar to Site A, `ibr` uses Site A's successful learnings to guide its first healing hypothesis for Site B.
+
+### Run Recording (`xrr` SDK)
+
+Every AI interaction is recorded into YAML cassettes. This enables **Deterministic Replay** for debugging and CI testing.
+
+- **Record**: Set `XRR_MODE=record` to capture live interactions.
+- **Replay**: Set `XRR_MODE=replay` to run `ibr` without calling the live AI, using only cached cassettes.
+
+Default cassette location: `~/.ibr/cassettes/` (override with `XRR_CASSETTE_DIR`).
+
+### Cloud Orchestration & Routing
+
+`ibr` can orchestrate multiple cloud browser providers (Browser-use, Browserless, etc.) to bypass bot detection, IP limits, or captchas.
+
+#### Configuration (`~/.ibr/infra.json`)
+
+Manage your cloud accounts and routing policies in `~/.ibr/infra.json` (override with `IBR_INFRA_CONFIG`):
+
+```json
+{
+  "providers": {
+    "browser-use": {
+      "accounts": [
+        { "name": "personal", "key": "sk-123" },
+        { "name": "work", "key": "sk-456" }
+      ]
+    },
+    "browserless": {
+      "accounts": [
+        { "name": "default", "key": "bl-789" }
+      ]
+    }
+  },
+  "routing": {
+    "default": "local",
+    "policies": [
+      {
+        "urlPattern": "jira\\.mycompany\\.com",
+        "providers": ["browser-use"],
+        "stage": "proactive"
+      }
+    ]
+  }
+}
+```
+
+- **Account Pooling**: `ibr` automatically rotates keys (Round-Robin) for every new session to stay within tier limits.
+- **Proactive Routing**: If a URL matches a policy with `stage: "proactive"`, `ibr` starts on that cloud provider immediately.
+- **Infra-Switching**: If local execution fails due to a block, the **Heal Mode** can autonomously suggest a switch to a cloud provider. `ibr` will migrate your session state (cookies) to the new instance and resume.
+
+---
+
+## Remote Execution with `pod`
+
+Use [`pod`](https://github.com/hop-top/pod) to provision remote compute and run `ibr` jobs on any cloud or local container.
+
+### Run a remote job
+
+```bash
+# 1. Provision a node
+pod create scraper-01 --provider hetzner --cpu 2 --ram 4
+
+# 2. Run the job
+pod exec scraper-01 -- ibr "url: https://example.com instructions: - extract title"
+```
+
+### Hybrid Workflow
+
+Attach a local `ibr` instance to a remote pod's reasoning model:
+
+```bash
+pod launch ibr --pod scraper-01 -- "url: https://example.com instructions: - extract title"
+```
+
+---
+
+## Showcase Personas & E2E Examples
+
+Practical, live-site examples demonstrating `ibr` and `pod` integration for real-world user archetypes. All examples are verified with [VCR cassettes](test/e2e/cassettes/) for deterministic replay.
+
+### [Homeowner](docs/personas/homeowner.md)
+*Focus: Personal automation, archival, and utility management.*
+- **[063: Local News Archival](docs/stories/063-local-news-archival.md)** ([Test](test/e2e/showcase/homeowner.test.js)) — Archive community blogs to the Wayback Machine.
+- **[064: Feed-based Insights](docs/stories/064-feed-insight-extraction.md)** ([Test](test/e2e/showcase/homeowner.test.js)) — Extract summaries from Miniflux news feeds.
+- **[065: Historical Research](docs/stories/065-historical-property-research.md)** ([Test](test/e2e/showcase/homeowner.test.js)) — Research property/community history via Wayback timeline.
+
+### [Business Manager](docs/personas/business-manager.md)
+*Focus: Market intelligence, lead gen, and research feeds.*
+- **[066: Pricing Audit](docs/stories/066-competitor-pricing-audit.md)** ([Test](test/e2e/showcase/business-manager.test.js)) — Compare live pricing with historical snapshots.
+- **[067: Contributor Sourcing](docs/stories/067-oss-contributor-enrichment.md)** ([Test](test/e2e/showcase/business-manager.test.js)) — Extract talent data from GitHub repository graphs.
+- **[068: AI Research Feed](docs/stories/068-arxiv-research-feed.md)** ([Test](test/e2e/showcase/business-manager.test.js)) — Automate daily briefings using the `arxiv` tool.
+
+### [Personal Shopper](docs/personas/personal-shopper.md)
+*Focus: Global arbitrage, inventory sniping, and vetting.*
+- **[069: Global Price Compare](docs/stories/069-global-price-comparison.md)** ([Narrative](docs/stories/069-global-price-comparison.md)) — Cross-region search using the `ebay` tool.
+- **[070: Historical Value](docs/stories/070-historical-value-research.md)** ([Test](test/e2e/showcase/personal-shopper.test.js)) — Verify "original" prices using historical data.
+- **[071: Review Verification](docs/stories/071-amazon-review-summary.md)** ([Narrative](docs/stories/071-amazon-review-summary.md)) — Deep-vet product quality using the `amazon` tool.
+
+### [Infrastructure Routing](test/e2e/infra-fallback.test.js)
+*Focus: Proactive and reactive cloud browser orchestration.*
+- **Cloud Fallback** — Switch to `browserless` or `browser-use` when blocked.
+- **Proactive Routing** — Match high-entropy domains (Google, Pod) to specific infra immediately.
 
 ---
 

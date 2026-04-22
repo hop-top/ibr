@@ -108,8 +108,8 @@ function startRecordingProxy(name, vars = {}) {
   }
 
   const server = http.createServer((req, res) => {
-    const isResponsesApi = req.method === 'POST' && req.url === '/responses';
-    const isChatCompletions = req.method === 'POST' && req.url === '/v1/chat/completions';
+    const isResponsesApi = req.method === 'POST' && (req.url === '/responses' || req.url === '/v1/responses');
+    const isChatCompletions = req.method === 'POST' && (req.url === '/v1/chat/completions' || req.url === '/chat/completions');
 
     if (!isResponsesApi && !isChatCompletions) {
       res.writeHead(404);
@@ -120,8 +120,12 @@ function startRecordingProxy(name, vars = {}) {
     let reqBody = '';
     req.on('data', chunk => { reqBody += chunk; });
     req.on('end', () => {
-      // Build upstream URL
-      const upstreamUrl = new URL(req.url, upstreamBase);
+      // Build upstream URL. Ensure /v1 prefix for OpenAI if missing.
+      let path = req.url;
+      if (upstreamBase.includes('openai.com') && !path.startsWith('/v1/')) {
+        path = '/v1' + path;
+      }
+      const upstreamUrl = new URL(path, upstreamBase);
       const isHttps = upstreamUrl.protocol === 'https:';
       const transport = isHttps ? https : http;
 
@@ -163,10 +167,10 @@ function startRecordingProxy(name, vars = {}) {
     });
   });
 
-  return new Promise((resolve, reject) => {
+  return new Promise((promiseResolve, reject) => {
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address();
-      resolve({
+      promiseResolve({
         baseUrl: `http://127.0.0.1:${port}`,
         close: () => new Promise(r => {
           server.close(() => {

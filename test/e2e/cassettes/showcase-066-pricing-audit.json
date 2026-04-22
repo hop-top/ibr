@@ -1,0 +1,6 @@
+[
+  "{\n  \"url\": \"https://web.archive.org/web/20231001000000/https://miniflux.app/pricing\",\n  \"instructions\": [\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"all pricing plan names\"\n    },\n    {\n      \"name\": \"click\",\n      \"prompt\": \"navigate to https://miniflux.app/pricing\"\n    },\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"current pricing plan names\"\n    }\n  ]\n}",
+  "[]",
+  "{\"elements\":[],\"type\":\"click\"}",
+  "[]"
+]

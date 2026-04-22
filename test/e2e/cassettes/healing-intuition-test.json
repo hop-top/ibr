@@ -1,0 +1,8 @@
+[
+  "{\"url\": \"{SERVER_URL}/paywall-a.html\", \"instructions\": [{\"name\": \"click\", \"prompt\": \"click #target\"}]}",
+  "{\"elements\": [{\"role\": \"button\", \"name\": \"I am the content\"}], \"type\": \"click\"}",
+  "{\"id\": \"auto-fix-paywall-a\", \"urlPattern\": \".*paywall-a\\\\.html\", \"domMutations\": { \"remove\": [\".modal\"] }}",
+  "{\"url\": \"{SERVER_URL}/paywall-b.html\", \"instructions\": [{\"name\": \"click\", \"prompt\": \"click #target\"}]}",
+  "{\"elements\": [{\"role\": \"button\", \"name\": \"I am the content\"}], \"type\": \"click\"}",
+  "{\"id\": \"auto-fix-paywall-b\", \"urlPattern\": \".*paywall-b\\\\.html\", \"domMutations\": { \"remove\": [\".modal\"] }}"
+]

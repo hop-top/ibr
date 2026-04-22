@@ -1,0 +1,5 @@
+[
+  "{\n  \"url\": \"https://miniflux.app/blog\",\n  \"instructions\": [\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"the titles and dates of the first 3 articles\"\n    },\n    {\n      \"name\": \"loop\",\n      \"prompt\": \"for each article\",\n      \"instructions\": [\n        {\n          \"name\": \"extract\",\n          \"prompt\": \"the first paragraph of the description\"\n        }\n      ]\n    }\n  ]\n}",
+  "[]",
+  "[]"
+]

@@ -43,6 +43,8 @@
     "@ai-sdk/google": "^3.0.20",
     "@ai-sdk/openai": "^3.0.25",
     "@boundaryml/baml": "latest",
+    "@hop-top/fit": "file:../../../fit/hops/main/ts",
+    "@hop-top/xrr": "file:../../../xrr/hops/main/ts",
     "ai": "^6.0.67",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^16.5.0",

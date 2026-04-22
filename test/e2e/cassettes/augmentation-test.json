@@ -1,0 +1,3 @@
+[
+  "{\n  \"url\": \"https://gpu-heavy.com\",\n  \"instructions\": [\n    {\n      \"name\": \"extract\",\n      \"prompt\": \"stats\"\n    }\n  ]\n}"
+]

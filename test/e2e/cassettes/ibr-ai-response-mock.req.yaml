@@ -1,0 +1,12 @@
+xrr: "1"
+adapter: ibr-ai-response
+fingerprint: 67a4a780f53d377783421265e2cba3bf9815849d3e16676422c0b1377fbcbba5
+recorded_at: 2026-04-21T23:30:00Z
+payload:
+  messages:
+    - role: system
+      content: You are helping the user automate the browser by finding elements based on what the user wants to find in the page.
+    - role: user
+      content: "User Instructions: extract price\nDOM Tree:\n{}"
+  options:
+    temperature: 0
