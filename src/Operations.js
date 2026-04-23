@@ -219,11 +219,17 @@ export class Operations {
                 });
             }
 
-            logger.debug('Navigating to URL', { url: taskDescription.url });
+            const reusePage = process.env.BROWSER_REUSE_PAGE?.toLowerCase() === 'true';
+            const skipNav = reusePage && taskDescription.url === 'current';
             this.snapshotDiffer.reset();
             const navStart = Date.now();
             try {
-                await this.ctx.page.goto(taskDescription.url, { waitUntil: 'networkidle' });
+                if (skipNav) {
+                    logger.debug('Reusing current page', { url: this.ctx.page.url() });
+                } else {
+                    logger.debug('Navigating to URL', { url: taskDescription.url });
+                    await this.ctx.page.goto(taskDescription.url, { waitUntil: 'networkidle' });
+                }
                 streamer.navigation({ url: sanitizeUrlForStream(taskDescription.url), status: 'success' });
                 // WSM: record successful navigation
                 await wsmAdapter.recordToolCall(
@@ -699,7 +705,21 @@ export class Operations {
                     };
 
                     try {
+                        // Track page count before action to detect popups
+                        const pagesBefore = this.ctx.page.context().pages().length;
                         await performAction();
+
+                        // Record popup appearance for fallback (don't auto-switch)
+                        if (actionType === 'click') {
+                            const pagesAfter = this.ctx.page.context().pages();
+                            if (pagesAfter.length > pagesBefore) {
+                                this._pendingPopup = pagesAfter[pagesAfter.length - 1];
+                                logger.debug(`${context}: Popup opened`, {
+                                    popupUrl: this._pendingPopup.url(),
+                                    totalPages: pagesAfter.length,
+                                });
+                            }
+                        }
                     } catch (actionError) {
                         // Attempt to heal if not already raw/ignored
                         if (!this.ignoreAugmentations) {
@@ -825,6 +845,25 @@ export class Operations {
                         document.querySelectorAll('[data-ibr-ref]').forEach(el => el.removeAttribute('data-ibr-ref'))
                     ).catch(() => {});
                 }
+            } else if (this._pendingPopup) {
+                // Fallback: element not found on current page, try popup
+                const popup = this._pendingPopup;
+                this._pendingPopup = null;
+                logger.info(`${context}: No elements on current page, switching to popup`, {
+                    popupUrl: popup.url(),
+                });
+                this.ctx.page = popup;
+                this.domSimplifier = new DomSimplifier(popup);
+                this.annotationService = new AnnotationService(popup);
+                this.dialogManager = new DialogManager(popup, {
+                    autoAccept: DIALOG_AUTO_ACCEPT,
+                    defaultPromptText: DIALOG_DEFAULT_PROMPT_TEXT,
+                    bufferCapacity: DIALOG_BUFFER_CAPACITY,
+                });
+                this.dialogManager.init();
+                // Re-run this instruction on the popup page
+                this.executionIndex--;
+                return this.executeActionInstruction(instruction, context);
             } else {
                 logger.info(`${context}: No matching elements found, skipping action`);
             }
