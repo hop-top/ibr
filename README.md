@@ -27,6 +27,10 @@ An AI-powered instruction parser that converts human-readable instructions into 
 - **Cloud Orchestration**: Multi-provider account pooling and rotation (browser-use, browserless, etc.)
 - **Proactive Infra Routing**: URL-aware infrastructure selection (e.g. force Cloud for Jira or high-entropy domains)
 - **Infra-Switching**: Autonomous migration from local to cloud browser during self-healing
+- **CDP Tab Reuse**: Connect to running browser via `BROWSER_CDP_URL` + reuse existing authenticated tabs with `BROWSER_REUSE_PAGE=true`
+- **Custom Launch Args**: `BROWSER_ARGS` env var for Chromium flags (`--user-data-dir`, `--profile-directory`)
+- **Popup Auto-Switch**: After click opens a popup window, ibr preemptively switches context for subsequent instructions; auto-returns on popup close
+- **Strict Mode Scoping**: When multiple identical elements match (e.g. 9 "delete" links), ibr extracts disambiguating text from the instruction prompt and scopes to the nearest ancestor row
 
 ## Setup
 
