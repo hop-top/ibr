@@ -711,6 +711,8 @@ export class Operations {
 
                         // Record popup appearance for fallback (don't auto-switch)
                         if (actionType === 'click') {
+                            // Brief wait for popup to materialize
+                            await new Promise(r => setTimeout(r, 500));
                             const pagesAfter = this.ctx.page.context().pages();
                             if (pagesAfter.length > pagesBefore) {
                                 this._pendingPopup = pagesAfter[pagesAfter.length - 1];
