@@ -655,7 +655,6 @@ async function run() {
 
     try {
       // Reuse existing context for CDP-connected browsers; create new otherwise
-      // Reuse existing context for CDP-connected browsers; create new otherwise
       const context = browserHandle.context
         ?? browser.contexts()[0]
         ?? await browser.newContext();
@@ -706,10 +705,18 @@ async function run() {
 
       // Update operations with real handle/page
       ops.ctx.page = page;
+      ops.ctx.browserHandle = browserHandle;
       ops.domSimplifier.page = page;
       ops.annotationService.page = page;
+
+      // Attach popup listener now that context is available
+      context.on('page', (newPage) => {
+        ops._pendingPopup = newPage;
+        logger.debug('Popup detected via context event', {
+          url: newPage.url(),
+        });
+      });
       ops.dialogManager.page = page;
-      ops.ctx.browserHandle = browserHandle;
 
       logger.info('Parsing task description');
       let taskDescription;

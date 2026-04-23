@@ -69,6 +69,10 @@ export class Operations {
         });
         this.dialogManager.init();
 
+        // Popup fallback state (listener attached by caller after page is set)
+        this._pendingPopup = null;
+        this._originalPage = null;
+
         // Attach observability listeners
         const page = ctx.page;
         this._onConsole = (msg) => this.observabilityBuffer.addConsoleLog(msg.type(), msg.text());
@@ -150,6 +154,19 @@ export class Operations {
                     `Check the task description returned by parseTaskDescription() and ensure each instruction uses a valid "name" field.`
                 );
         }
+    }
+
+    #switchToPage(page) {
+        this.ctx.page = page;
+        this.domSimplifier = new DomSimplifier(page);
+        this.annotationService = new AnnotationService(page);
+        this.dialogManager = new DialogManager(page, {
+            autoAccept: DIALOG_AUTO_ACCEPT,
+            defaultPromptText: DIALOG_DEFAULT_PROMPT_TEXT,
+            bufferCapacity: DIALOG_BUFFER_CAPACITY,
+        });
+        this.dialogManager.init();
+        this.snapshotDiffer.reset();
     }
 
     #getCurrentPageUrl() {
@@ -568,6 +585,28 @@ export class Operations {
         const actionStartMs = Date.now();
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+
+            // Preemptive popup switch: if a popup opened after a
+            // previous action, switch to it before trying to find
+            // elements. The user's next instruction likely targets
+            // the popup, not the original page.
+            if (this._pendingPopup) {
+                const popup = this._pendingPopup;
+                this._pendingPopup = null;
+                this._originalPage = this.ctx.page;
+                logger.info(`${context}: Switching to popup before action`, {
+                    popupUrl: popup.url(),
+                });
+                this.#switchToPage(popup);
+                popup.on('close', () => {
+                    if (this._originalPage) {
+                        logger.debug('Popup closed, returning to original page');
+                        this.#switchToPage(this._originalPage);
+                        this._originalPage = null;
+                    }
+                });
+            }
+
             const { context: pageContext, isAria } = await this.#getPageContext();
             const domSignature = createDomSignature(pageContext);
 
@@ -705,23 +744,7 @@ export class Operations {
                     };
 
                     try {
-                        // Track page count before action to detect popups
-                        const pagesBefore = this.ctx.page.context().pages().length;
                         await performAction();
-
-                        // Record popup appearance for fallback (don't auto-switch)
-                        if (actionType === 'click') {
-                            // Brief wait for popup to materialize
-                            await new Promise(r => setTimeout(r, 500));
-                            const pagesAfter = this.ctx.page.context().pages();
-                            if (pagesAfter.length > pagesBefore) {
-                                this._pendingPopup = pagesAfter[pagesAfter.length - 1];
-                                logger.debug(`${context}: Popup opened`, {
-                                    popupUrl: this._pendingPopup.url(),
-                                    totalPages: pagesAfter.length,
-                                });
-                            }
-                        }
                     } catch (actionError) {
                         // Attempt to heal if not already raw/ignored
                         if (!this.ignoreAugmentations) {
@@ -847,25 +870,6 @@ export class Operations {
                         document.querySelectorAll('[data-ibr-ref]').forEach(el => el.removeAttribute('data-ibr-ref'))
                     ).catch(() => {});
                 }
-            } else if (this._pendingPopup) {
-                // Fallback: element not found on current page, try popup
-                const popup = this._pendingPopup;
-                this._pendingPopup = null;
-                logger.info(`${context}: No elements on current page, switching to popup`, {
-                    popupUrl: popup.url(),
-                });
-                this.ctx.page = popup;
-                this.domSimplifier = new DomSimplifier(popup);
-                this.annotationService = new AnnotationService(popup);
-                this.dialogManager = new DialogManager(popup, {
-                    autoAccept: DIALOG_AUTO_ACCEPT,
-                    defaultPromptText: DIALOG_DEFAULT_PROMPT_TEXT,
-                    bufferCapacity: DIALOG_BUFFER_CAPACITY,
-                });
-                this.dialogManager.init();
-                // Re-run this instruction on the popup page
-                this.executionIndex--;
-                return this.executeActionInstruction(instruction, context);
             } else {
                 logger.info(`${context}: No matching elements found, skipping action`);
             }
