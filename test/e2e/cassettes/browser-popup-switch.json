@@ -1,0 +1,6 @@
+[
+  "{\"url\":\"{SERVER_URL}/alias-settings.html\",\"instructions\":[{\"name\":\"click\",\"prompt\":\"click Add another email address\"},{\"name\":\"fill\",\"prompt\":\"fill the Name field with Test\"},{\"name\":\"fill\",\"prompt\":\"fill the Email field with test@example.com\"}]}",
+  "{\"elements\":[{\"role\":\"link\",\"name\":\"Add another email address\"}],\"type\":\"click\"}",
+  "{\"elements\":[{\"role\":\"textbox\",\"name\":\"Name\"}],\"type\":\"fill\",\"value\":\"Test\"}",
+  "{\"elements\":[{\"role\":\"textbox\",\"name\":\"Email\"}],\"type\":\"fill\",\"value\":\"test@example.com\"}"
+]

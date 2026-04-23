@@ -1,0 +1,4 @@
+[
+  "{\"url\":\"{SERVER_URL}/alias-settings.html\",\"instructions\":[{\"name\":\"click\",\"prompt\":\"click delete next to test@example.com\"}]}",
+  "{\"elements\":[{\"role\":\"link\",\"name\":\"delete\"}],\"type\":\"click\"}"
+]

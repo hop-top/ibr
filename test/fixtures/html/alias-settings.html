@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Email Alias Settings</title>
+  <style>
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+    a { margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Email Aliases</h1>
+  <table id="alias-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <p>
+    <a href="#"
+       id="add-alias"
+       onclick="openAddPopup(); return false;">
+      Add another email address
+    </a>
+  </p>
+  <script>
+    // Build alias rows via DOM API (no innerHTML)
+    var aliases = [
+      { name: 'Alice', email: 'alice@example.com' },
+      { name: 'Bob',   email: 'bob@example.com' },
+      {
+        name: 'Test',
+        email: 'test@example.com'
+      },
+    ];
+
+    var tbody = document.querySelector(
+      '#alias-table tbody'
+    );
+
+    aliases.forEach(function(a) {
+      var tr = document.createElement('tr');
+
+      var tdName = document.createElement('td');
+      tdName.textContent = a.name;
+      tr.appendChild(tdName);
+
+      var tdEmail = document.createElement('td');
+      tdEmail.textContent = a.email;
+      tr.appendChild(tdEmail);
+
+      var tdActions = document.createElement('td');
+
+      var editLink = document.createElement('a');
+      editLink.href = '#';
+      editLink.textContent = 'edit info';
+      editLink.setAttribute('role', 'link');
+      tdActions.appendChild(editLink);
+
+      var delLink = document.createElement('a');
+      delLink.href = '#';
+      delLink.textContent = 'delete';
+      delLink.setAttribute('role', 'link');
+      tdActions.appendChild(delLink);
+
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    });
+
+    function openAddPopup() {
+      var w = window.open(
+        '', 'add-alias-popup',
+        'width=400,height=300'
+      );
+      if (!w) return;
+
+      var doc = w.document;
+      doc.open();
+      doc.close();
+
+      doc.title = 'Add Email Alias';
+
+      var h2 = doc.createElement('h2');
+      h2.textContent = 'Add Email Alias';
+      doc.body.appendChild(h2);
+
+      var form = doc.createElement('form');
+
+      var lblName = doc.createElement('label');
+      lblName.textContent = 'Name';
+      lblName.setAttribute('for', 'popup-name');
+      form.appendChild(lblName);
+      form.appendChild(doc.createElement('br'));
+
+      var inputName = doc.createElement('input');
+      inputName.type = 'text';
+      inputName.id = 'popup-name';
+      inputName.name = 'name';
+      inputName.setAttribute('aria-label', 'Name');
+      form.appendChild(inputName);
+      form.appendChild(doc.createElement('br'));
+      form.appendChild(doc.createElement('br'));
+
+      var lblEmail = doc.createElement('label');
+      lblEmail.textContent = 'Email';
+      lblEmail.setAttribute('for', 'popup-email');
+      form.appendChild(lblEmail);
+      form.appendChild(doc.createElement('br'));
+
+      var inputEmail = doc.createElement('input');
+      inputEmail.type = 'email';
+      inputEmail.id = 'popup-email';
+      inputEmail.name = 'email';
+      inputEmail.setAttribute('aria-label', 'Email');
+      form.appendChild(inputEmail);
+      form.appendChild(doc.createElement('br'));
+      form.appendChild(doc.createElement('br'));
+
+      var btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.textContent = 'Next Step';
+      form.appendChild(btn);
+
+      doc.body.appendChild(form);
+    }
+  </script>
+</body>
+</html>
