@@ -191,7 +191,8 @@ export class Operations {
         const textLocator = page.getByText(scopeText, { exact: false });
 
         for (const ancestor of ancestors) {
-            const parent = textLocator.locator(`xpath=ancestor::${ancestor}`).first();
+            // [1] = nearest ancestor of this type (not the outermost)
+            const parent = textLocator.locator(`xpath=ancestor::${ancestor}[1]`);
             const scoped = parent.getByRole(role, { name }).first();
             try {
                 const count = await scoped.count();
