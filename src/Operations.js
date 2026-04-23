@@ -156,6 +156,66 @@ export class Operations {
         }
     }
 
+    /**
+     * On strict mode violation, extract disambiguating text from
+     * the instruction prompt and scope the locator to a parent
+     * element containing that text.
+     *
+     * Example: "click delete next to jad+rami@ideacrafters.com"
+     * → finds row containing "jad+rami@ideacrafters.com"
+     * → scopes getByRole('link', { name: 'delete' }) to that row
+     */
+    #scopeByPromptContext(descriptor, prompt) {
+        // Extract potential scoping text: email addresses, quoted
+        // strings, or text after "next to" / "near" / "for" / "of"
+        const patterns = [
+            /[\w.+]+@[\w.-]+/,                    // email
+            /"([^"]+)"/,                           // quoted string
+            /(?:next to|near|for|of|beside)\s+(.+?)(?:\s*$)/i,
+        ];
+        let scopeText = null;
+        for (const pat of patterns) {
+            const m = prompt.match(pat);
+            if (m) { scopeText = m[1] || m[0]; break; }
+        }
+        if (!scopeText) return null;
+
+        const page = this.ctx.page;
+        const { role, name } = descriptor;
+        if (!role || !name) return null;
+
+        // Scope: find the nearest ancestor row/cell/group that
+        // contains both the scope text and the target element.
+        // Walk up from the text node through ancestor selectors.
+        const ancestors = ['tr', 'row', 'li', 'div', 'td', 'section'];
+        const textLocator = page.getByText(scopeText, { exact: false });
+
+        for (const ancestor of ancestors) {
+            const parent = textLocator.locator(`xpath=ancestor::${ancestor}`).first();
+            const scoped = parent.getByRole(role, { name }).first();
+            try {
+                const count = await scoped.count();
+                if (count > 0) return scoped;
+            } catch {
+                continue;
+            }
+        }
+
+        // Fallback: walk up parent chain until we find the target
+        let walker = textLocator;
+        for (let i = 0; i < 6; i++) {
+            walker = walker.locator('..');
+            const scoped = walker.getByRole(role, { name }).first();
+            try {
+                const count = await scoped.count();
+                if (count > 0) return scoped;
+            } catch {
+                continue;
+            }
+        }
+        return null;
+    }
+
     #switchToPage(page) {
         this.ctx.page = page;
         this.domSimplifier = new DomSimplifier(page);
@@ -715,6 +775,19 @@ export class Operations {
                 }
 
                 try {
+                    // Strict mode pre-check: if locator resolves to
+                    // multiple elements, scope using prompt context
+                    // before attempting scroll or action.
+                    const count = await locator.count();
+                    if (count > 1 && instruction.prompt) {
+                        const scoped = this.#scopeByPromptContext(descriptor, instruction.prompt);
+                        if (scoped) {
+                            logger.info(`${context}: Multiple matches (${count}), scoped to prompt context`);
+                            locator = scoped;
+                            locatorDesc = `scoped(${JSON.stringify(descriptor)})`;
+                        }
+                    }
+
                     logger.debug(`Scrolling element into view`, { locator: locatorDesc });
                     await locator.scrollIntoViewIfNeeded();
                     await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
