@@ -84,7 +84,7 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_api_key_here
 
 ```env
 # Browser display options
-BROWSER_HEADLESS=false          # Show browser window (false) or run headless (true)
+BROWSER_HEADLESS=true           # Run headless (true) or show browser window (false)
 BROWSER_SLOWMO=100              # Slow down actions in milliseconds (helps with debugging)
 
 # AI behavior
@@ -231,7 +231,14 @@ Control which page-representation mode the AI receives:
 | `--mode aria` | ARIA tree | Force ariaSnapshot (semantic, compact) |
 | `--mode dom` | DOM + XPath | Force DomSimplifier (raw structure) |
 
+### `--interactive` / `-i` Flag
+
+Run `ibr` in interactive mode. This forces `BROWSER_HEADLESS=false` (showing the browser window) and is recommended when using `wait for human` instructions for solving CAPTCHAs, MFA, or manual logins.
+
 ```bash
+# Run in interactive mode
+ibr --interactive "url: https://example.com\ninstructions:\n  - wait for human: solve captcha"
+
 # Force ARIA mode
 ibr --mode aria "url: https://example.com\ninstructions:\n  - click submit"
 
@@ -353,6 +360,12 @@ instructions:
 ```yaml
 - extract: title, price, rating        # Extract text content
 - extract all product names            # Extract list of items
+```
+
+#### 5. Human Intervention & Waits
+```yaml
+- wait for human: solve the captcha    # Pauses for terminal input (HITM)
+- wait 10 seconds                     # Wait for a specific duration
 ```
 
 ### Real-World Example
@@ -901,6 +914,7 @@ elements in plain English as always.
 **Solution**:
 - The element may be behind a modal or banner
 - Add instruction to close/dismiss overlays first
+- For CAPTCHAs or MFA, use `wait for human` and run with `BROWSER_HEADLESS=false`
 - Check browser window to see what's blocking the action
 - Use `BROWSER_SLOWMO` to slow down and observe
 
@@ -978,7 +992,7 @@ Now you can watch exactly what the script is doing and see where it fails.
 ### Browser Configuration
 | Variable | Values | Default | Purpose |
 |----------|--------|---------|---------|
-| `BROWSER_HEADLESS` | true/false | false | Run browser headless |
+| `BROWSER_HEADLESS` | true/false | true | Run browser headless |
 | `BROWSER_SLOWMO` | milliseconds | 100 | Slow down browser actions |
 | `BROWSER_TIMEOUT` | milliseconds | 30000 | Page load timeout |
 | `BROWSER_CHANNEL` | chrome/brave/arc/comet/chromium/msedge/lightpanda | _(chromium)_ | Browser to launch |
