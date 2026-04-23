@@ -100,8 +100,8 @@ function getBrowserConfig(interactive = false) {
   }
   const slowMo = parseInt(process.env.BROWSER_SLOWMO || '100', 10);
   const timeout = parseInt(process.env.BROWSER_TIMEOUT || '30000', 10);
-  // Channel + executablePath are resolved by src/browser/resolver.js from
-  // the env (BROWSER_CHANNEL / BROWSER_EXECUTABLE_PATH).
+  // Channel, executablePath, and BROWSER_ARGS are resolved by
+  // src/browser/resolver.js from the env at dispatch time.
   return validateBrowserConfig({ headless, slowMo, timeout });
 }
 
@@ -312,7 +312,7 @@ function printUsage(stream = process.stdout) {
     '  instructions:',
     '    - get my account name"',
     '',
-    '  # Show browser (non-headless)
+    '  # Show browser (non-headless)',
     '  BROWSER_HEADLESS=false ibr "url: https://example.com',
     '  instructions:',
     '    - extract the page title"',
@@ -337,6 +337,8 @@ function printUsage(stream = process.stdout) {
     '  BROWSER_EXECUTABLE_PATH - Explicit path to browser binary (overrides BROWSER_CHANNEL)',
     '  BROWSER_PROFILE       - Browser profile for cookie import [default: Default]',
     '  BROWSER_HEADLESS      - Run headless (true/false) [default: true]',
+    '  BROWSER_ARGS          - Extra Chromium launch args (space-separated)',
+    '  BROWSER_REUSE_PAGE    - Reuse existing page in CDP-connected browser (true/false)',
     '  --interactive, -i     - Run in interactive mode (show browser, enable HITM)',
     '  BROWSER_SLOWMO        - Slow down actions (ms) [default: 100]',
 
@@ -652,8 +654,11 @@ async function run() {
     const browser = browserHandle.browser;
 
     try {
-      // Create a new browser context and page
-      const context = await browser.newContext();
+      // Reuse existing context for CDP-connected browsers; create new otherwise
+      // Reuse existing context for CDP-connected browsers; create new otherwise
+      const context = browserHandle.context
+        ?? browser.contexts()[0]
+        ?? await browser.newContext();
 
       // WSM workspace-aware cookie injection: if no --cookies flag, check workspace metadata
       if (!cookiesConfig) {
@@ -692,7 +697,12 @@ async function run() {
         }
       }
 
-      const page = await context.newPage();
+      const reusePage = process.env.BROWSER_REUSE_PAGE?.toLowerCase() === 'true';
+      const existingPages = reusePage ? context.pages() : [];
+      const tabIndex = parseInt(process.env.BROWSER_TAB_INDEX || '0', 10);
+      const page = existingPages.length > tabIndex
+        ? existingPages[tabIndex]
+        : await context.newPage();
 
       // Update operations with real handle/page
       ops.ctx.page = page;

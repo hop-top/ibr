@@ -157,11 +157,26 @@ export async function runDomCommand(args, browserConfig = {}) {
   const browser = browserHandle.browser;
 
   try {
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    const reusePage = process.env.BROWSER_REUSE_PAGE?.toLowerCase() === 'true';
+    const context = browserHandle.context
+      ?? browser.contexts()[0]
+      ?? await browser.newContext();
+    const existingPages = reusePage ? context.pages() : [];
+    const tabIndex = parseInt(process.env.BROWSER_TAB_INDEX || '0', 10);
+    const page = existingPages.length > tabIndex
+      ? existingPages[tabIndex]
+      : await context.newPage();
 
-    logger.debug('snap: navigating', { url: opts.url });
-    await page.goto(opts.url, { waitUntil: 'networkidle' });
+    // Skip navigation when reusing page and URL is current page or omitted
+    const currentUrl = page.url();
+    const skipNav = reusePage && existingPages.length > tabIndex
+      && (opts.url === currentUrl || opts.url === 'current');
+    if (skipNav) {
+      logger.debug('snap: reusing current page', { url: currentUrl });
+    } else {
+      logger.debug('snap: navigating', { url: opts.url });
+      await page.goto(opts.url, { waitUntil: 'networkidle' });
+    }
 
     if (opts.aria) {
       // ── ARIA mode ──────────────────────────────────────────────────────────

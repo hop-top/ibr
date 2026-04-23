@@ -620,6 +620,46 @@ ibr browser which
 
 See `docs/testing-lightpanda.md` for the gated e2e suite and known compat gaps.
 
+### Reusing an Authenticated Browser Session (CDP)
+
+Connect to a running browser to interact with authenticated pages
+(Gmail, Google Workspace, etc.) without re-authenticating:
+
+```bash
+# 1. Launch browser with remote debugging
+"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" \
+  --user-data-dir="$HOME/.ops/brave-profile" \
+  --profile-directory="Noor" \
+  --remote-debugging-port=9333 &
+
+# 2. Sign in manually in the browser window
+
+# 3. Snap the current page (no navigation, no re-auth)
+BROWSER_CDP_URL="ws://localhost:9333/devtools/browser/<id>" \
+  BROWSER_REUSE_PAGE=true \
+  ibr snap current --aria
+
+# 4. Interact with the authenticated page
+BROWSER_CDP_URL="ws://localhost:9333/devtools/browser/<id>" \
+  BROWSER_REUSE_PAGE=true \
+  ibr "url: current
+  instructions:
+    - click Settings gear icon
+    - extract account email address"
+```
+
+Get the CDP websocket URL: `curl -s http://localhost:9333/json/version`
+
+### Custom Launch Args
+
+Pass extra Chromium flags to launch with a specific profile:
+
+```bash
+BROWSER_CHANNEL=brave \
+  BROWSER_ARGS="--user-data-dir=$HOME/.ops/brave-profile --profile-directory=Noor" \
+  ibr snap "https://example.com" --aria
+```
+
 ### `ibr browser` subcommands
 
 ```
@@ -944,6 +984,9 @@ Now you can watch exactly what the script is doing and see where it fails.
 | `BROWSER_CHANNEL` | chrome/brave/arc/comet/chromium/msedge/lightpanda | _(chromium)_ | Browser to launch |
 | `BROWSER_EXECUTABLE_PATH` | path | — | Direct binary override; bypasses probe + cache |
 | `BROWSER_CDP_URL` | ws URL | — | Connect to running CDP server; skips spawn |
+| `BROWSER_ARGS` | space-separated | — | Extra Chromium launch flags (e.g. `--user-data-dir=... --profile-directory=...`) |
+| `BROWSER_REUSE_PAGE` | true/false | false | Reuse existing page/tab in CDP-connected browser instead of opening new tab |
+| `BROWSER_TAB_INDEX` | integer | 0 | Which tab to reuse when `BROWSER_REUSE_PAGE=true` and multiple tabs open |
 | `LIGHTPANDA_WS` | ws URL | — | **Deprecated** alias of `BROWSER_CDP_URL` |
 | `BROWSER_VERSION` | stable/nightly/latest/exact | stable | Version for downloadable browsers |
 | `BROWSER_DOWNLOAD_URL` | URL | — | Mirror / air-gap binary source |

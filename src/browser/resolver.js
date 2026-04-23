@@ -262,6 +262,7 @@ const LAUNCH_ONLY_KEYS = new Set([
   'timeout',
   'executablePath',
   'channel',
+  'args',
 ]);
 const INTERNAL_OVERRIDE_KEYS = new Set(['BROWSER_CHANNEL']);
 function splitOverrides(overrides = {}) {
@@ -282,6 +283,14 @@ function splitOverrides(overrides = {}) {
 
 async function dispatch(record, overrides, env) {
   const { launchOptions, contextOptions } = splitOverrides(overrides);
+
+  // BROWSER_ARGS: inject extra Chromium flags from env
+  if (env.BROWSER_ARGS) {
+    const extraArgs = env.BROWSER_ARGS.split(/\s+/).filter(Boolean);
+    if (extraArgs.length) {
+      launchOptions.args = [...(launchOptions.args || []), ...extraArgs];
+    }
+  }
 
   if (record.kind === 'chromium-launch') {
     const handle = await playwrightLaunch.launch({
