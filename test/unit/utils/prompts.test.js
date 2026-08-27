@@ -126,6 +126,52 @@ describe('makeExtractInstructionMessage', () => {
   });
 });
 
+// ── wait vs wait_for_human classification guidance ────────────────────────────
+// Bug: 'wait for the page to load' was classified as wait_for_human, whose
+// handler blocks reading stdin. Under headless/no-TTY CLI usage stdin never
+// arrives → indefinite silent block with zero output. The task-parse prompt
+// listed both wait formats but gave the model no rule for choosing between
+// them, and "wait for <X>" phrasing pattern-matched the human-wait format.
+//
+// Fix (prompt half): the task-description system prompt must state that
+// waiting for the page / an element / content / a condition to load or appear
+// is a "wait" instruction, and that "wait_for_human" is reserved for explicit
+// human-in-the-loop phrasing ("wait for me…", "ask me…", "pause for user
+// input", "let me…"). General rules — not over-fit to 'page to load'.
+
+describe('makeTaskDescriptionMessage — wait vs wait_for_human classification', () => {
+  const sys = makeTaskDescriptionMessage(
+    'go to https://example.com, wait for the login form to load, then click submit'
+  )[0].content;
+
+  it('still defines both wait instruction formats', () => {
+    expect(sys).toContain('"wait_for_human"');
+    expect(sys).toContain('"wait"');
+  });
+
+  it('guides page/element/condition load-or-appear waits to "wait", with "wait for the page to load" as an example', () => {
+    expect(sys.toLowerCase()).toContain('wait for the page to load');
+    expect(sys).toMatch(/load,? appear/i);
+  });
+
+  it('restricts wait_for_human to explicit human intervention phrasing', () => {
+    expect(sys).toMatch(/ONLY when the instruction explicitly asks a human/i);
+  });
+
+  it('states that waiting for the page or its content is NEVER wait_for_human', () => {
+    expect(sys).toMatch(/NEVER\s+"wait_for_human"/);
+  });
+
+  it('keeps human-in-the-loop examples mapped to wait_for_human', () => {
+    expect(sys.toLowerCase()).toContain('solve the captcha');
+    expect(sys.toLowerCase()).toContain('pause for user input');
+  });
+
+  it('tells the parser to use a short default duration when none is given', () => {
+    expect(sys).toMatch(/no duration is given/i);
+  });
+});
+
 // ── verdict / report-style extract intent ─────────────────────────────────────
 // Bug (T-0110 prompt half): an extract phrased as a verdict/report
 // ("report PAGE_OK if the heading is shown, or PAGE_FAILED with the error")

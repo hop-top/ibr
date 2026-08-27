@@ -55,6 +55,12 @@ Each instruction object in the "instructions" array must follow one of these for
     "prompt": "duration in seconds (e.g. '5')"
     }
 
+Choosing between "wait" and "wait_for_human":
+
+    Use "wait" whenever the instruction waits for the page, an element, content, or a condition to load, appear, render, or finish — e.g. "wait for the page to load", "wait for the login form to load", "wait until the results appear" — or waits for an amount of time. If no duration is given, use a short default such as "5".
+
+    Use "wait_for_human" ONLY when the instruction explicitly asks a human to intervene or provide input — e.g. "wait for me to log in", "ask me before continuing", "pause for user input", "let me solve the captcha". Waiting for the page or its content to load is NEVER "wait_for_human".
+
 Guidelines:
 
     Identify and extract the URL exactly as written.
