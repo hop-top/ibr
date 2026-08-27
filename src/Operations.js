@@ -21,6 +21,7 @@ import { CacheManager } from './cache/CacheManager.js';
 import { createDomSignature, isDomCompatible, getValidator, extractSchema } from './cache/CacheUtils.js';
 import logger from './utils/logger.js';
 import { ObservabilityBuffer } from './observability/ObservabilityBuffer.js';
+import { ProgressFeedback } from './observability/ProgressFeedback.js';
 import { AnnotationService } from './services/AnnotationService.js';
 import { streamer } from './observability/NdjsonStreamer.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
@@ -107,6 +108,7 @@ export class Operations {
         // Configuration
         this.temperature = Math.min(2, Math.max(0, options.temperature ?? 0));
         this.mode = options.mode ?? 'auto';
+        this.quiet = !!options.quiet;
         this.executionIndex = 0;
 
         logger.debug('Operations initialized', {
@@ -253,6 +255,24 @@ export class Operations {
         }
     }
 
+    /**
+     * Top-level instruction loop with long-run progress feedback.
+     * Advances the progress reporter once per top-level instruction (n/N).
+     * Nested instruction lists (condition/loop bodies) run through
+     * #executeInstructions and deliberately do NOT advance progress, so the
+     * n/N count tracks the user-authored instruction list, not the expanded
+     * execution tree.
+     * @param {Array} instructions
+     * @param {ProgressFeedback} progress
+     */
+    async #executeTopLevelInstructions(instructions, progress) {
+        for (const instruction of instructions) {
+            this.executionIndex++;
+            progress.advance(instruction);
+            await this.#executeInstruction(instruction);
+        }
+    }
+
     async executeTask(taskDescription) {
         this.executionIndex = 0;
         logger.info('Executing task', {
@@ -262,6 +282,13 @@ export class Operations {
 
         const taskStartMs = Date.now();
         streamer.taskStart({ prompt: taskDescription.url });
+
+        // Long-run progress feedback (kit/progress + kit/stream). N is known
+        // now; advance per top-level instruction; render to stderr only.
+        const progress = new ProgressFeedback({
+            total: taskDescription.instructions.length,
+            quiet: this.quiet,
+        });
 
         // Initialize cache, augmentation engine and infra manager
         await this.cacheManager.init();
@@ -335,11 +362,13 @@ export class Operations {
             logger.info('Starting instruction execution', {
                 count: taskDescription.instructions.length
             });
-            await this.#executeInstructions(taskDescription.instructions);
+            await this.#executeTopLevelInstructions(taskDescription.instructions, progress);
 
+            progress.finish('task complete');
             logger.info('Task execution completed successfully');
             streamer.taskEnd({ startMs: taskStartMs, status: 'success' });
         } catch (error) {
+            progress.fail('task failed');
             logger.error('Task execution failed', {
                 url: taskDescription.url,
                 executionIndex: this.executionIndex,
