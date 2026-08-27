@@ -40,6 +40,7 @@ import {
   fingerprintError,
 } from './capability-manifest.js';
 import { signature as buildSignature } from './capability-signature.js';
+import * as chromiumFallback from './chromium-fallback.js';
 
 // ── [SECTION: CHAIN] ─────────────────────────────────────────────────────────
 // T-0025: implement step 1 (exec-path) and step 3 (local probe).
@@ -661,6 +662,78 @@ export async function preflightCheck(env, { opKind, selector, stepTemplate, ligh
 }
 
 /**
+ * Chromium pinned-build fallback (T-0109).
+ *
+ * Invoked when the implicit chromium path fails with Playwright's
+ * "Executable doesn't exist" error (pinned build missing from the
+ * ms-playwright cache). Walks buildFallbackCandidates() in order — cached
+ * alternate chromium builds first, then system channels — launching each
+ * until one succeeds. Emits a `browser.fallback` NDJSON naming the chosen
+ * alternate so the switch is never silent. If nothing launches, throws an
+ * actionable error naming `npx playwright install chromium` and what was
+ * searched (with the original error preserved as `cause`).
+ *
+ * @param {object} env
+ * @param {object} overrides
+ * @param {Error}  originalErr  the pinned-build launch failure
+ * @returns {Promise<import('./index.js').BrowserHandle>}
+ */
+/**
+ * Human-readable label for a fallback candidate. Never returns undefined —
+ * derives from label, revision, channel, or executablePath in that order so
+ * the emitted `browser.fallback` event always identifies the chosen alternate.
+ * @param {object} cand
+ * @returns {string}
+ */
+function candidateLabel(cand) {
+  if (cand.label) return cand.label;
+  if (cand.revision != null) return `ms-playwright chromium build ${cand.revision}`;
+  if (cand.channel) return `system ${cand.channel}`;
+  if (cand.executablePath) return cand.executablePath;
+  return cand.source || 'unknown';
+}
+
+async function tryChromiumFallback(env, overrides, originalErr) {
+  const candidates = chromiumFallback.buildFallbackCandidates({ env });
+  const searched = [];
+  let lastErr = originalErr;
+
+  for (const cand of candidates) {
+    const record = {
+      kind: 'chromium-launch',
+      source: cand.source,
+      version: cand.revision ?? null,
+      executablePath: cand.executablePath ?? null,
+      channel: cand.channel ?? null,
+    };
+    const label = candidateLabel(cand);
+    try {
+      const handle = await dispatch(record, overrides, env);
+      emitCapabilityEvent({
+        event: 'browser.fallback',
+        from: 'chromium (pinned build missing)',
+        to: label,
+        reason: chromiumFallback.isMissingBrowserError(originalErr)
+          ? 'pinned build missing'
+          : (originalErr && originalErr.message) || 'launch failed',
+      });
+      return handle;
+    } catch (err) {
+      lastErr = err;
+      searched.push(label);
+    }
+  }
+
+  if (searched.length === 0) {
+    searched.push('ms-playwright cache (no chromium builds present)', 'chrome', 'msedge');
+  }
+  const hint = chromiumFallback.chromiumInstallHint({ searched });
+  const err = new Error(hint, { cause: lastErr });
+  err.code = 'BROWSER_NOT_FOUND';
+  throw err;
+}
+
+/**
  * Public resolve() body. Wraps resolveInner with strict preflight (launch
  * level only) and the on-failure fallback path.
  */
@@ -695,7 +768,22 @@ async function resolveWithCapability(env, overrides) {
   try {
     return await resolveInner(env, overrides);
   } catch (err) {
-    if (channel !== 'lightpanda' || !env?.BROWSER_FALLBACK) throw err;
+    if (channel !== 'lightpanda' || !env?.BROWSER_FALLBACK) {
+      // Chromium pinned-build fallback (T-0109): when the IMPLICIT chromium
+      // path (no explicit BROWSER_CHANNEL / BROWSER_EXECUTABLE_PATH) dies
+      // because Playwright's pinned chromium_headless_shell build is absent
+      // from the ms-playwright cache, retry an already-cached alternate build
+      // or a system channel before failing. Explicit user choices are never
+      // second-guessed — they fall through to `throw err` verbatim.
+      if (
+        !channel &&
+        !env?.BROWSER_EXECUTABLE_PATH &&
+        chromiumFallback.isMissingBrowserError(err)
+      ) {
+        return await tryChromiumFallback(env, overrides, err);
+      }
+      throw err;
+    }
 
     const fallback = env.BROWSER_FALLBACK;
     const fallbackEnv = { ...env, BROWSER_CHANNEL: fallback };
