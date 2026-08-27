@@ -49,6 +49,46 @@ consume less shared runner capacity.
 - Windows support (lightpanda unsupported upstream).
 - Bundled redistribution of Chrome / Brave / Arc / Comet binaries.
 
+## E2E Coverage
+
+> **Gated / opt-in.** The suite below is **not** part of the default run.
+> `npm test`, `npm run test:unit`, and `npm run test:e2e` all skip it unless
+> `BROWSER_E2E=lightpanda` is exported (and the host is not Windows). See
+> [testing-lightpanda.md](../testing-lightpanda.md) for the invocation and
+> prerequisites. A reader should treat this coverage as validated only when the
+> gate is set and a lightpanda binary is reachable.
+
+**Existing E2E coverage** — [lightpanda.happy-path.test.js](../../test/e2e/lightpanda.happy-path.test.js)
+(gated on `BROWSER_E2E=lightpanda`):
+
+- Test 1 (fresh cache) — proves cold-cache auto-download + spawn + scrape a
+  static page with `BROWSER_CHANNEL=lightpanda` and `ownership === 'spawn-ibr'`
+  (criterion: works end-to-end, no manual install).
+- Test 2 (warm cache) — proves the second resolution skips download (< 15s),
+  same result (cache pre-warm / `ibr browser pull` payoff).
+- Test 3 (`BROWSER_CDP_URL`) — proves connect-only mode against an externally
+  spawned lightpanda with `ownership === 'connect-user'`, no extra spawn
+  (criterion: connect-only lifecycle mode).
+- Test 4 (daemon repeatability) — proves 3 sequential `resolveBrowser()` calls
+  each spawn, scrape, and tear down cleanly (partial: resolver-level
+  repeatability; true daemon handle-reuse lives in `src/server.js`).
+- Test 5 (`BROWSER_FALLBACK=chromium`) — proves a deterministically broken
+  lightpanda config falls back to chromium (`ownership === 'launch'`) **and**
+  records the failure into the capability manifest (criteria: opt-in fallback +
+  manifest recording). Skipped when bundled chromium is unavailable.
+- Test 6 (`BROWSER_STRICT=true`) — proves the resolver refuses to launch after
+  a recorded known-broken entry (criterion: strict refusal). Depends on test 5.
+
+**Expected E2E coverage for full criteria** (not yet asserted by the gated suite):
+
+- `ibr browser list | pull | prune | which` cache-management CLI commands —
+  exercised only indirectly (cache is manipulated through `resolveBrowser`);
+  no test drives the subcommands themselves.
+- `LIGHTPANDA_WS` deprecated-alias warning for `BROWSER_CDP_URL`.
+- `LIGHTPANDA_TELEMETRY` default-off / opt-in behavior.
+- These are unit-side or CLI-surface concerns; add targeted coverage rather
+  than expanding the network-dependent gated suite.
+
 ## References
 
 - Track: `adopt-lightpanda` (`.tlc/tracks/adopt-lightpanda/`)

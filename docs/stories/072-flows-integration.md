@@ -90,46 +90,51 @@ steps:
 
 ## E2E Coverage
 
-**Status: Expected — not yet implemented (draft / `paper`).**
+**Status: Partially implemented.** The ibr-side **output-file surface** now
+exists and is unit-tested; `cookies-from: profile:<id>` and the tlc-side
+flow-engine stream capture remain **Expected** (out of ibr's scope).
 
-No flow e2e exists in this repo, and none should be faked. Reading the ibr
-source confirms the ibr-side surface this story needs is **not implemented**:
+### Existing
 
-- **No file-output surface.** ibr emits extraction to stdout/stderr only
-  (`logger.info('Extracted data …')` in [src/index.js](../../src/index.js)).
-  There is no `--output`/`-o` flag and no `output-path` / `output-format`
-  handling in the flag parser or `commands/` — the story's
-  `output-path` + `output-format: markdown` (write a consumable file for the
-  next step via `${capture.output.path}`) has nothing to wire to.
-- **No `cookies-from: profile:<id>`.** ibr's `--cookies` accepts a browser
-  name only (chrome/brave/edge/arc); there is no aps-secret-store
-  `profile:<id>` resolution.
-- **The runner is tlc-side, not ibr-side.** Per this story's own
-  Implementation Notes ("Runner: tlc flow spawns `ibr` subprocess") and its
-  `## Tests` block, the flow-step integration lives in **tlc's flow engine**
-  (Go: `tests/e2e/flow_ibr/*.go`, `internal/runner/ibr_test.go`) invoking ibr
-  as a plain CLI subprocess. ibr's only obligation is a deterministic exit
-  code (which it has, story 017) plus a consumable output contract (a file
-  path or a stable stdout format) — and the **file-path half does not exist
-  yet**.
-
-**What ibr already provides (partial building blocks)**
-
+- **File-output surface — implemented.** ibr accepts `--output <path>` / `-o
+  <path>` and `--output-format json|markdown` (default `json`). After a
+  successful run it writes the extraction to the given path (parent dirs
+  auto-created) as an **additive** sink — the existing
+  `logger.info('Extracted data …')` stdout/stderr line is untouched. An unknown
+  `--output-format` fails fast with a `CONFIG_ERROR` (exit 1) before browser
+  launch. The step's `{ path, format }` contract is what the next flow step
+  resolves via `${capture.output.path}`. Wiring: `parseOutputFlags`,
+  `renderExtraction`, `writeExtractionOutput`, and the write call in `run()` —
+  all in [src/index.js](../../src/index.js).
+  - Markdown rendering choice: the extraction (an array-of-arrays of
+    `{ field: value }` objects) is flattened to ordered field/value pairs, each
+    rendered as a `## <field>` heading with its value below; multi-line string
+    values are preserved verbatim, non-string values are emitted in a fenced
+    ```json``` block so the file stays valid markdown.
+  - **Test:**
+    [test/unit/index.output-file.test.js](../../test/unit/index.output-file.test.js)
+    pins flag parsing (`--output`/`-o`, `--output-format`, unknown-format
+    `CONFIG_ERROR`, missing-value `CONFIG_ERROR`), both format renderings,
+    parent-dir auto-creation, the `{ path, format }` return contract, and the
+    additive guarantee (the logger line still present). Runs with no live
+    network and no browser (pure exported functions), so it is not
+    Chromium-gated.
 - Deterministic exit codes (story [017](017-exit-code-contract.md)).
 - Cookie import from a browser via `--cookies` (browser passthrough half of
   `cookies-from: browser:<…>`).
 - `--daemon` for warm invocations.
 
-**Expected E2E coverage once implemented**
+### Expected (still not implemented)
 
-- An ibr `--output <path> --output-format markdown` (or equivalent) surface
-  that writes extraction to a file, VCR/cassette-backed per
-  [cli-tool-vcr.test.js](../../test/e2e/cli-tool-vcr.test.js) conventions
-  (no live network), asserting the file is populated and its
-  `{ path, format, exit_code }` shape.
-- tlc-side flow-runner tests (the Go tests listed under `## Tests`) that spawn
-  ibr as a step and resolve `${capture.output.path}` downstream — these belong
-  in the tlc repo, not here.
-
-A follow-up task tracks implementing the ibr-side output-file surface and its
-cassette-backed test.
+- **`cookies-from: profile:<id>`.** ibr's `--cookies` accepts a browser name
+  only (chrome/brave/edge/arc); there is no aps-secret-store `profile:<id>`
+  resolution. That is an aps/tlc integration, out of ibr's scope for this task.
+- **tlc-side flow-engine stream capture.** Per this story's own Implementation
+  Notes ("Runner: tlc flow spawns `ibr` subprocess") and its `## Tests` block,
+  the flow-step integration lives in **tlc's flow engine** (Go:
+  `tests/e2e/flow_ibr/*.go`, `internal/runner/ibr_test.go`) invoking ibr as a
+  plain CLI subprocess and capturing stdout/stderr under
+  `runs/<run-id>/steps/<step-id>/`. ibr's obligations — a deterministic exit
+  code (story 017) and a consumable output-file contract — are now both met;
+  the runner and the `${capture.output.path}` downstream resolution belong in
+  the tlc repo, not here.

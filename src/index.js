@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { once } from 'node:events';
 import fs from 'node:fs';
+import path from 'node:path';
 import { createAIProvider } from './ai/provider.js';
 import { Operations } from './Operations.js';
 import { validateEnvironmentVariables, validateBrowserConfig } from './utils/validation.js';
@@ -188,7 +189,7 @@ const VALID_MODES = new Set(['aria', 'dom', 'auto']);
 /**
  * Parse CLI flags from argv.
  * Strips recognised flags and returns remaining positional args + parsed options.
- * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean, obeyRobots: boolean, ignoreAugmentations: boolean, interactive: boolean }}
+ * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean, obeyRobots: boolean, ignoreAugmentations: boolean, interactive: boolean, quiet: boolean, output: ({ path: string, format: 'json'|'markdown' } | null) }}
  */
 function parseCliFlags() {
   const argv = process.argv.slice(2);
@@ -199,6 +200,10 @@ function parseCliFlags() {
   let ignoreAugmentations = false;
   let interactive = false;
   let quiet = false;
+
+  // Validate + parse the output-file surface once, up front, so an invalid
+  // --output-format fails fast with a CONFIG_ERROR before browser launch.
+  const output = parseOutputFlags(argv);
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--quiet' || argv[i] === '-q') {
@@ -213,6 +218,12 @@ function parseCliFlags() {
         process.exit(1);
       }
       mode = val;
+    } else if ((argv[i] === '--output' || argv[i] === '-o') && argv[i + 1]) {
+      // Consume the flag + its path value so it never lands in positionals.
+      i++;
+    } else if (argv[i] === '--output-format' && argv[i + 1]) {
+      // Consume the flag + its format value (already validated above).
+      i++;
     } else if (argv[i] === '--annotate' || argv[i] === '-a') {
       annotate = true;
     } else if (argv[i] === '--interactive' || argv[i] === '-i') {
@@ -226,7 +237,7 @@ function parseCliFlags() {
     }
   }
 
-  return { args: remaining, mode, annotate, obeyRobots, ignoreAugmentations, interactive, quiet };
+  return { args: remaining, mode, annotate, obeyRobots, ignoreAugmentations, interactive, quiet, output };
 }
 
 /**
@@ -248,6 +259,140 @@ export function getOperationOptions(mode, annotate = false, ignoreAugmentations 
   }
 
   return { temperature, mode, annotate, ignoreAugmentations, quiet };
+}
+
+const VALID_OUTPUT_FORMATS = new Set(['json', 'markdown']);
+
+/**
+ * Parse the output-file flags from an argv slice (positional args, no node/script).
+ *
+ * Forms:
+ *   --output <path>                       → { path, format: 'json' }
+ *   -o <path>                             → { path, format: 'json' }
+ *   --output <path> --output-format markdown → { path, format: 'markdown' }
+ *
+ * The written file is the sink a tlc flow `run.ibr` step consumes via
+ * `${step.output.path}` (story 072). This is additive: it does not replace the
+ * existing stdout/stderr extraction sink.
+ *
+ * Returns null when no output flag is present. Throws a CONFIG_ERROR CliError
+ * for a missing value or an unknown format.
+ *
+ * @param {string[]} argv  positional args (already stripped of node + script)
+ * @returns {{ path: string, format: 'json'|'markdown' } | null}
+ */
+export function parseOutputFlags(argv) {
+  let outPath = null;
+  let format = 'json';
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--output' || argv[i] === '-o') {
+      const val = argv[i + 1];
+      if (!val || val.startsWith('-')) {
+        throw new CliError(
+          'CONFIG_ERROR',
+          `${argv[i]} flag requires a path value. ` +
+          'Usage: --output <path> [--output-format json|markdown]. ' +
+          'Example: --output /tmp/flow/article.md --output-format markdown.'
+        );
+      }
+      outPath = val;
+      i++;
+    } else if (argv[i] === '--output-format') {
+      const val = argv[i + 1];
+      if (!val || val.startsWith('-')) {
+        throw new CliError(
+          'CONFIG_ERROR',
+          '--output-format flag requires a value (json or markdown). ' +
+          'Usage: --output <path> --output-format json|markdown.'
+        );
+      }
+      format = val.toLowerCase();
+      i++;
+    }
+  }
+
+  if (outPath === null) return null;
+
+  if (!VALID_OUTPUT_FORMATS.has(format)) {
+    throw new CliError(
+      'CONFIG_ERROR',
+      `Invalid --output-format value: "${format}". ` +
+      `Must be one of: ${[...VALID_OUTPUT_FORMATS].join(', ')}. ` +
+      'Use "json" (default) for the raw extraction, or "markdown" for a readable rendering.'
+    );
+  }
+
+  return { path: outPath, format };
+}
+
+/**
+ * Render the extraction result to a string in the requested format.
+ *
+ * `extracts` is the Operations.extracts shape: an array (one entry per
+ * instruction) of arrays of `{ field: value }` objects.
+ *
+ *   json     → pretty-printed JSON of the raw extracts (round-trippable).
+ *   markdown → a deterministic, readable rendering: one `## field` heading per
+ *              extracted field, its value in the body. Multi-line string values
+ *              are preserved. Non-string values are JSON-encoded in a fenced
+ *              block so the output stays valid markdown.
+ *
+ * @param {Array} extracts  Operations.extracts
+ * @param {'json'|'markdown'} format
+ * @returns {string}
+ */
+export function renderExtraction(extracts, format) {
+  if (format === 'json') {
+    return JSON.stringify(extracts, null, 2);
+  }
+
+  // markdown — flatten the array-of-arrays into ordered {field, value} pairs.
+  const sections = [];
+  for (const group of Array.isArray(extracts) ? extracts : []) {
+    for (const item of Array.isArray(group) ? group : [group]) {
+      if (item && typeof item === 'object') {
+        for (const [field, value] of Object.entries(item)) {
+          sections.push({ field, value });
+        }
+      } else if (item != null) {
+        sections.push({ field: null, value: item });
+      }
+    }
+  }
+
+  if (sections.length === 0) {
+    return '# Extraction\n\n_No data extracted._\n';
+  }
+
+  const lines = ['# Extraction', ''];
+  for (const { field, value } of sections) {
+    if (field !== null) {
+      lines.push(`## ${field}`, '');
+    }
+    if (typeof value === 'string') {
+      lines.push(value, '');
+    } else {
+      lines.push('```json', JSON.stringify(value, null, 2), '```', '');
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Write the extraction to `cfg.path` in `cfg.format`, creating parent dirs as
+ * needed. Returns the `{ path, format }` contract the flow step emits so the
+ * next step can resolve `${step.output.path}`.
+ *
+ * @param {{ path: string, format: 'json'|'markdown' }} cfg
+ * @param {Array} extracts  Operations.extracts
+ * @returns {{ path: string, format: 'json'|'markdown' }}
+ */
+export function writeExtractionOutput(cfg, extracts) {
+  const dir = path.dirname(cfg.path);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(cfg.path, renderExtraction(extracts, cfg.format), 'utf8');
+  return { path: cfg.path, format: cfg.format };
 }
 
 /**
@@ -280,6 +425,8 @@ function printUsage(stream = process.stdout) {
     '  --mode dom    Force DOM simplifier + XPath',
     '  --mode auto   Auto-select based on quality (default)',
     '  --raw, --ignore-augmentations   Skip domain-specific augmentations',
+    '  --output <path>, -o <path>   Write the extraction to <path> (parent dirs auto-created)',
+    '  --output-format json|markdown   Output file format [default: json]',
     '  --quiet, -q                  Suppress per-instruction progress feedback on stderr',
     '  ANNOTATED_SCREENSHOTS_ON_FAILURE=true  Auto-capture on action failure',
     '',
@@ -424,11 +571,21 @@ async function run() {
       notifyIfAvailable(IBR_VERSION).catch(() => {});
     }
 
-    // Parse CLI flags (--mode) from the already-stripped argv (no --cookies)
-    // parseCliFlags reads process.argv, so we temporarily shadow it
+    // Parse CLI flags (--mode, --output, …) from the already-stripped argv
+    // (no --cookies). parseCliFlags reads process.argv, so we temporarily shadow
+    // it. An invalid --output-format surfaces here as a CONFIG_ERROR.
     const savedArgv = process.argv;
     process.argv = ['node', 'src/index.js', ...effectiveArgv.slice(2)];
-    const { args, mode, annotate, obeyRobots, ignoreAugmentations, interactive, quiet } = parseCliFlags();
+    let args, mode, annotate, obeyRobots, ignoreAugmentations, interactive, quiet, output;
+    try {
+      ({ args, mode, annotate, obeyRobots, ignoreAugmentations, interactive, quiet, output } = parseCliFlags());
+    } catch (err) {
+      process.argv = savedArgv;
+      const cliError = ensureCliError(err, 'CONFIG_ERROR');
+      logger.error(cliError.message);
+      emitStructuredError(cliError);
+      process.exit(1);
+    }
     process.argv = savedArgv;
 
     // The prompt is the first remaining positional argument
@@ -770,6 +927,23 @@ async function run() {
 
         logger.info('Task execution completed');
         logger.info(`Extracted data:\n${JSON.stringify(ops.extracts, null, 2)}`);
+
+        // Additive file sink: if --output was set, write the extraction to a
+        // consumable file (the tlc flow `run.ibr` step resolves this path via
+        // `${step.output.path}`). Does not replace the stdout/stderr sink above.
+        if (output) {
+          try {
+            const meta = writeExtractionOutput(output, ops.extracts);
+            logger.info(`Wrote extraction to ${meta.path} (${meta.format})`);
+          } catch (writeErr) {
+            throw new CliError(
+              'RUNTIME_ERROR',
+              `Failed to write extraction to ${output.path}: ${writeErr.message} ` +
+              'Check the path is writable and its parent is a directory, not a file.',
+              { cause: writeErr }
+            );
+          }
+        }
 
         // Report token usage
         logger.info('Token usage summary', {
