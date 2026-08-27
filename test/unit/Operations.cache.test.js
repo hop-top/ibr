@@ -25,6 +25,7 @@ function makePage(html = '<html><head></head><body></body></html>') {
     fill: vi.fn().mockResolvedValue(undefined),
     type: vi.fn().mockResolvedValue(undefined),
     press: vi.fn().mockResolvedValue(undefined),
+    count: vi.fn().mockResolvedValue(1),
     ariaSnapshot: vi.fn().mockResolvedValue('- button "Submit"'),
   };
   return {

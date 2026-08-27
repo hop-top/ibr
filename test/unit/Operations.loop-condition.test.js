@@ -30,6 +30,7 @@ function makePage(html = '<html><head></head><body></body></html>') {
     fill: vi.fn().mockResolvedValue(undefined),
     type: vi.fn().mockResolvedValue(undefined),
     press: vi.fn().mockResolvedValue(undefined),
+    count: vi.fn().mockResolvedValue(1),
     ariaSnapshot: vi.fn().mockResolvedValue('- button "Next"'),
   };
   return {
@@ -100,45 +101,46 @@ describe('Operations.loopInstruction', () => {
     expect(page._locator.click).toHaveBeenCalledTimes(3);
   });
 
-  it('hard-caps at 100 iterations and does not reject', async () => {
-    vi.useFakeTimers();
+  // NOTE: no fake timers here. Delays are 0ms in the unit env (see
+  // test/vitest.config.js) and executeTask interleaves non-timer async
+  // work (service init, wsm adapter I/O) between its setTimeout calls,
+  // so runAllTimersAsync() returns while the task is parked on real I/O
+  // and the next fake timer is never driven — permanent hang.
 
+  it('hard-caps at 100 iterations and does not reject', async () => {
     // Always return found → infinite loop without cap
     generateAIResponse.mockResolvedValue(aiResp(FOUND));
 
-    const promise = ops.executeTask({
+    await expect(ops.executeTask({
       url: BASE_URL,
       instructions: [{
         name: 'loop',
         prompt: 'always present',
         instructions: [],
       }],
-    });
+    })).resolves.not.toThrow();
 
-    await vi.runAllTimersAsync();
-    // Should resolve (not reject) even at cap
-    await expect(promise).resolves.not.toThrow();
-
-    vi.useRealTimers();
-  }, 10000);
+    // find runs exactly once per iteration → capped at 100 AI calls
+    expect(generateAIResponse).toHaveBeenCalledTimes(100);
+  }, 15000);
 
   it('stops and logs warn at iteration cap (no throw)', async () => {
-    const logger = await import('../../src/utils/logger.js');
+    const logger = (await import('../../src/utils/logger.js')).default;
     generateAIResponse.mockResolvedValue(aiResp(FOUND));
 
-    vi.useFakeTimers();
-    const p = ops.executeTask({
+    await expect(ops.executeTask({
       url: BASE_URL,
       instructions: [{
         name: 'loop',
         prompt: 'endless',
         instructions: [],
       }],
-    });
-    await vi.runAllTimersAsync();
-    await expect(p).resolves.not.toThrow();
-    vi.useRealTimers();
-  }, 10000);
+    })).resolves.not.toThrow();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('maximum iteration limit'),
+    );
+  }, 15000);
 });
 
 // ── condition tests ───────────────────────────────────────────────────────────
