@@ -120,7 +120,43 @@ Do not include any other text, explanation, or markdown formatting. Return ONLY 
   ];
 }
 
+// A verdict/report-style extract asks the model to REPORT a status token
+// ("report PAGE_OK if the heading is shown, or PAGE_FAILED with the error"),
+// not to scrape page data. The generic extraction framing ("extract data from
+// the page; return [] if nothing found") makes the model emit literal [] for
+// such instructions, because a verdict is not page-data — so the verdict token
+// the user asked for is lost at the source, before any parser can recover it.
+//
+// This block, appended only when verdict intent is detected, tells the model to
+// emit the verdict token as a one-record data payload. It leaves ordinary
+// data-extraction untouched (the block is absent for non-verdict prompts).
+const VERDICT_EXTRACT_GUIDANCE = `
+
+VERDICT / REPORT MODE (this instruction asks you to REPORT a status token, not to scrape page data):
+- Evaluate the condition described in the instruction against the snapshot.
+- Return a JSON array containing ONE object whose "verdict" field is the exact token the instruction told you to report (e.g. {"verdict":"PAGE_OK"}).
+- Pick the token that matches the page state (e.g. the success token if the described element/state is present, the failure token otherwise).
+- If the instruction says to include error text or other detail with a token, add it as extra fields on that same object (e.g. {"verdict":"PAGE_FAILED","error":"..."}).
+- A verdict is NOT page-data, so do NOT return an empty array here — always emit the object with the chosen verdict token.`;
+
+// Detect verdict/report-style extract intent from the raw instruction text.
+// General over arbitrary tokens (PAGE_OK / LOGIN_FAILED / STATUS_GREEN / …):
+// a reporting verb (report/return/respond/output/emit/say/print) combined with
+// an explicit status/verdict token or an either/or ("X or Y") report shape.
+function isVerdictExtractPrompt(userPrompt) {
+  if (!userPrompt || typeof userPrompt !== 'string') return false;
+  const text = userPrompt.trim();
+  const reportVerb = /\b(report|respond with|return|reply with|output|emit|say|print)\b/i;
+  if (!reportVerb.test(text)) return false;
+  // An UPPER_SNAKE / UPPERCASE status token (PAGE_OK, LOGIN_FAILED, OK, FAILED).
+  const statusToken = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b(?:OK|FAIL|FAILED|PASS|PASSED|SUCCESS|ERROR|TRUE|FALSE|YES|NO)\b/;
+  // A "verdict" cue word phrased as the thing to report.
+  const verdictCue = /\bverdict|status\b/i;
+  return statusToken.test(text) || verdictCue.test(text);
+}
+
 function makeExtractInstructionMessage(userPrompt, pageContext) {
+  const verdictBlock = isVerdictExtractPrompt(userPrompt) ? VERDICT_EXTRACT_GUIDANCE : '';
   const systemPrompt = `You are a JSON extraction tool. Your ONLY task is to extract data and return valid JSON.
 
 CRITICAL RULES:
@@ -136,7 +172,7 @@ You will be given:
 2. An ARIA snapshot of the page — a hierarchical accessibility tree showing roles, names, and text
 
 Extract the exact text with all symbols and line breaks preserved.
-Return valid JSON array ONLY. Nothing else.`;
+Return valid JSON array ONLY. Nothing else.${verdictBlock}`;
 
   return [
     { role: 'system', content: systemPrompt },
@@ -201,6 +237,7 @@ ${PSEUDO_BUTTON_GUIDANCE}`;
 }
 
 function makeExtractInstructionMessageDom(userPrompt, pageContext) {
+  const verdictBlock = isVerdictExtractPrompt(userPrompt) ? VERDICT_EXTRACT_GUIDANCE : '';
   const systemPrompt = `You are a JSON extraction tool. Your ONLY task is to extract data and return valid JSON.
 
 CRITICAL RULES:
@@ -216,7 +253,7 @@ You will be given:
 2. A simplified DOM tree showing text content and element structure
 
 Extract the exact text with all symbols and line breaks preserved.
-Return valid JSON array ONLY. Nothing else.`;
+Return valid JSON array ONLY. Nothing else.${verdictBlock}`;
 
   return [
     { role: 'system', content: systemPrompt },

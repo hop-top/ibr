@@ -126,6 +126,59 @@ describe('makeExtractInstructionMessage', () => {
   });
 });
 
+// ── verdict / report-style extract intent ─────────────────────────────────────
+// Bug (T-0110 prompt half): an extract phrased as a verdict/report
+// ("report PAGE_OK if the heading is shown, or PAGE_FAILED with the error")
+// has no page-data to scrape. The generic extract prompt frames the task as
+// "extract data FROM THE PAGE; return [] if nothing found", so the model
+// correctly emits literal []. The verdict token the user asked for is lost at
+// the source, before any parser can help.
+//
+// Fix (Option A, prompt-only): makeExtractInstructionMessage / …Dom must detect
+// verdict/report intent and instruct the model to emit the verdict token as a
+// data record — WITHOUT changing behavior for ordinary data-extraction.
+
+import { makeExtractInstructionMessageDom } from '../../../src/utils/prompts.js';
+
+describe('makeExtractInstructionMessage — verdict / report intent', () => {
+  const snapshot = '- heading "Example Domain"';
+
+  // General verdict phrasings — not over-fit to the literal "PAGE_OK" token.
+  const verdictPrompts = [
+    'report PAGE_OK if the heading is shown, or PAGE_FAILED with the exact error text',
+    'return LOGIN_OK if logged in, otherwise LOGIN_FAILED',
+    'respond with STATUS_GREEN or STATUS_RED depending on the banner',
+  ];
+
+  for (const builder of [
+    ['aria', makeExtractInstructionMessage],
+    ['dom', makeExtractInstructionMessageDom],
+  ]) {
+    const [mode, make] = builder;
+
+    for (const prompt of verdictPrompts) {
+      it(`${mode}: verdict prompt guides the model to emit the verdict token as a record — "${prompt.slice(0, 24)}…"`, () => {
+        const sys = make(prompt, snapshot)[0].content;
+        // The prompt must instruct emitting the verdict/report token as data,
+        // rather than only "extract data from the page; return [] if none".
+        expect(sys.toLowerCase()).toContain('verdict');
+        // And it must NOT tell the model an empty array is the answer for a
+        // verdict — that is exactly what produced the lost verdict.
+        expect(sys).toMatch(/report|verdict/i);
+      });
+    }
+
+    it(`${mode}: a normal data-extract prompt keeps the plain extraction framing (no verdict guidance)`, () => {
+      const sys = make('extract the price of each product', snapshot)[0].content;
+      // Ordinary extraction is unchanged: still frames "if nothing found,
+      // return empty array".
+      expect(sys).toContain('If nothing found, return empty array: []');
+      // No verdict-specific block leaks into ordinary extraction.
+      expect(sys.toLowerCase()).not.toContain('verdict');
+    });
+  }
+});
+
 // ── template-literal integrity — no trailing backslash artifacts ──────────────
 // Regression: prior to fix, template literals contained trailing \ chars which
 // would cause syntax errors or mangled string values.
