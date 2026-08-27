@@ -197,9 +197,12 @@ function parseCliFlags() {
   let obeyRobots = process.env.OBEY_ROBOTS === 'true';
   let ignoreAugmentations = false;
   let interactive = false;
+  let quiet = false;
 
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--mode' && argv[i + 1]) {
+    if (argv[i] === '--quiet' || argv[i] === '-q') {
+      quiet = true;
+    } else if (argv[i] === '--mode' && argv[i + 1]) {
       const val = argv[++i].toLowerCase();
       if (!VALID_MODES.has(val)) {
         logger.error(
@@ -222,7 +225,7 @@ function parseCliFlags() {
     }
   }
 
-  return { args: remaining, mode, annotate, obeyRobots, ignoreAugmentations, interactive };
+  return { args: remaining, mode, annotate, obeyRobots, ignoreAugmentations, interactive, quiet };
 }
 
 /**
@@ -232,7 +235,7 @@ function parseCliFlags() {
  * @param {boolean} ignoreAugmentations - ignore augmentations from CLI flags
  * @returns {Object} Operation options
  */
-export function getOperationOptions(mode, annotate = false, ignoreAugmentations = false) {
+export function getOperationOptions(mode, annotate = false, ignoreAugmentations = false, quiet = false) {
   const temperature = parseFloat(process.env.AI_TEMPERATURE || '0');
 
   if (isNaN(temperature) || temperature < 0 || temperature > 2) {
@@ -243,7 +246,7 @@ export function getOperationOptions(mode, annotate = false, ignoreAugmentations 
     );
   }
 
-  return { temperature, mode, annotate, ignoreAugmentations };
+  return { temperature, mode, annotate, ignoreAugmentations, quiet };
 }
 
 /**
@@ -276,6 +279,7 @@ function printUsage(stream = process.stdout) {
     '  --mode dom    Force DOM simplifier + XPath',
     '  --mode auto   Auto-select based on quality (default)',
     '  --raw, --ignore-augmentations   Skip domain-specific augmentations',
+    '  --quiet, -q                  Suppress per-instruction progress feedback on stderr',
     '  ANNOTATED_SCREENSHOTS_ON_FAILURE=true  Auto-capture on action failure',
     '',
     'snap subcommand flags:',
@@ -423,7 +427,7 @@ async function run() {
     // parseCliFlags reads process.argv, so we temporarily shadow it
     const savedArgv = process.argv;
     process.argv = ['node', 'src/index.js', ...effectiveArgv.slice(2)];
-    const { args, mode, annotate, obeyRobots, ignoreAugmentations, interactive } = parseCliFlags();
+    const { args, mode, annotate, obeyRobots, ignoreAugmentations, interactive, quiet } = parseCliFlags();
     process.argv = savedArgv;
 
     // The prompt is the first remaining positional argument
@@ -615,7 +619,7 @@ async function run() {
     let operationOptions;
     try {
       browserConfig = getBrowserConfig(interactive);
-      operationOptions = getOperationOptions(mode, annotate, ignoreAugmentations);
+      operationOptions = getOperationOptions(mode, annotate, ignoreAugmentations, quiet);
     } catch (err) {
       logger.error(err.message);
       emitStructuredError(ensureCliError(err, 'CONFIG_ERROR'));
