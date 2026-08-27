@@ -155,6 +155,17 @@ const STATUS_TOKEN = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b(?:OK|FAIL|FAILED|PASS
 // "FAILED"). Anchored so it never matches a token merely embedded in a sentence.
 const BARE_STATUS_TOKEN = /^(?:[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|OK|FAIL|FAILED|PASS|PASSED|SUCCESS|ERROR|TRUE|FALSE|YES|NO)$/;
 
+// A bare UPPER_SNAKE token and a bare data-FIELD name are lexically identical
+// ("PAGE_OK" vs "ORDER_ID"), so BARE_STATUS_TOKEN alone cannot tell a verdict
+// from a field. There is no reliable positive verdict allowlist (verdict tokens
+// are open-ended — a user may invent PAGE_XYZ). But every verdict token in this
+// codebase is an OUTCOME word (…_OK / …_FAILED / …_ERROR / …_GREEN / NOT_FOUND /
+// the enumerated short tokens), while data fields end in an identifier/field
+// suffix. A bare token whose FINAL segment is one of these suffixes is a data
+// field to scrape, not a verdict to emit — exclude it from the bare-token branch
+// so it routes to ordinary extraction. Anchored on the last segment only.
+const IDENTIFIER_FIELD_SUFFIX = /_(?:ID|SKU|CODE|NAME|URL|KEY|PATH)$/;
+
 // Detect verdict/report-style extract intent from the raw instruction text.
 // General over arbitrary tokens (PAGE_OK / LOGIN_FAILED / STATUS_GREEN / …):
 // a reporting verb (report/return/respond/output/emit/say/print) combined with a
@@ -174,7 +185,10 @@ function isVerdictExtractPrompt(userPrompt) {
   // failure path). That child carries no report verb, but a prompt that IS
   // nothing but an uppercase status token is unambiguously a verdict to emit —
   // recognise it directly so the verdict lands regardless of how the LLM split.
-  if (BARE_STATUS_TOKEN.test(text)) return true;
+  // Exclude bare identifier/field-suffix tokens (ORDER_ID, PRODUCT_SKU, …): those
+  // name a data field to scrape, not a status to report, and no real verdict
+  // token in this codebase uses those suffixes.
+  if (BARE_STATUS_TOKEN.test(text)) return !IDENTIFIER_FIELD_SUFFIX.test(text);
   const reportVerb = /\b(report|respond with|return|reply with|output|emit|say|print)\b/i;
   if (!reportVerb.test(text)) return false;
   // An explicit "X or Y" report shape between two uppercase status tokens —
