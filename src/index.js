@@ -764,7 +764,7 @@ async function run() {
         }
 
         logger.info('Task execution completed');
-        logger.info('Extracted data:', JSON.stringify(ops.extracts, null, 2));
+        logger.info(`Extracted data:\n${JSON.stringify(ops.extracts, null, 2)}`);
 
         // Report token usage
         logger.info('Token usage summary', {

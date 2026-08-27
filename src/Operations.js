@@ -165,7 +165,7 @@ export class Operations {
      * → finds row containing "jad+rami@ideacrafters.com"
      * → scopes getByRole('link', { name: 'delete' }) to that row
      */
-    #scopeByPromptContext(descriptor, prompt) {
+    async #scopeByPromptContext(descriptor, prompt) {
         // Extract potential scoping text: email addresses, quoted
         // strings, or text after "next to" / "near" / "for" / "of"
         const patterns = [
@@ -781,7 +781,7 @@ export class Operations {
                     // before attempting scroll or action.
                     const count = await locator.count();
                     if (count > 1 && instruction.prompt) {
-                        const scoped = this.#scopeByPromptContext(descriptor, instruction.prompt);
+                        const scoped = await this.#scopeByPromptContext(descriptor, instruction.prompt);
                         if (scoped) {
                             logger.info(`${context}: Multiple matches (${count}), scoped to prompt context`);
                             locator = scoped;

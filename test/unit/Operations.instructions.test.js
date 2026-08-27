@@ -8,12 +8,24 @@ vi.mock('../../src/ai/provider.js');
 vi.mock('../../src/cache/CacheManager.js');
 vi.mock('../../src/utils/logger.js');
 // resolveElement is mocked so we can control what it returns per test.
-// Default: return undefined so tests that need it failing can set mockReturnValue(null).
-// Existing dispatch tests stub it to return a locator via the page fixture below.
-vi.mock('../../src/utils/ariaSimplifier.js', async (importOriginal) => {
-  const actual = await importOriginal();
-  return { ...actual, resolveElement: vi.fn() };
-});
+// Only resolveElement is used from ariaSimplifier in these tests;
+// other exports are re-exported as passthrough stubs.
+vi.mock('../../src/utils/ariaSimplifier.js', () => ({
+  getSnapshot: vi.fn().mockResolvedValue(''),
+  assessQuality: vi.fn().mockReturnValue({ score: 1, isUsable: true }),
+  selectMode: vi.fn().mockReturnValue('aria'),
+  resolveElement: vi.fn(),
+  SIZE_THRESHOLD: 200000,
+  SPARSITY_THRESHOLD: 0.05,
+  default: {
+    getSnapshot: vi.fn().mockResolvedValue(''),
+    assessQuality: vi.fn().mockReturnValue({ score: 1, isUsable: true }),
+    selectMode: vi.fn().mockReturnValue('aria'),
+    resolveElement: vi.fn(),
+    SIZE_THRESHOLD: 200000,
+    SPARSITY_THRESHOLD: 0.05,
+  },
+}));
 
 import { generateAIResponse } from '../../src/ai/provider.js';
 import { CacheManager } from '../../src/cache/CacheManager.js';
@@ -38,6 +50,7 @@ function makeLocator() {
     fill: vi.fn().mockResolvedValue(undefined),
     type: vi.fn().mockResolvedValue(undefined),
     press: vi.fn().mockResolvedValue(undefined),
+    count: vi.fn().mockResolvedValue(1),
     ariaSnapshot: vi.fn().mockResolvedValue('- button "Submit"'),
   };
   return loc;
@@ -181,6 +194,7 @@ describe('Operations instruction dispatch', () => {
       });
       expect(ops.extracts).toHaveLength(1);
     });
+
   });
 
   // ── scroll instruction ───────────────────────────────────────────────────────
