@@ -73,11 +73,20 @@ describe('E2E — Self-Healing', () => {
     const combinedA = resultA.stdout + resultA.stderr;
     expect(combinedA).toContain('HealingService: initiating Heal Mode');
     expect(combinedA).toContain('HealingService: found successful fix');
+    // Dynamic in-browser bypass: after the fix is verified live, the original
+    // action is retried against the healed page and succeeds.
+    expect(combinedA).toContain('Retrying action after successful heal');
     expect(resultA.code).toBe(0);
 
     // Verify learning was saved
     const learnings = JSON.parse(await fs.readFile(learningsFile, 'utf8'));
     expect(Object.keys(learnings).length).toBe(1);
+
+    // The healed rule is persisted into the augmentations store for reuse
+    // on future runs (upsertRule), distinct from the learnings index.
+    const augAfterA = JSON.parse(await fs.readFile(augmentationsFile, 'utf8'));
+    expect(Array.isArray(augAfterA.rules)).toBe(true);
+    expect(augAfterA.rules.some(r => r.id === 'auto-fix-paywall-a')).toBe(true);
     
     // --- Site B ---
     const resultB = await runIbr([`url: ${web.baseUrl}/paywall-b.html\ninstructions:\n - click #target`], env);
