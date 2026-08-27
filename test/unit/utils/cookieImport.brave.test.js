@@ -8,7 +8,7 @@
  *   4. findInstalledBrowsers — detects Brave on darwin + linux
  *   5. listDomains — Brave on linux
  *   6. Domain filter — bare + dot variants passed to SQL
- *   7. unsupported_platform on win32
+ *   7. unsupported_platform on non-Chromium-supported platforms; win32 accepted
  *   8. Brave alias resolution
  */
 
@@ -139,6 +139,19 @@ describe('Brave — keychain service name', () => {
   it('queries keychain with "Brave Safe Storage"', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
     execFileSync.mockReturnValue('dGVzdA==\n');
+
+    // Key derivation is lazy — a row with an encrypted value must be present
+    // for the keychain lookup to fire.
+    const encryptedRow = {
+      name: 'session', value: '', encrypted_value: Buffer.from('v10trigger', 'utf8'),
+      host_key: '.brave.com', path: '/', expires_utc: 0n,
+      is_secure: 1, is_httponly: 1, has_expires: 0, samesite: 1,
+    };
+    const Database = (await import('better-sqlite3')).default;
+    Database.mockReturnValue({
+      prepare: vi.fn(() => ({ all: vi.fn(() => [encryptedRow]) })),
+      close: vi.fn(),
+    });
 
     const { importCookies } = await loadModule();
     await importCookies('brave', []);
@@ -339,13 +352,23 @@ describe('Brave — domain filter expansion', () => {
 // ── 7. Platform guard ──────────────────────────────────────────────────────
 
 describe('Brave — platform guard', () => {
-  it('throws unsupported_platform on win32', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+  it('throws unsupported_platform on unsupported unix platform', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('freebsd');
 
     const { importCookies, CookieImportError } = await loadModule();
     await expect(importCookies('brave', [])).rejects.toSatisfy(
       e => e instanceof CookieImportError && e.code === 'unsupported_platform'
     );
+  });
+
+  it('accepts win32 when no encrypted cookies require decryption', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+    const { importCookies } = await loadModule();
+    const result = await importCookies('brave', []);
+
+    expect(result).toMatchObject({ count: 0, failed: 0 });
+    expect(execFileSync).not.toHaveBeenCalled();
   });
 });
 

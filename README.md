@@ -110,12 +110,13 @@ instructions:
 ### Authenticated Sessions (`--cookies`)
 
 Import real browser cookies so ibr can reach pages that require a logged-in
-session. Supports macOS and Linux Chromium-based browsers. Reads directly from
-the browser's on-disk SQLite
-cookie database; no proxy, no extension, no manual export needed.
+session. Supports macOS, Linux, and Windows Chromium-based browsers. Reads
+directly from the browser's on-disk SQLite cookie database; no proxy, no
+extension, no manual export needed.
 
 **Requires:** `better-sqlite3` (native addon, already listed in `package.json`).
 On macOS, the first import also requires Keychain access for the target browser.
+On Windows, cookie decryption uses the browser's Local State master key via DPAPI.
 
 #### Syntax
 
@@ -132,12 +133,12 @@ ibr --cookies <browser>[:<domain1>,<domain2>,...] "<prompt>"
 
 | Alias | Browser | Platforms |
 |-------|---------|-----------|
-| `chrome` | Google Chrome | macOS, Linux |
-| `brave` | Brave | macOS, Linux |
-| `edge` | Microsoft Edge | macOS, Linux |
+| `chrome` | Google Chrome | macOS, Linux, Windows |
+| `brave` | Brave | macOS, Linux, Windows |
+| `edge` | Microsoft Edge | macOS, Linux, Windows |
 | `arc` | Arc | macOS |
 | `comet` | Comet (Perplexity) | macOS |
-| `chromium` | Chromium | Linux |
+| `chromium` | Chromium | Linux, Windows |
 
 #### Examples
 
@@ -194,20 +195,24 @@ instructions:
 1. Resolves the browser's cookie DB path under:
    - macOS: `~/Library/Application Support/<browser>/Default/Cookies`
    - Linux: `${XDG_CONFIG_HOME:-~/.config}/<browser>/Default/Cookies`
+   - Windows: `%LOCALAPPDATA%/<browser>/Default/Network/Cookies` (fallback: `.../Cookies`)
 2. Retrieves the Safe Storage password:
    - macOS: `security find-generic-password` from Keychain — **a permission dialog appears on first run; click "Allow"**
    - Linux: fixed Chromium fallback password `peanuts`
+   - Windows: decrypts Local State `os_crypt.encrypted_key` via DPAPI
 3. Derives a 16-byte AES key via PBKDF2 (SHA-1, 1003 iterations, salt
-   `saltysalt`).
-4. Decrypts each `v10`-prefixed cookie value with AES-128-CBC.
+   `saltysalt`) on macOS/Linux, or loads the Local State master key on Windows.
+4. Decrypts cookie values using:
+   - macOS/Linux: `v10` AES-128-CBC
+   - Windows: legacy DPAPI blobs or `v10` AES-256-GCM
 5. Injects resulting cookies into the Playwright browser context via
    `context.addCookies()` before any navigation.
 
 #### Limitations
 
-- **Windows not yet supported**.
 - Reads the **Default** profile only; named profiles not yet supported.
-- The derived key is cached per-process; macOS subsequent calls for the same
+- Windows app-bound Chromium `v20` cookie encryption is not yet supported.
+- The derived/master key is cached per-process; macOS subsequent calls for the same
   browser skip the dialog.
 
 #### Error Cases
@@ -218,6 +223,11 @@ instructions:
 | `keychain_denied` | User clicked "Deny" in the macOS dialog | Re-run and click "Allow" |
 | `keychain_timeout` | macOS Keychain dialog not answered within 10 s | Re-run and respond to the dialog promptly |
 | `keychain_not_found` | No macOS Keychain entry for that browser | Browser may not be a Chromium build; check alias |
+| `windows_key_not_found` | Windows Local State key could not be read | Check the browser profile and Local State availability |
+| `windows_key_error` | Windows Local State key format is invalid | Check the browser profile integrity |
+| `windows_dpapi_error` | DPAPI decryption failed | Re-run under the same Windows user profile |
+| `windows_dpapi_timeout` | DPAPI helper timed out | Retry the command |
+| `windows_dpapi_unavailable` | PowerShell / DPAPI helper unavailable | Ensure PowerShell is installed and accessible |
 | `db_locked` | DB still locked after copy attempt | Close the browser and retry |
 | `db_corrupt` | SQLite DB is corrupt | Reinstall or reset the browser profile |
 
@@ -1109,7 +1119,7 @@ instructions:
 ## Limitations
 
 - Requires API key for selected AI provider
-- `--cookies` flag supports macOS and Linux; Windows is not yet supported
+- `--cookies` flag supports macOS, Linux, and Windows
 - May struggle with heavily JavaScript-rendered content
 - No built-in retry on transient failures (but logs indicate when/why to retry)
 - Browser automation is slower than direct API calls

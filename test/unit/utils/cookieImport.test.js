@@ -3,7 +3,7 @@
  *
  * Fixes covered:
  *   1. Keychain timeout — execFileSync SIGTERM/ETIMEDOUT → CookieImportError('keychain_timeout')
- *   2. Platform support — Linux parity, Windows still rejected
+ *   2. Platform support — Linux parity + Windows support
  *   3. Domain filter expansion — bare domain auto-expands to include leading-dot variant
  *   4. Pure function unit tests: decryptCookieValue, toPlaywrightCookie,
  *      chromiumEpochToUnix, mapSameSite
@@ -48,6 +48,27 @@ async function loadModule() {
   return import('../../../src/utils/cookieImport.js?t=' + Date.now());
 }
 
+const ENCRYPTED_ROW_TRIGGER = {
+  host_key: '.example.com',
+  name: 'session',
+  value: '',
+  encrypted_value: Buffer.from('v10trigger', 'utf8'),
+  path: '/',
+  expires_utc: 13000000000000000n,
+  is_secure: 1,
+  is_httponly: 1,
+  has_expires: 1,
+  samesite: 1,
+};
+
+async function mockDatabaseRows(rows) {
+  const Database = (await import('better-sqlite3')).default;
+  Database.mockReturnValue({
+    prepare: vi.fn(() => ({ all: vi.fn(() => rows) })),
+    close: vi.fn(),
+  });
+}
+
 describe('cookieImport — Copilot review regression tests', () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -58,6 +79,10 @@ describe('cookieImport — Copilot review regression tests', () => {
   // ── Fix 1: keychain timeout ────────────────────────────────────────────────
 
   describe('getKeychainPassword — keychain_timeout', () => {
+    beforeEach(async () => {
+      await mockDatabaseRows([ENCRYPTED_ROW_TRIGGER]);
+    });
+
     it('maps SIGTERM to CookieImportError with code=keychain_timeout', async () => {
       const sigtermErr = Object.assign(new Error('spawnSync security ETIMEDOUT'), {
         signal: 'SIGTERM',
@@ -143,8 +168,18 @@ describe('cookieImport — Copilot review regression tests', () => {
       expect(execFileSync).not.toHaveBeenCalled();
     });
 
-    it('throws CookieImportError(unsupported_platform) on win32', async () => {
+    it('supports importCookies on win32 when no encrypted cookies require decryption', async () => {
       vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+      const { importCookies } = await loadModule();
+
+      const result = await importCookies('chrome', []);
+      expect(result).toMatchObject({ count: 0, failed: 0 });
+      expect(execFileSync).not.toHaveBeenCalled();
+    });
+
+    it('throws CookieImportError(unsupported_platform) on unsupported unix platform', async () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('freebsd');
 
       const { importCookies, CookieImportError } = await loadModule();
 
@@ -195,8 +230,42 @@ describe('cookieImport — Copilot review regression tests', () => {
       expect(seenPaths).toContain('/tmp/ibr-xdg/google-chrome/Default/Cookies');
     });
 
+    it('findInstalledBrowsers returns Windows-supported browsers only', async () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+      const { findInstalledBrowsers } = await loadModule();
+
+      expect(findInstalledBrowsers().map(browser => browser.name))
+        .toEqual(['Chrome', 'Brave', 'Edge', 'Chromium']);
+    });
+
+    it('findInstalledBrowsers uses LOCALAPPDATA and prefers Network/Cookies on win32', async () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      vi.stubEnv('LOCALAPPDATA', '/tmp/localapp');
+
+      const { findInstalledBrowsers } = await loadModule();
+      const fs = await import('fs');
+      const seenPaths = [];
+      fs.existsSync.mockImplementation((candidate) => {
+        seenPaths.push(candidate);
+        return candidate === '/tmp/localapp/Google/Chrome/User Data/Default/Network/Cookies';
+      });
+
+      expect(findInstalledBrowsers().map(browser => browser.name)).toEqual(['Chrome']);
+      expect(seenPaths).toContain('/tmp/localapp/Google/Chrome/User Data/Default/Network/Cookies');
+    });
+
     it('listDomains works on linux', async () => {
       vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+
+      const { listDomains } = await loadModule();
+
+      expect(listDomains('chrome')).toEqual({ domains: [], browser: 'Chrome' });
+      expect(execFileSync).not.toHaveBeenCalled();
+    });
+
+    it('listDomains works on win32', async () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
 
       const { listDomains } = await loadModule();
 
@@ -213,11 +282,70 @@ describe('cookieImport — Copilot review regression tests', () => {
         err instanceof CookieImportError && err.code === 'unknown_browser'
       );
     });
+
+    it('imports Windows v10 AES-GCM cookies using the Local State master key', async () => {
+      vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      vi.stubEnv('LOCALAPPDATA', '/tmp/localapp');
+
+      const masterKey = Buffer.alloc(32, 0x11);
+      execFileSync.mockReturnValue(masterKey.toString('base64'));
+
+      const fs = await import('fs');
+      vi.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify({
+        os_crypt: {
+          encrypted_key: Buffer.concat([
+            Buffer.from('DPAPI', 'utf8'),
+            Buffer.from('wrapped-key', 'utf8'),
+          ]).toString('base64'),
+        },
+      }));
+
+      const nonce = Buffer.alloc(12, 0x22);
+      const cipher = crypto.createCipheriv('aes-256-gcm', masterKey, nonce);
+      const ciphertext = Buffer.concat([cipher.update('session-value', 'utf8'), cipher.final()]);
+      const tag = cipher.getAuthTag();
+      const encryptedValue = Buffer.concat([Buffer.from('v10', 'utf8'), nonce, ciphertext, tag]);
+
+      const mockStmt = {
+        all: vi.fn(() => [{
+          host_key: '.example.com',
+          name: 'session',
+          value: '',
+          encrypted_value: encryptedValue,
+          path: '/',
+          expires_utc: 13000000000000000n,
+          is_secure: 1,
+          is_httponly: 1,
+          has_expires: 1,
+          samesite: 1,
+        }]),
+      };
+      const Database = (await import('better-sqlite3')).default;
+      Database.mockReturnValue({
+        prepare: vi.fn(() => mockStmt),
+        close: vi.fn(),
+      });
+
+      const { importCookies } = await loadModule();
+      const result = await importCookies('chrome', []);
+
+      expect(result.count).toBe(1);
+      expect(result.failed).toBe(0);
+      expect(result.cookies[0].value).toBe('session-value');
+      expect(fs.readFileSync).toHaveBeenCalledWith(
+        '/tmp/localapp/Google/Chrome/User Data/Local State',
+        'utf8',
+      );
+    });
   });
 
   // ── keychain_not_found and keychain_error branches ────────────────────────
 
   describe('getKeychainPassword — keychain_not_found + keychain_error', () => {
+    beforeEach(async () => {
+      await mockDatabaseRows([ENCRYPTED_ROW_TRIGGER]);
+    });
+
     it('maps "could not be found" stderr to keychain_not_found', async () => {
       const err = Object.assign(new Error('not found'), {
         signal: null,
@@ -461,6 +589,40 @@ describe('decryptCookieValue — pure crypto', () => {
     const result = decryptCookieValue(row, TEST_KEY);
     expect(result.length).toBeGreaterThan(0);
     expect(result).toBe('test-value');
+  });
+
+  it('decrypts Windows v10 AES-GCM cookie values', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+    const key = Buffer.alloc(32, 0x42);
+    const nonce = Buffer.alloc(12, 0x24);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, nonce);
+    const ciphertext = Buffer.concat([cipher.update('windows-cookie', 'utf8'), cipher.final()]);
+    const ev = Buffer.concat([
+      Buffer.from('v10', 'utf8'),
+      nonce,
+      ciphertext,
+      cipher.getAuthTag(),
+    ]);
+
+    expect(decryptCookieValue({ value: '', encrypted_value: ev }, key)).toBe('windows-cookie');
+  });
+
+  it('decrypts Windows legacy DPAPI blobs via helper output', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    execFileSync.mockReturnValue(Buffer.from('legacy-cookie', 'utf8').toString('base64'));
+
+    const encryptedValue = Buffer.from([0x01, 0x02, 0x03, 0x04]);
+    expect(decryptCookieValue({ value: '', encrypted_value: encryptedValue }, TEST_KEY))
+      .toBe('legacy-cookie');
+  });
+
+  it('throws on unsupported Windows app-bound v20 cookies', () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+    const ev = Buffer.concat([Buffer.from('v20', 'utf8'), Buffer.alloc(32, 0x00)]);
+    expect(() => decryptCookieValue({ value: '', encrypted_value: ev }, TEST_KEY))
+      .toThrow('Windows app-bound Chromium cookie encryption (v20) is not yet supported.');
   });
 });
 
