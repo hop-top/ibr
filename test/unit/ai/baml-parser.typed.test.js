@@ -154,18 +154,20 @@ describe('parseExtractionResponse', () => {
     expect(parseExtractionResponse(input)).toEqual([1, 2, 3]);
   });
 
-  it('returns [] for unrecognized object shape', () => {
+  it('wraps an unrecognized object shape as a one-element record', () => {
+    // A payload the model wrapped under its own key is still extracted data;
+    // preserve it as [obj] rather than dropping it.
     const input = JSON.stringify({ results: ['x', 'y'] });
-    expect(parseExtractionResponse(input)).toEqual([]);
+    expect(parseExtractionResponse(input)).toEqual([{ results: ['x', 'y'] }]);
   });
 
   it('returns [] for unparseable input (graceful)', () => {
     expect(parseExtractionResponse('no json here at all anywhere')).toEqual([]);
   });
 
-  it('returns [] when data field is not an array', () => {
+  it('wraps object with non-array data field rather than dropping it', () => {
     const input = JSON.stringify({ data: 'oops' });
-    expect(parseExtractionResponse(input)).toEqual([]);
+    expect(parseExtractionResponse(input)).toEqual([{ data: 'oops' }]);
   });
 
   it('returns markdown list items via extraction type', () => {

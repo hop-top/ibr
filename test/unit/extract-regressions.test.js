@@ -40,13 +40,14 @@ describe('parseExtractionResponse', () => {
     expect(result).toEqual([]);
   });
 
-  it('returns empty array for non-array non-data-wrapped object', () => {
-    // parseExtractionResponse expects arrays or {data:[...]} wrappers;
-    // plain objects without data key return [] (graceful degradation)
+  it('wraps a single non-array object as a one-element record', () => {
+    // A plain verdict/record object is still extracted data. It must be wrapped
+    // as [obj], not discarded to [] — otherwise "report PAGE_OK"-style extracts
+    // silently lose their payload.
     const input = JSON.stringify({ title: 'Foo', url: 'https://foo.com' });
     const result = parseExtractionResponse(input);
     expect(Array.isArray(result)).toBe(true);
-    expect(result).toEqual([]);
+    expect(result).toEqual([{ title: 'Foo', url: 'https://foo.com' }]);
   });
 
   it('unwraps { data: [...] } wrapper', () => {

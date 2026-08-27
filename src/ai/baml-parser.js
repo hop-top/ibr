@@ -235,8 +235,23 @@ export function parseExtractionResponse(response) {
     if (Array.isArray(parsed)) {
       return parsed;
     }
-    if (parsed.data && Array.isArray(parsed.data)) {
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.data)) {
       return parsed.data;
+    }
+
+    // A single non-array payload is still extracted data — a verdict object
+    // ({"verdict":"PAGE_OK"}) or a bare scalar ("PAGE_OK") from a "report X"
+    // extract. Wrap it as a one-element record array instead of discarding it,
+    // so the value reaches the task's extracts output. Only genuinely empty
+    // payloads fall through to [].
+    if (parsed && typeof parsed === 'object') {
+      return Object.keys(parsed).length > 0 ? [parsed] : [];
+    }
+    if (typeof parsed === 'string') {
+      return parsed.trim().length > 0 ? [parsed] : [];
+    }
+    if (typeof parsed === 'number' || typeof parsed === 'boolean') {
+      return [parsed];
     }
 
     logger.warn('Extraction response not in expected array format', { parsed });
