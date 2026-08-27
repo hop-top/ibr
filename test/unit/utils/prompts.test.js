@@ -225,6 +225,66 @@ describe('makeExtractInstructionMessage — verdict / report intent', () => {
   }
 });
 
+// ── verdict detection must not over-trigger on "status" as a plain noun ────────
+// Bug (T-0114): isVerdictExtractPrompt routed ANY extract that paired a reporting
+// verb (report/return/…) with the lowercase substring "status"/"verdict" into
+// verdict mode. Legitimate multi-row data extractions —
+//   "return the order status for each row in the table"
+//   "report the current status of each shipment"
+// — then wrongly got VERDICT_EXTRACT_GUIDANCE, which tells the model to emit ONE
+// {"verdict":TOKEN} object and NEVER an array, silently degrading a real list
+// extraction to a single token.
+//
+// Fix direction: the status/verdict cue word ALONE must not trigger. Gate on a
+// real verdict signal — an UPPER_SNAKE / uppercase status TOKEN (PAGE_OK,
+// LOGIN_FAILED) or an explicit "X or Y" report shape. "status"/"verdict" as a
+// plain lowercase noun in a data-extraction phrase falls through to normal
+// extraction. Do NOT overcorrect into missing genuine verdicts.
+
+describe('makeExtractInstructionMessage — verdict detection is not over-broad (status noun)', () => {
+  const snapshot = '- table "orders"';
+
+  // Legitimate multi-row data extractions that merely mention "status" as a
+  // lowercase noun. These must NOT be routed to verdict mode.
+  const falsePositives = [
+    'return the order status for each row in the table',
+    'report the current status of each shipment',
+    'output the delivery status of every order',
+    'return the verdict column for each judgement in the list',
+  ];
+
+  // Genuine verdicts that MUST keep verdict guidance — general over tokens,
+  // covering both the "token present" and the explicit "X or Y" shapes.
+  const genuineVerdicts = [
+    'report PAGE_OK if the heading "Example Domain" is shown, or PAGE_FAILED with the exact error text',
+    'return LOGIN_OK if logged in, otherwise LOGIN_FAILED',
+    'report LOGIN_OK or LOGIN_FAILED',
+  ];
+
+  for (const [mode, make] of [
+    ['aria', makeExtractInstructionMessage],
+    ['dom', makeExtractInstructionMessageDom],
+  ]) {
+    for (const prompt of falsePositives) {
+      it(`${mode}: data extract mentioning "status"/"verdict" as a noun stays normal — "${prompt.slice(0, 28)}…"`, () => {
+        const sys = make(prompt, snapshot)[0].content;
+        // The plain extraction framing is intact — no verdict block appended.
+        expect(sys).toContain('If nothing found, return empty array: []');
+        expect(sys.toLowerCase()).not.toContain('verdict / report mode');
+        expect(sys.toLowerCase()).not.toContain('"verdict"');
+      });
+    }
+
+    for (const prompt of genuineVerdicts) {
+      it(`${mode}: genuine verdict still gets verdict guidance — "${prompt.slice(0, 28)}…"`, () => {
+        const sys = make(prompt, snapshot)[0].content;
+        expect(sys.toLowerCase()).toContain('verdict');
+        expect(sys).toContain('VERDICT / REPORT MODE');
+      });
+    }
+  }
+});
+
 // ── template-literal integrity — no trailing backslash artifacts ──────────────
 // Regression: prior to fix, template literals contained trailing \ chars which
 // would cause syntax errors or mangled string values.

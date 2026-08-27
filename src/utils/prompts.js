@@ -145,20 +145,30 @@ VERDICT / REPORT MODE (this instruction asks you to REPORT a status token, not t
 - If the instruction says to include error text or other detail with a token, add it as extra fields on that same object (e.g. {"verdict":"PAGE_FAILED","error":"..."}).
 - A verdict is NOT page-data, so do NOT return an empty array here — always emit the object with the chosen verdict token.`;
 
+// An UPPER_SNAKE / UPPERCASE status token (PAGE_OK, LOGIN_FAILED, OK, FAILED).
+// Case-SENSITIVE on purpose: lowercase "ok"/"error"/"status" are ordinary words,
+// not verdict tokens.
+const STATUS_TOKEN = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b(?:OK|FAIL|FAILED|PASS|PASSED|SUCCESS|ERROR|TRUE|FALSE|YES|NO)\b/;
+
 // Detect verdict/report-style extract intent from the raw instruction text.
 // General over arbitrary tokens (PAGE_OK / LOGIN_FAILED / STATUS_GREEN / …):
-// a reporting verb (report/return/respond/output/emit/say/print) combined with
-// an explicit status/verdict token or an either/or ("X or Y") report shape.
+// a reporting verb (report/return/respond/output/emit/say/print) combined with a
+// REAL verdict signal — an UPPER_SNAKE / uppercase status token, or an explicit
+// either/or ("X or Y") report shape between two such tokens.
+//
+// The lowercase words "status"/"verdict" ALONE must NOT trigger: they appear as
+// ordinary nouns in legitimate multi-row data extractions ("return the order
+// status for each row", "report the current status of each shipment"), which
+// would otherwise be misrouted into single-token verdict mode and lose the list.
 function isVerdictExtractPrompt(userPrompt) {
   if (!userPrompt || typeof userPrompt !== 'string') return false;
   const text = userPrompt.trim();
   const reportVerb = /\b(report|respond with|return|reply with|output|emit|say|print)\b/i;
   if (!reportVerb.test(text)) return false;
-  // An UPPER_SNAKE / UPPERCASE status token (PAGE_OK, LOGIN_FAILED, OK, FAILED).
-  const statusToken = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b(?:OK|FAIL|FAILED|PASS|PASSED|SUCCESS|ERROR|TRUE|FALSE|YES|NO)\b/;
-  // A "verdict" cue word phrased as the thing to report.
-  const verdictCue = /\bverdict|status\b/i;
-  return statusToken.test(text) || verdictCue.test(text);
+  // An explicit "X or Y" report shape between two uppercase status tokens —
+  // covers short tokens (GREEN/RED) the keyword list does not enumerate.
+  const orShape = /\b[A-Z][A-Z0-9_]*\b\s+or\s+\b[A-Z][A-Z0-9_]*\b/;
+  return STATUS_TOKEN.test(text) || orShape.test(text);
 }
 
 function makeExtractInstructionMessage(userPrompt, pageContext) {
