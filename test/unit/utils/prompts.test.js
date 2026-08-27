@@ -285,6 +285,79 @@ describe('makeExtractInstructionMessage — verdict detection is not over-broad 
   }
 });
 
+// ── orShape must not misfire on enumerated field lists ────────────────────────
+// Bug (T-0118): the orShape branch of isVerdictExtractPrompt matches a report
+// verb + two adjacent ALL-CAPS words joined by literal " or " and routes to
+// verdict mode (forces ONE {verdict:TOKEN} object, never an array). This
+// false-positives on legitimate MULTI-ITEM data extractions where the CAPS pair
+// is a set of candidate FIELD NAMES inside a larger "extract N things"
+// instruction ("report the ISBN or SKU for each book"). Collapsing those to a
+// single token silently drops the list — the very failure orShape set out to
+// prevent, via a different phrasing.
+//
+// The tell of a GENUINE binary verdict "X or Y" is that the whole instruction IS
+// the choice between two status/outcome tokens: no list/enumeration framing, and
+// the tokens are the reported value itself — not adjectives modifying a following
+// field noun. A data extraction pairs the CAPS as candidate field names, marked
+// by an enumeration cue ("for each", "every", "of each", "per row") and/or a
+// lowercase content noun the CAPS modify ("USD or EUR price", "Q1 or Q2
+// revenue"). The fix excludes that class from the orShape branch WITHOUT touching
+// the STATUS_TOKEN (UPPER_SNAKE / OK|FAILED|…) or bare-token verdict paths.
+
+describe('makeExtractInstructionMessage — orShape must not fire on enumerated field lists', () => {
+  const snapshot = '- table "rows"';
+
+  // Multi-item data extractions whose CAPS pair is a candidate field-name list,
+  // not a binary verdict. General over the class — enumeration cues and/or a
+  // lowercase field noun the CAPS modify. Must stay NORMAL extraction.
+  const orShapeFalsePositives = [
+    'report the ISBN or SKU for each book',
+    'report the USD or EUR price for each product',
+    'return the GET or POST method from each row',
+    'report the Q1 or Q2 revenue',
+    'return the FIRST or LAST name',
+    'report each ROW or COLUMN header',
+    'return the SEDOL or CUSIP code of each holding',
+    'report the MIN or MAX temperature',
+    'return the HTTP or HTTPS url',
+    'report the USD or EUR prices',
+  ];
+
+  // Genuine binary verdicts phrased as "X or Y" — the whole clause IS the choice
+  // between two outcome tokens. Must KEEP verdict guidance. Covers short tokens
+  // the keyword list does not enumerate (GREEN/RED) plus trailing condition
+  // qualifiers ("depending on the banner") that are NOT field nouns.
+  const orShapeGenuineVerdicts = [
+    'report LOGIN_OK or LOGIN_FAILED',
+    'return GREEN or RED',
+    'respond with STATUS_GREEN or STATUS_RED depending on the banner',
+    'report PAGE_OK or PAGE_FAILED',
+    'return YES or NO',
+  ];
+
+  for (const [mode, make] of [
+    ['aria', makeExtractInstructionMessage],
+    ['dom', makeExtractInstructionMessageDom],
+  ]) {
+    for (const prompt of orShapeFalsePositives) {
+      it(`${mode}: enumerated field-list "X or Y" stays normal extraction — "${prompt.slice(0, 30)}…"`, () => {
+        const sys = make(prompt, snapshot)[0].content;
+        expect(sys).toContain('If nothing found, return empty array: []');
+        expect(sys).not.toContain('VERDICT / REPORT MODE');
+        expect(sys.toLowerCase()).not.toContain('"verdict"');
+      });
+    }
+
+    for (const prompt of orShapeGenuineVerdicts) {
+      it(`${mode}: genuine binary "X or Y" verdict still gets guidance — "${prompt.slice(0, 30)}…"`, () => {
+        const sys = make(prompt, snapshot)[0].content;
+        expect(sys).toContain('VERDICT / REPORT MODE');
+        expect(sys.toLowerCase()).toContain('verdict');
+      });
+    }
+  }
+});
+
 // ── template-literal integrity — no trailing backslash artifacts ──────────────
 // Regression: prior to fix, template literals contained trailing \ chars which
 // would cause syntax errors or mangled string values.
