@@ -17,8 +17,17 @@ Config: `.env` (copy from `.env.example`)
 ```env
 AI_PROVIDER=openai              # openai | anthropic | google
 OPENAI_API_KEY=sk-...
-BROWSER_HEADLESS=false          # false = visible window, true = headless
+BROWSER_HEADLESS=false          # default true (headless); set false for a visible window
 BROWSER_SLOWMO=100              # ms delay between actions (0 = fastest)
+```
+
+Point at a local / OpenAI-compatible endpoint (LM Studio, Ollama, vLLM):
+
+```env
+AI_PROVIDER=openai
+OPENAI_BASE_URL=http://localhost:1234/v1
+OPENAI_API_KEY=not-needed       # some local servers ignore this, but it must be set
+AI_MODEL=your-local-model
 ```
 
 ---
@@ -48,6 +57,50 @@ instructions:
 
 ---
 
+## Verdict / Status Checks
+
+Ask for a status token and ibr returns it as a structured verdict object instead
+of scraped page text — handy for gating scripts and CI.
+
+```bash
+ibr 'url: https://example.com
+instructions:
+  - report PAGE_OK if the heading "Example Domain" is shown, or PAGE_FAILED'
+# → extracted data contains: {"verdict":"PAGE_OK"}
+```
+
+Any `report/return/emit <UPPER_SNAKE token> …` instruction (`PAGE_OK`,
+`LOGIN_FAILED`, `STATUS_GREEN`, …) triggers verdict mode. Ordinary "extract the
+prices for each row" instructions are untouched.
+
+---
+
+## Progress Feedback (`--quiet`)
+
+By default, multi-instruction runs print live per-instruction progress to
+**stderr** (n/N + label + elapsed) so a long run never looks hung. It never
+touches stdout, so pipelines are unaffected.
+
+```bash
+ibr "<prompt>"            # progress on stderr (spinner on a TTY)
+ibr --quiet "<prompt>"    # silence progress
+ibr -q "<prompt>"         # shorthand
+```
+
+---
+
+## Skip Augmentations (`--raw`)
+
+```bash
+ibr --raw "<prompt>"                    # skip domain-specific augmentations
+ibr --ignore-augmentations "<prompt>"   # same thing, long form
+```
+
+Use when a site-specific augmentation is interfering and you want the plain
+resolver behaviour.
+
+---
+
 ## Authenticated Sessions (`--cookies`)
 
 Import live browser cookies — no manual export, no proxy.
@@ -65,7 +118,7 @@ ibr --cookies brave:app.example.com,api.example.com "<prompt>"
 | `edge` | Microsoft Edge |
 | `arc` | Arc (macOS) |
 | `comet` | Comet / Perplexity (macOS) |
-| `chromium` | Chromium (Linux) |
+| `chromium` | Chromium (Linux / Windows) |
 
 macOS: Keychain dialog appears on first use per browser — click **Allow**.
 
@@ -135,9 +188,9 @@ ibr tool --list                           # list available tools
 | `web-search` | `query` | `count` (5) |
 | `web-fetch` | `url` | `selector` |
 | `trend-search` | `topic` | `region` (US), `period` (7d) |
-| `github-search` | `query` | `type` (repositories) |
-| `github-trending` | _(none)_ | `language`, `period` (daily) |
-| `github-starred` | `username` | `query` |
+| `github-search` | `query` | `type` (repositories), `count` (10) |
+| `github-trending` | _(none)_ | `language`, `period` (daily), `count` (10) |
+| `github-starred` | `username` | `query`, `count` (10) |
 | `context7` | `library`, `question` | `version` |
 | `arxiv` | `query` | `max_results` (5), `category` |
 | `web-archive` | `url` | `date` (YYYYMMDD) |
@@ -214,17 +267,24 @@ ibr upgrade preamble         # emit agent skill preamble fragment
 | `AI_PROVIDER` | `openai` | `openai` / `anthropic` / `google` |
 | `AI_MODEL` | _(provider default)_ | Override model (e.g. `gpt-4.1`) |
 | `AI_TEMPERATURE` | `0` | 0–2; 0 = deterministic |
-| `BROWSER_HEADLESS` | `false` | `true` = headless |
+| `OPENAI_BASE_URL` | _(OpenAI cloud)_ | Point at an OpenAI-compatible endpoint (local model) |
+| `BROWSER_HEADLESS` | `true` | `false` = show a visible window |
 | `BROWSER_SLOWMO` | `100` | ms between actions |
 | `BROWSER_TIMEOUT` | `30000` | ms per action |
 | `BROWSER_CHANNEL` | _(chromium)_ | `brave` / `chrome` / `msedge` / `arc` / `comet` |
 | `BROWSER_EXECUTABLE_PATH` | — | Explicit browser binary path (overrides `BROWSER_CHANNEL`) |
+| `BROWSER_PROFILE` | `Default` | Browser profile to read cookies from |
+| `EXECUTION_TIMEOUT_MS` | _(none)_ | Global cap on a run, in ms (e.g. `60000`) |
 | `IBR_DAEMON` | `false` | Enable daemon mode |
 | `IBR_STATE_FILE` | `~/.ibr/server.json` | Daemon state file path |
 | `OBEY_ROBOTS` | `false` | Robots.txt compliance |
-| `NDJSON_STREAM` | `false` | Emit structured browser events |
+| `NDJSON_STREAM` | `false` | Also emit structured browser events (stderr) |
 | `ANNOTATED_SCREENSHOTS_ON_FAILURE` | `false` | Auto-capture on failure |
-| `LOG_LEVEL` | `info` | `error` / `warn` / `info` / `debug` |
+| `IBR_WAIT_FOR_HUMAN_ALLOW_PIPED` | `false` | Allow "wait for me to …" to block on piped stdin |
+
+Console logs (info/debug, colorized) go to **stdout**; progress + structured
+events go to **stderr**. Verbosity is `debug` unless `NODE_ENV=production` (then
+`info`). See `.env.example` for the full ~40-var list.
 
 ---
 
@@ -306,9 +366,10 @@ echo -e "LLM agents\ntransformer attention\nRAG retrieval" \
 ### Debug a stuck flow with annotate + logs
 
 ```bash
-LOG_LEVEL=debug ANNOTATED_SCREENSHOTS_ON_FAILURE=true \
-  ibr --annotate "url: https://example.com ..." 2>ibr.log
-# Review PNGs in /tmp/ibr-annotate-*.png and ibr.log
+ANNOTATED_SCREENSHOTS_ON_FAILURE=true \
+  ibr --annotate "url: https://example.com ..." >ibr.log
+# Console logs (debug detail included) go to stdout → ibr.log
+# Review PNGs in /tmp/ibr-annotate-*.png
 ```
 
 ### Force a specific AI model per run
@@ -321,7 +382,8 @@ AI_MODEL=gpt-4o ibr "url: ... quick extraction"
 ### NDJSON streaming for pipeline integration
 
 ```bash
-NDJSON_STREAM=true ibr "url: https://example.com ..." \
+# Events go to stderr — redirect stderr into the pipe (2>&1 1>/dev/null)
+NDJSON_STREAM=true ibr "url: https://example.com ..." 2>&1 1>/dev/null \
   | jq -c 'select(.event == "extract")' \
   | while read line; do echo "$line" | process_event; done
 ```
@@ -347,3 +409,5 @@ OBEY_ROBOTS=true ibr "url: https://example.com ..." || exit 1
 | Wrong elements clicked | Use `--annotate` to visualise resolved elements |
 | Prompt rejected (no URL) | Include `url:` field or a bare `https://` in prompt |
 | robots.txt abort | Remove `--obey-robots` or target a different URL |
+| "No usable Chromium browser found" | Run `npx playwright install chromium`, or set `BROWSER_CHANNEL=chrome` (ibr auto-tries cached + system builds first) |
+| "wait for me to log in" hangs / errors when piped | Human-waits need a TTY; run interactively, or set `IBR_WAIT_FOR_HUMAN_ALLOW_PIPED=true` to wait on stdin. Page/element waits ("wait for the page to load") are timed waits — no TTY needed |
