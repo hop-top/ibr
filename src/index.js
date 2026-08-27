@@ -10,6 +10,7 @@ import { runDomCommand } from './commands/snap.js';
 import { loadAndBuildPrompt, listTools, parseToolArgs } from './commands/tool.js';
 import { wsmAdapter } from './services/WsmAdapter.js';
 import { CliError, ensureCliError, serializeCliError } from './utils/cliErrors.js';
+import { fatalExit } from './utils/fatalExit.js';
 import { createUpgrader } from './utils/upgrader.js';
 import { resolveBrowser } from './browser/index.js';
 import { checkRobots } from './utils/robotsCheck.js';
@@ -723,13 +724,12 @@ async function run() {
       await browserHandle.close();
     }
   } catch (error) {
+    // Any failure inside run() (browser launch/acquire included) surfaces
+    // here. fatalExit guarantees a non-empty stderr message + flushed stdio
+    // BEFORE process.exit, so a launch failure can never be a silent 0-byte
+    // exit on a piped/backpressured stream (T-0109).
     const cliError = ensureCliError(error, 'RUNTIME_ERROR');
-    logger.error('Fatal error', {
-      error: cliError.message,
-      code: cliError.code
-    });
-    emitStructuredError(cliError);
-    process.exit(1);
+    await fatalExit(logger, cliError, { code: cliError.code, message: 'Fatal error' });
   }
 }
 
@@ -742,10 +742,16 @@ let _isSea = false;
 try { _isSea = _require('node:sea').isSea(); } catch (_) {}
 const _isMain = _isSea || (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1]));
 if (_isMain) {
-  run().catch(error => {
+  run().catch(async error => {
     const cliError = ensureCliError(error, 'RUNTIME_ERROR');
-    logger.error('Unhandled error in main', { error: cliError.message });
-    emitStructuredError(cliError);
-    process.exit(1);
+    // Swallow any residual rejection: in production process.exit never
+    // returns, but a test stub can make it throw — that must not become a
+    // dangling unhandled rejection at the entry point.
+    try {
+      await fatalExit(logger, cliError, {
+        code: cliError.code,
+        message: 'Unhandled error in main',
+      });
+    } catch { /* process.exit stubbed to throw (tests) — already surfaced */ }
   });
 }
