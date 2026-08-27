@@ -28,19 +28,9 @@ vi.mock('../../src/utils/cookieImport.js', () => ({
 vi.mock('../../src/commands/snap.js', () => ({ runDomCommand: vi.fn() }));
 vi.mock('dotenv', () => ({ default: { config: vi.fn() } }));
 
-// Stub process.exit so run() calling process.exit(0) for --help doesn't cause
-// vitest to report an unhandled error when tests run in the full suite.
-const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {});
-
-// Prevent the immediate run() call by overriding process.argv before import
-const origArgv = process.argv;
-process.argv = ['node', 'src/index.js', '--help'];
-
+// The _isMain guard in src/index.js keeps run() from firing on import, so the
+// module is safe to import directly.
 const { parseCookiesFlag, getOperationOptions } = await import('../../src/index.js');
-
-process.argv = origArgv;
-// Restore exit after module is loaded; individual tests do not need it suppressed
-exitSpy.mockRestore();
 
 // ── parseCookiesFlag ──────────────────────────────────────────────────────────
 
