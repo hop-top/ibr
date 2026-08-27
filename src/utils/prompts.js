@@ -177,10 +177,42 @@ function isVerdictExtractPrompt(userPrompt) {
   if (BARE_STATUS_TOKEN.test(text)) return true;
   const reportVerb = /\b(report|respond with|return|reply with|output|emit|say|print)\b/i;
   if (!reportVerb.test(text)) return false;
-  // An explicit "X or Y" report shape between two uppercase status tokens —
-  // covers short tokens (GREEN/RED) the keyword list does not enumerate.
+  // A real UPPER_SNAKE / enumerated-keyword status token (PAGE_OK, LOGIN_FAILED,
+  // OK, FAILED, …) is an unambiguous verdict signal on its own — accept it
+  // regardless of surrounding enumeration phrasing.
+  if (STATUS_TOKEN.test(text)) return true;
+  // An explicit "X or Y" report shape between two uppercase tokens — covers short
+  // status words (GREEN/RED) the keyword list does not enumerate. But two adjacent
+  // ALL-CAPS words joined by " or " ALSO appears in ordinary multi-item data
+  // extractions where the pair is a set of candidate FIELD NAMES, not a binary
+  // verdict ("report the ISBN or SKU for each book"). Routing those to verdict
+  // mode collapses a per-row list to one token and drops data. Only treat the
+  // or-shape as a verdict when the whole clause IS the choice — reject it when the
+  // instruction reads as an enumerated field list.
   const orShape = /\b[A-Z][A-Z0-9_]*\b\s+or\s+\b[A-Z][A-Z0-9_]*\b/;
-  return STATUS_TOKEN.test(text) || orShape.test(text);
+  return orShape.test(text) && !isEnumeratedFieldList(text);
+}
+
+// True when a "CAPS or CAPS" pair reads as a field-name enumeration inside a
+// larger multi-item data extraction, rather than a binary status verdict. Two
+// general tells, either sufficient:
+//   1. an enumeration cue anywhere ("for each", "every", "of each", "per row"…),
+//      the hallmark of a per-item/list extraction; or
+//   2. the CAPS pair is immediately followed by a lowercase CONTENT word — a
+//      common noun the CAPS modify as a field label ("USD or EUR price", "Q1 or
+//      Q2 revenue"). A genuine verdict's tokens ARE the reported value, so what
+//      follows them is nothing or a clause connective ("… depending on …", "…
+//      if logged in …"), never a field noun — those connectives are excluded.
+function isEnumeratedFieldList(text) {
+  const enumCue = /\b(?:for each|for every|each|every|per row|per item|per record|of each|of every)\b/i;
+  if (enumCue.test(text)) return true;
+  // Word directly following the second CAPS token of the or-pair, if any.
+  const trailing = /\b[A-Z][A-Z0-9_]*\b\s+or\s+\b[A-Z][A-Z0-9_]*\b\s+([a-z][a-z0-9-]*)/;
+  const m = trailing.exec(text);
+  if (!m) return false;
+  // Clause connectives that legitimately trail a verdict choice (not field nouns).
+  const connective = /^(?:if|when|while|unless|otherwise|else|depending|based|according|because|since|and|with|for|from|to|on|in|the|a|an)$/;
+  return !connective.test(m[1]);
 }
 
 function makeExtractInstructionMessage(userPrompt, pageContext) {
