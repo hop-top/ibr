@@ -87,3 +87,49 @@ steps:
 - Builds on: tlc 020-flow-execution, tlc 027-flow-datarefs.
 - Composes with: aps 053-nadia-ea-capabilities (cookies-from profile capability check).
 - Reuses ibr core: `ibr "<prompt>"`, `--cookies`, `--daemon`, snap modes.
+
+## E2E Coverage
+
+**Status: Expected — not yet implemented (draft / `paper`).**
+
+No flow e2e exists in this repo, and none should be faked. Reading the ibr
+source confirms the ibr-side surface this story needs is **not implemented**:
+
+- **No file-output surface.** ibr emits extraction to stdout/stderr only
+  (`logger.info('Extracted data …')` in [src/index.js](../../src/index.js)).
+  There is no `--output`/`-o` flag and no `output-path` / `output-format`
+  handling in the flag parser or `commands/` — the story's
+  `output-path` + `output-format: markdown` (write a consumable file for the
+  next step via `${capture.output.path}`) has nothing to wire to.
+- **No `cookies-from: profile:<id>`.** ibr's `--cookies` accepts a browser
+  name only (chrome/brave/edge/arc); there is no aps-secret-store
+  `profile:<id>` resolution.
+- **The runner is tlc-side, not ibr-side.** Per this story's own
+  Implementation Notes ("Runner: tlc flow spawns `ibr` subprocess") and its
+  `## Tests` block, the flow-step integration lives in **tlc's flow engine**
+  (Go: `tests/e2e/flow_ibr/*.go`, `internal/runner/ibr_test.go`) invoking ibr
+  as a plain CLI subprocess. ibr's only obligation is a deterministic exit
+  code (which it has, story 017) plus a consumable output contract (a file
+  path or a stable stdout format) — and the **file-path half does not exist
+  yet**.
+
+**What ibr already provides (partial building blocks)**
+
+- Deterministic exit codes (story [017](017-exit-code-contract.md)).
+- Cookie import from a browser via `--cookies` (browser passthrough half of
+  `cookies-from: browser:<…>`).
+- `--daemon` for warm invocations.
+
+**Expected E2E coverage once implemented**
+
+- An ibr `--output <path> --output-format markdown` (or equivalent) surface
+  that writes extraction to a file, VCR/cassette-backed per
+  [cli-tool-vcr.test.js](../../test/e2e/cli-tool-vcr.test.js) conventions
+  (no live network), asserting the file is populated and its
+  `{ path, format, exit_code }` shape.
+- tlc-side flow-runner tests (the Go tests listed under `## Tests`) that spawn
+  ibr as a step and resolve `${capture.output.path}` downstream — these belong
+  in the tlc repo, not here.
+
+A follow-up task tracks implementing the ibr-side output-file surface and its
+cassette-backed test.
