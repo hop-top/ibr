@@ -22,7 +22,7 @@ vi.mock('../../src/utils/logger.js', () => ({
 vi.mock('../../src/utils/cookieImport.js', () => ({
   importCookies: vi.fn(),
   getSupportedCookieBrowsersHelpText: vi.fn(
-    () => 'chrome, brave, edge, arc (macOS), comet (macOS), chromium (Linux)'
+    () => 'chrome, brave, edge, arc (macOS), comet (macOS), chromium (Linux/Windows)'
   ),
 }));
 vi.mock('../../src/commands/snap.js', () => ({ runDomCommand: vi.fn() }));
@@ -66,7 +66,7 @@ describe('parseCookiesFlag — high-precision errors', () => {
 
   it('error lists supported browsers', () => {
     expect(() => parseCookiesFlag(['node', 'ibr', '--cookies']))
-      .toThrow('Supported browsers: chrome, brave, edge, arc (macOS), comet (macOS), chromium (Linux)');
+      .toThrow('Supported browsers: chrome, brave, edge, arc (macOS), comet (macOS), chromium (Linux/Windows)');
   });
 
   it('throws when --cookies value is another flag', () => {

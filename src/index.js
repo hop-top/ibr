@@ -689,7 +689,7 @@ async function run() {
           logger.error(
             `Cookie import failed: ${err.message} ` +
             `Continuing without session cookies — authenticated pages may be inaccessible. ` +
-            `Check that the browser is installed and, on macOS, grant Keychain access when prompted.`,
+            `Check that the browser is installed and the platform key store is accessible.`,
             { code: err.code }
           );
           // Non-fatal — continue without session cookies
