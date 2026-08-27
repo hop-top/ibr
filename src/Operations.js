@@ -1264,9 +1264,26 @@ export class Operations {
         });
 
         const reason = instruction.prompt || 'Manual intervention needed';
+
+        // Guard: waiting for ENTER on a stdin that is not a TTY (headless CLI,
+        // n8n, `< /dev/null`) blocks forever — the line never arrives. Fail
+        // fast with an actionable error instead of hanging silently, unless
+        // the caller explicitly opted in to waiting on piped stdin.
+        const allowPiped = process.env.IBR_WAIT_FOR_HUMAN_ALLOW_PIPED?.toLowerCase() === 'true';
+        if (!process.stdin.isTTY && !allowPiped) {
+            const message =
+                `${context}: cannot wait for human input ("${reason}") — stdin is not a TTY, ` +
+                `so ENTER would never arrive and the task would hang. If this step was meant ` +
+                `to wait for the page or an element to load, rephrase it as a timed wait ` +
+                `(e.g. "wait 5 seconds") — page/element waits must not be wait_for_human. ` +
+                `To wait for a line on piped stdin anyway, set IBR_WAIT_FOR_HUMAN_ALLOW_PIPED=true.`;
+            logger.error(message);
+            throw new CliError('WAIT_FOR_HUMAN_NO_TTY', message, { step: 'wait_for_human' });
+        }
+
         logger.warn(`${context}: PAUSED - ${reason}`);
         console.warn(`\n[ibr] PAUSED: ${reason}`);
-        console.warn(`[ibr] Please perform the necessary actions in the browser window.`);
+        console.warn(`[ibr] Waiting for you — please perform the necessary actions in the browser window.`);
         console.warn(`[ibr] Press ENTER in this terminal when ready to resume...`);
 
         const rl = readline.createInterface({
@@ -1274,11 +1291,24 @@ export class Operations {
             output: process.stdout
         });
 
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
+            let resumed = false;
             rl.on('line', () => {
+                resumed = true;
                 rl.close();
                 logger.info(`${context} resumed`);
                 resolve();
+            });
+            // Piped stdin can end (EOF) before any line arrives; without this
+            // the promise would never settle and the task would hang forever.
+            rl.on('close', () => {
+                if (resumed) return;
+                const message =
+                    `${context}: stdin ended before ENTER was received while waiting for ` +
+                    `human input ("${reason}"). Provide a line on stdin to resume, or ` +
+                    `rephrase page/element waits as timed "wait" instructions.`;
+                logger.error(message);
+                reject(new CliError('WAIT_FOR_HUMAN_STDIN_CLOSED', message, { step: 'wait_for_human' }));
             });
         });
     }
