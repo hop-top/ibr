@@ -150,6 +150,11 @@ VERDICT / REPORT MODE (this instruction asks you to REPORT a status token, not t
 // not verdict tokens.
 const STATUS_TOKEN = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b(?:OK|FAIL|FAILED|PASS|PASSED|SUCCESS|ERROR|TRUE|FALSE|YES|NO)\b/;
 
+// The ENTIRE prompt is a single uppercase status token — the shape a
+// condition-split leaves on its success/failure path ("PAGE_OK", "LOGIN_FAILED",
+// "FAILED"). Anchored so it never matches a token merely embedded in a sentence.
+const BARE_STATUS_TOKEN = /^(?:[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|OK|FAIL|FAILED|PASS|PASSED|SUCCESS|ERROR|TRUE|FALSE|YES|NO)$/;
+
 // Detect verdict/report-style extract intent from the raw instruction text.
 // General over arbitrary tokens (PAGE_OK / LOGIN_FAILED / STATUS_GREEN / …):
 // a reporting verb (report/return/respond/output/emit/say/print) combined with a
@@ -163,6 +168,13 @@ const STATUS_TOKEN = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b|\b(?:OK|FAIL|FAILED|PASS
 function isVerdictExtractPrompt(userPrompt) {
   if (!userPrompt || typeof userPrompt !== 'string') return false;
   const text = userPrompt.trim();
+  // Condition-split: the parser sometimes turns "report PAGE_OK if <cond>, or
+  // PAGE_FAILED …" into a condition instruction plus a BARE extract whose prompt
+  // is just the token ("PAGE_OK") on the success path (the failure token on the
+  // failure path). That child carries no report verb, but a prompt that IS
+  // nothing but an uppercase status token is unambiguously a verdict to emit —
+  // recognise it directly so the verdict lands regardless of how the LLM split.
+  if (BARE_STATUS_TOKEN.test(text)) return true;
   const reportVerb = /\b(report|respond with|return|reply with|output|emit|say|print)\b/i;
   if (!reportVerb.test(text)) return false;
   // An explicit "X or Y" report shape between two uppercase status tokens —
