@@ -38,6 +38,10 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 15000,
     pool: 'forks',
+    // Backstop for the daemon-orphan leak: reaps any src/server.js daemon
+    // left with ppid===1 after the whole run. Defense in depth only — the
+    // real fix is startDaemon reaping on throw (test/helpers/daemon.js).
+    globalSetup: ['./test/globalSetup.js'],
     env: {
       CACHE_ENABLED: 'false',
       INSTRUCTION_EXECUTION_DELAY_MS: '0',
