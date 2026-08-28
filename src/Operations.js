@@ -122,6 +122,13 @@ export class Operations {
         this.quiet = !!options.quiet;
         this.executionIndex = 0;
 
+        // Auto-mode visual-escalation cap (SPEC Unit 3, auto path): read
+        // once at construction, per-run counter. Explicit --mode visual
+        // (T-0146) never consults this — the cap gates only escalation FROM
+        // aria/dom text find/act failures in --mode auto.
+        this.visualMaxEscalations = Operations.#parseVisualMaxEscalations(process.env.VISUAL_MAX_ESCALATIONS);
+        this._visualEscalationsUsed = 0;
+
         logger.debug('Operations initialized', {
             provider: ctx.aiProvider.provider,
             model: ctx.aiProvider.model,
@@ -130,6 +137,20 @@ export class Operations {
             annotate: this.annotateMode,
             options
         });
+    }
+
+    /**
+     * Parse VISUAL_MAX_ESCALATIONS (default 3). Any non-positive-integer
+     * value (missing, non-numeric, zero, negative) falls back to the
+     * default rather than disabling/broadening the cap silently.
+     * @param {string|undefined} raw
+     * @returns {number}
+     */
+    static #parseVisualMaxEscalations(raw) {
+        const DEFAULT_CAP = 3;
+        if (raw == null || raw === '') return DEFAULT_CAP;
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CAP;
     }
 
     /**
@@ -930,6 +951,39 @@ export class Operations {
                     try {
                         await performAction();
                     } catch (actionError) {
+                        // Auto-mode escalation ladder (aria->dom->visual,
+                        // capped) — SPEC Unit 3 auto path: before reaching
+                        // for healing, try a visual (Set-of-Marks) attempt
+                        // for THIS instruction. Explicit --mode visual never
+                        // reaches this catch via a text-action failure (it
+                        // never attempts a text action), so it is naturally
+                        // excluded — the cap only ever gates this branch.
+                        if (this.mode === 'auto') {
+                            const escalated = await this.#attemptVisualEscalation(instruction);
+                            if (escalated) {
+                                // Visual attempt resolved AND executed the
+                                // action successfully — fall through to the
+                                // normal success bookkeeping below, skip
+                                // healing entirely for this instruction.
+                                streamer.action({
+                                    actionType: actionType || instruction.name,
+                                    selector: locatorDesc,
+                                    valueLength: action.value != null ? String(action.value).length : 0,
+                                    status: 'success',
+                                });
+                                await wsmAdapter.recordToolCall(
+                                    actionType || instruction.name,
+                                    { selector: locatorDesc, prompt: instruction.prompt },
+                                    { status: 'success' },
+                                    Date.now() - actionStartMs,
+                                );
+                                await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+                                this.snapshotDiffer.reset();
+                                logger.info(`${context}: resolved via auto-escalation to visual`, { actionType });
+                                return;
+                            }
+                        }
+
                         // Attempt to heal if not already raw/ignored
                         if (!this.ignoreAugmentations) {
                             const fix = await this.healingService.attemptHeal(this.ctx.page, instruction, locator, actionError);
@@ -1210,6 +1264,123 @@ export class Operations {
                 ? { locator: mark.element, label }
                 : { gridCenter: { x: mark.bbox.x + mark.bbox.width / 2, y: mark.bbox.y + mark.bbox.height / 2 }, label },
         };
+    }
+
+    /**
+     * Auto-mode escalation ladder (aria->dom->visual, capped) — SPEC Unit 3
+     * auto path / plan "Operations: auto-escalation ladder". Called from
+     * #actionInstruction's actionError handler, BEFORE
+     * healingService.attemptHeal, when this.mode === 'auto' and the normal
+     * text (aria/dom) find/act has just failed for this instruction.
+     *
+     * Escalation is PER-INSTRUCTION and capped per run by
+     * VISUAL_MAX_ESCALATIONS (this.visualMaxEscalations, read once at
+     * construction) — explicit --mode visual (T-0146) never calls this
+     * method, so it is unaffected by the cap. Reuses the T-0146 visual
+     * resolve path (#resolveVisualAction: represent -> visual find ->
+     * resolve mark) and, on a resolved mark, performs the SAME action the
+     * failed text attempt was trying (click / fill / type / press) via the
+     * existing click/mouse machinery.
+     *
+     * Never escalates silently: emits a 'visual.escalation' event via the
+     * NDJSON streamer when an attempt is made, or a 'visual.escalation_capped'
+     * note when the cap blocks the attempt.
+     *
+     * @param {Object} instruction
+     * @returns {Promise<boolean>} true if the visual attempt resolved AND
+     *   the action executed successfully (caller should treat the
+     *   instruction as done and skip healing); false if escalation was
+     *   capped, the visual find didn't resolve a mark, or the resolved
+     *   visual action itself failed (caller should fall through to the
+     *   existing healingService.attemptHeal flow).
+     */
+    async #attemptVisualEscalation(instruction) {
+        if (this._visualEscalationsUsed >= this.visualMaxEscalations) {
+            streamer.visualEscalationCapped({
+                instructionIndex: this.executionIndex,
+                cap: this.visualMaxEscalations,
+            });
+            logger.warn('Auto-escalation: VISUAL_MAX_ESCALATIONS reached, skipping visual attempt', {
+                instructionIndex: this.executionIndex,
+                cap: this.visualMaxEscalations,
+            });
+            return false;
+        }
+
+        this._visualEscalationsUsed += 1;
+        streamer.visualEscalation({
+            instructionIndex: this.executionIndex,
+            reason: 'text find/act failed',
+            escalationsUsed: this._visualEscalationsUsed,
+            cap: this.visualMaxEscalations,
+        });
+        logger.info('Auto-escalation: text find/act failed, attempting visual resolution', {
+            instructionIndex: this.executionIndex,
+            escalationsUsed: this._visualEscalationsUsed,
+            cap: this.visualMaxEscalations,
+        });
+
+        let visualAction;
+        try {
+            visualAction = await this.#resolveVisualAction(instruction);
+        } catch (err) {
+            logger.warn('Auto-escalation: visual resolution errored, falling through to healing', { error: err.message });
+            return false;
+        }
+
+        if (!visualAction?.visual) {
+            // Visual find didn't resolve a mark (empty/unknown label) — same
+            // "no matching elements" shape #resolveVisualAction already
+            // returns for the explicit path. Fall through to healing.
+            return false;
+        }
+
+        try {
+            if (visualAction.visual.locator) {
+                await this.#performVisualAction(visualAction.visual.locator, visualAction);
+            } else {
+                const { x: cx, y: cy } = visualAction.visual.gridCenter;
+                logger.info('Auto-escalation: clicking grid cell center', { label: visualAction.visual.label, x: cx, y: cy });
+                await this.ctx.page.mouse.click(cx, cy);
+            }
+        } catch (err) {
+            logger.warn('Auto-escalation: visual action execution failed, falling through to healing', { error: err.message });
+            return false;
+        }
+
+        if (this.annotateMode) {
+            await this.#writeVisualAnnotateArtifact();
+        }
+
+        return true;
+    }
+
+    /**
+     * Execute the resolved action type against a visual-mark locator.
+     * Shared by #attemptVisualEscalation (auto path); the explicit --mode
+     * visual path performs the same switch inline in #actionInstruction's
+     * main flow (its locator additionally goes through the strict-mode
+     * scoping / scrollIntoViewIfNeeded steps that don't apply to a
+     * last-resort escalation retry).
+     * @param {import('playwright').Locator} locator
+     * @param {{type: string, value?: string}} action
+     */
+    async #performVisualAction(locator, action) {
+        switch (action.type) {
+            case 'fill':
+                await locator.fill(action.value);
+                break;
+            case 'type':
+                await locator.type(action.value);
+                break;
+            case 'press':
+                await locator.press(action.value);
+                break;
+            case 'click':
+            default:
+                await locator.click();
+                break;
+        }
     }
 
     /**

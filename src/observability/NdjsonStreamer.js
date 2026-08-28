@@ -71,6 +71,34 @@ export class NdjsonStreamer {
     instructionError({ instructionType, error }) {
         this.emit({ event: 'error', timestamp: iso(), instruction: instructionType, error });
     }
+
+    /**
+     * Auto-mode escalated a failed text find/act to a visual attempt for one
+     * instruction (vision-mode auto-escalation ladder, ahead of healing).
+     */
+    visualEscalation({ instructionIndex, reason, escalationsUsed, cap }) {
+        this.emit({
+            event: 'visual.escalation',
+            timestamp: iso(),
+            instructionIndex,
+            reason,
+            escalationsUsed,
+            cap,
+        });
+    }
+
+    /**
+     * VISUAL_MAX_ESCALATIONS reached for this run — auto-escalation stops and
+     * the failure falls straight through to healing (never a silent give-up).
+     */
+    visualEscalationCapped({ instructionIndex, cap }) {
+        this.emit({
+            event: 'visual.escalation_capped',
+            timestamp: iso(),
+            instructionIndex,
+            cap,
+        });
+    }
 }
 
 function iso() {
