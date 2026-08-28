@@ -263,4 +263,48 @@ describe('VisualRepresenter', () => {
             expect(mockSimplify).toHaveBeenCalled();
         });
     });
+
+    describe('capture failure (captureAnnotatedBuffer returns success:false)', () => {
+        it('element path: throws a RUNTIME_ERROR CliError rather than downgrading to strategy "grid"', async () => {
+            const page = makePage();
+            const { tree, xpaths } = makeSimplifiedTreeWithElements(2);
+            mockSimplify.mockImplementation(async function () {
+                this.xpaths = xpaths;
+                return tree;
+            });
+            // Elements WERE detected, but the core's capture (e.g. screenshot) failed.
+            mockCaptureAnnotatedBuffer.mockResolvedValue({ success: false });
+
+            const representer = new VisualRepresenter(page);
+
+            await expect(representer.represent(page)).rejects.toMatchObject({
+                name: 'CliError',
+                code: 'RUNTIME_ERROR',
+            });
+
+            // Capture failure must not silently become the grid path: renderGrid
+            // (the grid-specific dimension computation) must never be consulted
+            // when elements were the detected strategy.
+            expect(mockRenderGrid).not.toHaveBeenCalled();
+            // Only the one (failed) element-path capture call was made — no
+            // second useGrid:true call as a fallback.
+            expect(mockCaptureAnnotatedBuffer).toHaveBeenCalledTimes(1);
+        });
+
+        it('grid path: throws a RUNTIME_ERROR CliError rather than returning {image: undefined, ...}', async () => {
+            const page = makePage();
+            mockSimplify.mockImplementation(async function () {
+                this.xpaths = [];
+                return { x: -1, n: 'BODY', t: '', a: {}, c: [] };
+            });
+            mockCaptureAnnotatedBuffer.mockResolvedValue({ success: false });
+
+            const representer = new VisualRepresenter(page);
+
+            await expect(representer.represent(page)).rejects.toMatchObject({
+                name: 'CliError',
+                code: 'RUNTIME_ERROR',
+            });
+        });
+    });
 });

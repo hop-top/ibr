@@ -2,6 +2,7 @@ import { DomSimplifier } from './DomSimplifier.js';
 import { AnnotationService } from './services/AnnotationService.js';
 import { STANDARD_INTERACTIVE_TAGS } from './utils/constants.js';
 import logger from './utils/logger.js';
+import { CliError } from './utils/cliErrors.js';
 
 /**
  * VisualRepresenter — produces a Set-of-Marks screenshot + a mark→target map
@@ -107,7 +108,7 @@ export class VisualRepresenter {
         if (elements.length > 0) {
             return this.#representElements(targetPage, elements, xpaths);
         }
-        return this.#representGrid(targetPage);
+        return this.#representGrid();
     }
 
     /**
@@ -119,8 +120,16 @@ export class VisualRepresenter {
         const captured = await this.annotationService.captureAnnotatedBuffer(elements, xpaths);
 
         if (!captured.success) {
-            this.logger.warn('VisualRepresenter: element capture failed, falling back to grid');
-            return this.#representGrid(page);
+            // Capture failure (e.g. screenshot threw) is NOT the same condition
+            // as "no elements detected" — elements WERE found here, so this must
+            // never silently reclassify as strategy:'grid'. Fail loudly instead
+            // of returning a malformed {image: undefined, ...} shape (per spec
+            // Error handling: screenshot/overlay failure -> RUNTIME_ERROR).
+            this.logger.warn('VisualRepresenter: element capture failed');
+            throw new CliError(
+                'RUNTIME_ERROR',
+                `VisualRepresenter: failed to capture annotated screenshot for ${elements.length} detected element(s)`
+            );
         }
 
         const markMap = new Map();
@@ -145,18 +154,28 @@ export class VisualRepresenter {
      * Grid strategy (fallback): no interactive elements detected — overlay
      * the uniform labeled grid (Unit-0 core) and map cells with no element.
      */
-    async #representGrid(page) {
+    async #representGrid() {
         const captured = await this.annotationService.captureAnnotatedBuffer([], {}, { useGrid: true });
 
+        if (!captured.success) {
+            // Same rule as the element path: never return a malformed shape
+            // (image:Buffer is not optional in the documented contract) and
+            // never paper over the failure silently.
+            this.logger.warn('VisualRepresenter: grid capture failed');
+            throw new CliError(
+                'RUNTIME_ERROR',
+                'VisualRepresenter: failed to capture annotated grid-overlay screenshot'
+            );
+        }
+
         const markMap = new Map();
-        const boxes = captured.success ? captured.boxes : await this.annotationService.renderGrid();
-        boxes.forEach((cell, idx) => {
+        captured.boxes.forEach((cell, idx) => {
             markMap.set(idx + 1, { bbox: cell.box, cellId: cell.cellId });
         });
 
         return {
-            image: captured.success ? captured.image : undefined,
-            mime: captured.success ? captured.mime : undefined,
+            image: captured.image,
+            mime: captured.mime,
             markMap,
             strategy: 'grid',
         };
