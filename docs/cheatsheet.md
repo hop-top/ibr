@@ -133,7 +133,7 @@ ibr --mode visual  "<prompt>"   # screenshot + Set-of-Marks; vision-based elemen
 ibr --mode auto    "<prompt>"   # default — auto quality-based; escalates aria → dom → visual
 ```
 
-Auto escalation: in `--mode auto`, when aria + dom text find/act fails, ibr escalates to visual (screenshot + numbered overlays sent to LLM). Capped at `VISUAL_MAX_ESCALATIONS` (default 3). Visual uses vision tokens (~1000–2000/screenshot); prefer text modes for cost.
+Auto escalation: in `--mode auto`, when aria + dom text find succeeds but the action fails, ibr escalates to visual (screenshot + numbered overlays sent to LLM). Capped at `VISUAL_MAX_ESCALATIONS` (default 3). Visual uses vision tokens (~1000–2000/screenshot); prefer text modes for cost.
 
 ---
 
