@@ -7,8 +7,11 @@ import {
     makeFindInstructionMessageDom,
     makeActionInstructionMessageDom,
     makeExtractInstructionMessageDom,
+    makeVisualFindMessage,
+    makeVisualExtractMessage,
 } from "./utils/prompts.js";
 import { DomSimplifier } from './DomSimplifier.js';
+import { VisualRepresenter } from './VisualRepresenter.js';
 import readline from 'readline';
 import { SnapshotDiffer } from './utils/SnapshotDiffer.js';
 import { getSnapshot, resolveElement, selectMode } from './utils/ariaSimplifier.js';
@@ -59,6 +62,13 @@ export class Operations {
         this.observabilityBuffer = new ObservabilityBuffer();
         this._requestStartTimes = new WeakMap();
         this.annotationService = new AnnotationService(ctx.page);
+        this.visualRepresenter = new VisualRepresenter(ctx.page);
+        // Cache of the current instruction's visual representation, so
+        // find + extract within ONE instruction reuse a single screenshot
+        // instead of capturing twice (spec Unit 3: "reuse image for
+        // find+extract if both run"). Reset at the top of each top-level
+        // instruction dispatch (#executeInstruction).
+        this._visualRepresentation = null;
         this.annotateMode = !!options.annotate;
         this.ignoreAugmentations = !!options.ignoreAugmentations;
         this.augmentationEngine = augmentationEngine;
@@ -569,40 +579,57 @@ export class Operations {
 
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-            const { context: pageContext, isAria } = await this.#getPageContext();
 
-            // Note: For extraction, we always call AI for fresh data
-            // Caching would require re-extracting from current DOM
-            const makeExtract = isAria ? makeExtractInstructionMessage : makeExtractInstructionMessageDom;
-            const messages = makeExtract(instruction.prompt, pageContext);
+            this.#resetVisualRepresentation();
 
-            logger.debug('Sending extract instruction to AI', {
-                promptLength: instruction.prompt.length,
-                contextLength: pageContext.length
-            });
+            let extract;
+            let response;
 
-            const response = await generateAIResponse(
-                this.ctx.aiProvider.modelInstance,
-                messages,
-                { temperature: this.temperature }
-            );
+            if (this.mode === 'visual') {
+                // --mode visual: extract-from-image (SPEC Unit 3). Same sink
+                // (this.extracts) and same parse/verdict handling as the text
+                // path — only the source representation differs.
+                logger.debug('Sending visual extract instruction to AI', {
+                    promptLength: instruction.prompt.length,
+                });
+                const visualResult = await this.#resolveVisualExtract(instruction.prompt);
+                extract = visualResult.extract;
+                response = { usage: visualResult.usage };
+            } else {
+                const { context: pageContext, isAria } = await this.#getPageContext();
+
+                // Note: For extraction, we always call AI for fresh data
+                // Caching would require re-extracting from current DOM
+                const makeExtract = isAria ? makeExtractInstructionMessage : makeExtractInstructionMessageDom;
+                const messages = makeExtract(instruction.prompt, pageContext);
+
+                logger.debug('Sending extract instruction to AI', {
+                    promptLength: instruction.prompt.length,
+                    contextLength: pageContext.length
+                });
+
+                response = await generateAIResponse(
+                    this.ctx.aiProvider.modelInstance,
+                    messages,
+                    { temperature: this.temperature }
+                );
+
+                const output = response.content?.trim();
+
+                try {
+                    if (output) {
+                      const parsed = parseExtractionResponse(output);
+                      extract = Array.isArray(parsed) ? parsed : [parsed];
+                    } else {
+                      extract = [];
+                    }
+                } catch (parseErr) {
+                    logger.warn(createParseErrorMessage('extraction', output, parseErr));
+                    extract = [];
+                }
+            }
 
             this.#updateTokenUsage(response.usage);
-
-            const output = response.content?.trim();
-            let extract;
-
-            try {
-                if (output) {
-                  const parsed = parseExtractionResponse(output);
-                  extract = Array.isArray(parsed) ? parsed : [parsed];
-                } else {
-                  extract = [];
-                }
-            } catch (parseErr) {
-                logger.warn(createParseErrorMessage('extraction', output, parseErr));
-                extract = [];
-            }
 
             this.extracts.push(extract);
 
@@ -676,6 +703,8 @@ export class Operations {
         try {
             await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
 
+            this.#resetVisualRepresentation();
+
             // Preemptive popup switch: if a popup opened after a
             // previous action, switch to it before trying to find
             // elements. The user's next instruction likely targets
@@ -697,75 +726,88 @@ export class Operations {
                 });
             }
 
-            const { context: pageContext, isAria } = await this.#getPageContext();
-            const domSignature = createDomSignature(pageContext);
+            let isAria = false;
 
-            // Check cache first
-            const cacheKey = this.cacheManager.generateKey(this.url, instruction.prompt, 'action');
-            const cached = await this.cacheManager.get('action', cacheKey);
-
-            if (cached && isDomCompatible(cached.metadata.lastDomSignature, domSignature)) {
-                try {
-                    // Try to apply cached schema (ARIA descriptors)
-                    const { elementDescriptors, actionType, actionValue } = cached.schema;
-                    if (elementDescriptors && elementDescriptors.length > 0) {
-                        action = {
-                            elements: elementDescriptors,
-                            type: actionType,
-                            value: actionValue
-                        };
-                        await this.cacheManager.recordSuccess('action', cacheKey);
-                        logger.info(`${context} completed (CACHE HIT)`, { actionType });
-                    }
-                } catch (error) {
-                    logger.debug('Cache application failed', { error: error.message });
-                    await this.cacheManager.recordFailure('action', cacheKey);
-                    action = null;
-                }
-            }
-
-            // Cache miss or invalid - call AI
-            if (!action) {
-                const makeAction = isAria ? makeActionInstructionMessage : makeActionInstructionMessageDom;
-                const messages = makeAction(instruction.prompt, pageContext);
-
-                logger.debug('Sending action instruction to AI', {
+            if (this.mode === 'visual') {
+                // --mode visual: resolve the action via Set-of-Marks instead
+                // of aria/dom text (SPEC Unit 3, explicit path). No cache —
+                // visual calls always re-capture, mirroring the extract path.
+                logger.debug('Sending visual action instruction to AI', {
                     promptLength: instruction.prompt.length,
-                    contextLength: pageContext.length,
-                    isAria
                 });
+                action = await this.#resolveVisualAction(instruction);
+            } else {
+                const { context: pageContext, isAria: ariaFlag } = await this.#getPageContext();
+                isAria = ariaFlag;
+                const domSignature = createDomSignature(pageContext);
 
-                const response = await generateAIResponse(
-                    this.ctx.aiProvider.modelInstance,
-                    messages,
-                    { temperature: this.temperature }
-                );
+                // Check cache first
+                const cacheKey = this.cacheManager.generateKey(this.url, instruction.prompt, 'action');
+                const cached = await this.cacheManager.get('action', cacheKey);
 
-                this.#updateTokenUsage(response.usage);
-
-                const output = response.content?.trim();
-
-                try {
-                    action = output ? parseActionInstructionResponse(output) : { elements: [] };
-                } catch (parseErr) {
-                    logger.warn(createParseErrorMessage('action', output, parseErr));
-                    action = { elements: [] };
+                if (cached && isDomCompatible(cached.metadata.lastDomSignature, domSignature)) {
+                    try {
+                        // Try to apply cached schema (ARIA descriptors)
+                        const { elementDescriptors, actionType, actionValue } = cached.schema;
+                        if (elementDescriptors && elementDescriptors.length > 0) {
+                            action = {
+                                elements: elementDescriptors,
+                                type: actionType,
+                                value: actionValue
+                            };
+                            await this.cacheManager.recordSuccess('action', cacheKey);
+                            logger.info(`${context} completed (CACHE HIT)`, { actionType });
+                        }
+                    } catch (error) {
+                        logger.debug('Cache application failed', { error: error.message });
+                        await this.cacheManager.recordFailure('action', cacheKey);
+                        action = null;
+                    }
                 }
 
-                logger.debug(`${context} parsed`, {
-                    actionType: action.type,
-                    elementCount: action.elements?.length || 0,
-                    promptTokens: response.usage.promptTokens,
-                    completionTokens: response.usage.completionTokens
-                });
+                // Cache miss or invalid - call AI
+                if (!action) {
+                    const makeAction = isAria ? makeActionInstructionMessage : makeActionInstructionMessageDom;
+                    const messages = makeAction(instruction.prompt, pageContext);
 
-                // Cache successful result
-                if (action.elements && action.elements.length > 0) {
-                    const schema = extractSchema('action', action);
-                    await this.cacheManager.set('action', cacheKey, {
-                        schema,
-                        metadata: { lastDomSignature: domSignature }
+                    logger.debug('Sending action instruction to AI', {
+                        promptLength: instruction.prompt.length,
+                        contextLength: pageContext.length,
+                        isAria
                     });
+
+                    const response = await generateAIResponse(
+                        this.ctx.aiProvider.modelInstance,
+                        messages,
+                        { temperature: this.temperature }
+                    );
+
+                    this.#updateTokenUsage(response.usage);
+
+                    const output = response.content?.trim();
+
+                    try {
+                        action = output ? parseActionInstructionResponse(output) : { elements: [] };
+                    } catch (parseErr) {
+                        logger.warn(createParseErrorMessage('action', output, parseErr));
+                        action = { elements: [] };
+                    }
+
+                    logger.debug(`${context} parsed`, {
+                        actionType: action.type,
+                        elementCount: action.elements?.length || 0,
+                        promptTokens: response.usage.promptTokens,
+                        completionTokens: response.usage.completionTokens
+                    });
+
+                    // Cache successful result
+                    if (action.elements && action.elements.length > 0) {
+                        const schema = extractSchema('action', action);
+                        await this.cacheManager.set('action', cacheKey, {
+                            schema,
+                            metadata: { lastDomSignature: domSignature }
+                        });
+                    }
                 }
             }
 
@@ -776,7 +818,47 @@ export class Operations {
 
                 let locator;
                 let locatorDesc;
-                if (!isAria && refStr.startsWith('c') && this.pseudoButtonRefs[refStr]) {
+                if (action.visual) {
+                    // --mode visual resolution: either the element locator
+                    // markMap resolved directly, or (grid strategy) no
+                    // element — click the cell center via page.mouse.click.
+                    if (action.visual.locator) {
+                        locator = action.visual.locator;
+                        locatorDesc = `visual-mark=${action.visual.label}`;
+                    } else {
+                        const { x: cx, y: cy } = action.visual.gridCenter;
+                        logger.info(`${context}: Clicking grid cell center`, { label: action.visual.label, x: cx, y: cy });
+                        await this.ctx.page.mouse.click(cx, cy);
+                        locatorDesc = `visual-grid=${action.visual.label}`;
+                        streamer.action({
+                            actionType: action.type || instruction.name,
+                            selector: locatorDesc,
+                            valueLength: 0,
+                            status: 'success',
+                        });
+                        await wsmAdapter.recordToolCall(
+                            action.type || instruction.name,
+                            { selector: locatorDesc, prompt: instruction.prompt },
+                            { status: 'success' },
+                            Date.now() - actionStartMs,
+                        );
+                        await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+                        this.snapshotDiffer.reset();
+                        logger.info(`${context} executed successfully`, { actionType: action.type });
+
+                        if (this.annotateMode) {
+                            const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
+                            await this.annotationService.captureAnnotatedScreenshot(
+                                action.elements || [],
+                                shotPath,
+                                this.domSimplifier.xpaths
+                            ).catch(() => {}); // non-fatal
+                            await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
+                        }
+
+                        return;
+                    }
+                } else if (!isAria && refStr.startsWith('c') && this.pseudoButtonRefs[refStr]) {
                     locator = this.#resolvePseudoButtonRef(refStr);
                     locatorDesc = `data-ibr-ref=${refStr}`;
                 } else if (!isAria && refStr) {
@@ -1002,6 +1084,129 @@ export class Operations {
                 ? error
                 : ensureCliError(error, 'RUNTIME_ERROR', { message: errMsg });
         }
+    }
+
+    /**
+     * Get (or reuse) the current instruction's Set-of-Marks screenshot +
+     * markMap for --mode visual (SPEC Unit 3, explicit path).
+     *
+     * Memoized on this.\_visualRepresentation so repeat calls within ONE
+     * instruction return the SAME captured frame — spec: "Construct
+     * VisualRepresenter once per instruction, reuse image for find+extract
+     * if both run." `#resetVisualRepresentation()` clears the cache at the
+     * start of each action/extract instruction handler so a later
+     * instruction captures a fresh frame rather than a stale one.
+     *
+     * @returns {Promise<{image: Buffer, mime: string, markMap: Map<string,Object>, strategy: string}>}
+     */
+    async #getVisualRepresentation() {
+        if (!this._visualRepresentation) {
+            this._visualRepresentation = await this.visualRepresenter.represent(this.ctx.page);
+        }
+        return this._visualRepresentation;
+    }
+
+    /** Drop the cached visual representation — call at the start of each instruction. */
+    #resetVisualRepresentation() {
+        this._visualRepresentation = null;
+    }
+
+    /**
+     * --mode visual find: send the marked screenshot to the model and
+     * resolve its {mark:"<label>"} reply against markMap. Returns an
+     * `action`-shaped object compatible with #actionInstruction's existing
+     * locator-resolution/click machinery via the `visual` field, or an
+     * action with an empty `elements` array when the model's reply doesn't
+     * resolve (unknown label, empty response, etc.) — mirrors the text-mode
+     * "no matching elements found" outcome rather than throwing.
+     *
+     * @param {string} userPrompt
+     * @returns {Promise<{elements: Array, type: 'click'|'fill'|'type'|'press', value?: string, visual?: {locator?: Object, gridCenter?: {x:number,y:number}, label: string}}>}
+     */
+    async #resolveVisualAction(instruction) {
+        const { image, mime, markMap } = await this.#getVisualRepresentation();
+        const labels = [...markMap.keys()];
+
+        const messages = makeVisualFindMessage(instruction.prompt, labels);
+        const response = await generateAIResponse(
+            this.ctx.aiProvider.modelInstance,
+            messages,
+            { temperature: this.temperature, image, mime, provider: this.ctx.aiProvider.provider, model: this.ctx.aiProvider.model }
+        );
+
+        this.#updateTokenUsage(response.usage);
+
+        const output = response.content?.trim();
+        let found;
+        try {
+            found = output ? parseFindElementsResponse(output) : [];
+        } catch (parseErr) {
+            logger.warn(createParseErrorMessage('visual find', output, parseErr));
+            found = [];
+        }
+
+        const actionType = instruction.name === 'click' ? 'click'
+            : instruction.name === 'fill' ? 'fill'
+            : instruction.name === 'type' ? 'type'
+            : instruction.name === 'press' ? 'press'
+            : 'click';
+
+        const label = Array.isArray(found) && found.length > 0 ? found[0]?.mark : null;
+        const mark = label != null ? markMap.get(label) : null;
+
+        if (!mark) {
+            // Label missing/unparseable/not in markMap: visual-find failure —
+            // report as "no matching elements" (same shape #actionInstruction
+            // already treats as a no-op skip), never crash.
+            if (label != null) {
+                logger.warn('Visual find: model returned a label not present in markMap', { label, availableLabels: labels });
+            }
+            return { elements: [], type: actionType };
+        }
+
+        return {
+            elements: [{ visualMark: label }],
+            type: actionType,
+            visual: mark.element
+                ? { locator: mark.element, label }
+                : { gridCenter: { x: mark.bbox.x + mark.bbox.width / 2, y: mark.bbox.y + mark.bbox.height / 2 }, label },
+        };
+    }
+
+    /**
+     * --mode visual extract-from-image: send the marked screenshot to the
+     * model with the extraction prompt; parses identically to the text
+     * extract path (verdict handling included) — same sink, same shape.
+     *
+     * @param {string} userPrompt
+     * @returns {Promise<{extract: Array, usage: Object}>}
+     */
+    async #resolveVisualExtract(userPrompt) {
+        const { image, mime } = await this.#getVisualRepresentation();
+        const messages = makeVisualExtractMessage(userPrompt);
+        const response = await generateAIResponse(
+            this.ctx.aiProvider.modelInstance,
+            messages,
+            { temperature: this.temperature, image, mime, provider: this.ctx.aiProvider.provider, model: this.ctx.aiProvider.model }
+        );
+
+        this.#updateTokenUsage(response.usage);
+
+        const output = response.content?.trim();
+        let extract;
+        try {
+            if (output) {
+                const parsed = parseExtractionResponse(output);
+                extract = Array.isArray(parsed) ? parsed : [parsed];
+            } else {
+                extract = [];
+            }
+        } catch (parseErr) {
+            logger.warn(createParseErrorMessage('visual extraction', output, parseErr));
+            extract = [];
+        }
+
+        return { extract, usage: response.usage };
     }
 
     /**
