@@ -18,6 +18,7 @@
 
 import { DomSimplifier } from '../DomSimplifier.js';
 import { resolveBrowser } from '../browser/index.js';
+import { AnnotationService } from '../services/AnnotationService.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -98,51 +99,6 @@ function filterAriaInteractive(ariaYaml) {
 }
 
 /**
- * Inject overlay boxes around all indexed DOM elements and take a screenshot.
- * @param {import('playwright').Page} page
- * @param {string[]} xpaths
- * @param {string} outPath
- */
-async function takeAnnotatedScreenshot(page, xpaths, outPath) {
-  await page.evaluate((paths) => {
-    const style = document.createElement('style');
-    style.id = '__ibr_overlay_style';
-    style.textContent = `
-      .__ibr_annotated {
-        outline: 2px solid rgba(255, 80, 0, 0.8) !important;
-        position: relative;
-      }
-    `;
-    document.head.appendChild(style);
-
-    const byXPath = (xpath) => {
-      try {
-        return document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
-          .singleNodeValue;
-      } catch (_) {
-        return null;
-      }
-    };
-
-    for (const xpath of paths) {
-      const el = byXPath(xpath);
-      if (el && el instanceof HTMLElement) {
-        el.classList.add('__ibr_annotated');
-      }
-    }
-  }, xpaths);
-
-  await page.screenshot({ path: outPath, fullPage: false });
-
-  await page.evaluate(() => {
-    document.getElementById('__ibr_overlay_style')?.remove();
-    for (const el of document.querySelectorAll('.__ibr_annotated')) {
-      el.classList.remove('__ibr_annotated');
-    }
-  });
-}
-
-/**
  * Main entry point for `ibr snap <url>` subcommand.
  * @param {string[]} args - argv after 'snap' token
  * @param {Object} browserConfig
@@ -208,7 +164,8 @@ export async function runDomCommand(args, browserConfig = {}) {
 
       if (opts.annotated) {
         const outPath = '/tmp/ibr-dom-annotated.png';
-        await takeAnnotatedScreenshot(page, simplifier.xpaths, outPath);
+        const annotationService = new AnnotationService(page);
+        await annotationService.captureOutlinedScreenshot(simplifier.xpaths, outPath);
         process.stderr.write(`Annotated screenshot: ${outPath}\n`);
       }
 
