@@ -14,9 +14,16 @@
  *      handling unaffected — same sink as text extract).
  *  (d) unknown label {mark:"@e99"} not in markMap -> treated as a visual-find
  *      failure (no matching elements, no crash).
- *  (e) --mode visual + --annotate: the annotate disk artifact is still
- *      produced (captureAnnotatedScreenshot still called) alongside the
- *      visual resolution.
+ *  (e) --mode visual + --annotate, ELEMENT path: the marked screenshot
+ *      buffer VisualRepresenter already captured is written to disk as the
+ *      annotate artifact (fs.promises.writeFile) and recorded via
+ *      wsmAdapter.recordArtifact — NOT routed through
+ *      captureAnnotatedScreenshot (which cannot resolve a synthetic
+ *      {visualMark} descriptor's .x and would silently write nothing).
+ *  (f) --mode visual + --annotate, GRID path: same — the marked (grid
+ *      overlay) buffer is written to disk and recorded, proving the
+ *      grid-fallback + annotate combination produces a real artifact
+ *      (this was the review-flagged gap: previously NO artifact at all).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -26,11 +33,31 @@ vi.mock('../../src/cache/CacheManager.js');
 vi.mock('../../src/utils/logger.js');
 vi.mock('../../src/services/AnnotationService.js');
 vi.mock('../../src/VisualRepresenter.js');
+vi.mock('../../src/services/WsmAdapter.js', () => ({
+    wsmAdapter: {
+        recordArtifact: vi.fn().mockResolvedValue(undefined),
+        recordToolCall: vi.fn().mockResolvedValue(undefined),
+        recordDiagnostics: vi.fn().mockResolvedValue(undefined),
+        queryDomainFailureCount: vi.fn().mockResolvedValue(0),
+    },
+}));
+vi.mock('fs', async () => {
+    const actual = await vi.importActual('fs');
+    return {
+        ...actual,
+        promises: {
+            ...actual.promises,
+            writeFile: vi.fn().mockResolvedValue(undefined),
+        },
+    };
+});
 
 import { generateAIResponse } from '../../src/ai/provider.js';
 import { CacheManager } from '../../src/cache/CacheManager.js';
 import { AnnotationService } from '../../src/services/AnnotationService.js';
 import { VisualRepresenter } from '../../src/VisualRepresenter.js';
+import { wsmAdapter } from '../../src/services/WsmAdapter.js';
+import { promises as fsPromises } from 'fs';
 import { Operations } from '../../src/Operations.js';
 
 // ── stubs ────────────────────────────────────────────────────────────────
@@ -122,6 +149,8 @@ describe('Operations --mode visual (explicit)', () => {
         page = makePage();
         mockCaptureAnnotated = vi.fn().mockResolvedValue({ success: true, path: '/tmp/x.png', boxCount: 1 });
         mockRepresent = vi.fn();
+        fsPromises.writeFile.mockResolvedValue(undefined);
+        wsmAdapter.recordArtifact.mockResolvedValue(undefined);
     });
 
     describe('(a) element mark resolves to click on markMap element', () => {
@@ -243,8 +272,8 @@ describe('Operations --mode visual (explicit)', () => {
         });
     });
 
-    describe('(e) --mode visual + --annotate coexist', () => {
-        it('still produces the annotate disk artifact via captureAnnotatedScreenshot', async () => {
+    describe('(e) --mode visual + --annotate coexist (element path)', () => {
+        it('writes the captured marked buffer to disk and records the artifact', async () => {
             const targetLocator = makeLocator();
             page.locator.mockReturnValue(targetLocator);
 
@@ -264,7 +293,51 @@ describe('Operations --mode visual (explicit)', () => {
             });
 
             expect(targetLocator.click).toHaveBeenCalled();
-            expect(mockCaptureAnnotated).toHaveBeenCalled();
+            // NOT routed through captureAnnotatedScreenshot: a synthetic
+            // {visualMark} descriptor has no .x, so that path would resolve
+            // 0 entries and silently write nothing.
+            expect(mockCaptureAnnotated).not.toHaveBeenCalled();
+            expect(fsPromises.writeFile).toHaveBeenCalledWith(
+                expect.stringMatching(/^\/tmp\/ibr-annotate-step-.*\.png$/),
+                IMAGE_BUFFER,
+            );
+            expect(wsmAdapter.recordArtifact).toHaveBeenCalledWith(
+                expect.stringMatching(/^\/tmp\/ibr-annotate-step-/),
+                'screenshot',
+            );
+        });
+    });
+
+    describe('(f) --mode visual + --annotate coexist (grid path)', () => {
+        it('writes the captured marked grid buffer to disk and records the artifact', async () => {
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: gridMarkMap('r0c0', { x: 100, y: 200, width: 50, height: 60 }),
+                strategy: 'grid',
+            });
+
+            generateAIResponse.mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: 'r0c0' }])));
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual', annotate: true });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'click', prompt: 'the target cell' }],
+            });
+
+            expect(page.mouse.click).toHaveBeenCalledWith(125, 230);
+            // The review-flagged gap: previously captureAnnotatedScreenshot
+            // resolved 0 boxes for a grid mark and NO artifact was written
+            // at all. Now the marked grid buffer is written directly.
+            expect(mockCaptureAnnotated).not.toHaveBeenCalled();
+            expect(fsPromises.writeFile).toHaveBeenCalledWith(
+                expect.stringMatching(/^\/tmp\/ibr-annotate-step-.*\.png$/),
+                IMAGE_BUFFER,
+            );
+            expect(wsmAdapter.recordArtifact).toHaveBeenCalledWith(
+                expect.stringMatching(/^\/tmp\/ibr-annotate-step-/),
+                'screenshot',
+            );
         });
     });
 });

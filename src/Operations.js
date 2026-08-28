@@ -12,6 +12,7 @@ import {
 } from "./utils/prompts.js";
 import { DomSimplifier } from './DomSimplifier.js';
 import { VisualRepresenter } from './VisualRepresenter.js';
+import { promises as fsPromises } from 'fs';
 import readline from 'readline';
 import { SnapshotDiffer } from './utils/SnapshotDiffer.js';
 import { getSnapshot, resolveElement, selectMode } from './utils/ariaSimplifier.js';
@@ -847,13 +848,11 @@ export class Operations {
                         logger.info(`${context} executed successfully`, { actionType: action.type });
 
                         if (this.annotateMode) {
-                            const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
-                            await this.annotationService.captureAnnotatedScreenshot(
-                                action.elements || [],
-                                shotPath,
-                                this.domSimplifier.xpaths
-                            ).catch(() => {}); // non-fatal
-                            await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
+                            // Write the marked (grid-overlay) buffer the
+                            // model saw — captureAnnotatedScreenshot cannot
+                            // do this: it resolves descriptor.x, which a
+                            // synthetic visual-mark descriptor never has.
+                            await this.#writeVisualAnnotateArtifact();
                         }
 
                         return;
@@ -1013,14 +1012,23 @@ export class Operations {
 
                     // --annotate mode: capture screenshot after action
                     if (this.annotateMode) {
-                        const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
-                        await this.annotationService.captureAnnotatedScreenshot(
-                            action.elements || [],
-                            shotPath,
-                            isAria ? null : this.domSimplifier.xpaths
-                        ).catch(() => {}); // non-fatal
-                        // WSM: record artifact
-                        await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
+                        if (action.visual) {
+                            // --mode visual: write the already-captured
+                            // marked (Set-of-Marks) buffer — a synthetic
+                            // {visualMark} descriptor has no descriptor.x,
+                            // so captureAnnotatedScreenshot would resolve 0
+                            // entries and silently write nothing.
+                            await this.#writeVisualAnnotateArtifact();
+                        } else {
+                            const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
+                            await this.annotationService.captureAnnotatedScreenshot(
+                                action.elements || [],
+                                shotPath,
+                                isAria ? null : this.domSimplifier.xpaths
+                            ).catch(() => {}); // non-fatal
+                            // WSM: record artifact
+                            await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
+                        }
                     }
                 } catch (actionError) {
                     logger.error(`${context} execution failed`, {
@@ -1109,6 +1117,37 @@ export class Operations {
     /** Drop the cached visual representation — call at the start of each instruction. */
     #resetVisualRepresentation() {
         this._visualRepresentation = null;
+    }
+
+    /**
+     * --mode visual --annotate: write the ALREADY-CAPTURED marked screenshot
+     * (this._visualRepresentation.image — the Set-of-Marks/grid overlay
+     * buffer VisualRepresenter sent to the model) to disk as the --annotate
+     * artifact, instead of routing a synthetic {visualMark}/{gridCenter}
+     * descriptor through AnnotationService.captureAnnotatedScreenshot.
+     *
+     * That would-be alternative resolves descriptor.x (AnnotationService's
+     * #resolveEntries), which a visual-mode action descriptor never has —
+     * 0 entries resolved -> #resolveBoxes returns null -> {success:false} ->
+     * no artifact written at all, silently (caught by .catch(()=>{}) and
+     * skipped since success:false never reaches recordArtifact). Writing
+     * the buffer we already hold sidesteps that resolution entirely and is
+     * also the FRAME the model actually saw (element marks or grid),
+     * strictly better than the disk sink's own text-mode capture.
+     *
+     * Non-fatal: a write/record failure never fails the instruction, same
+     * tolerance as the existing --annotate disk paths.
+     */
+    async #writeVisualAnnotateArtifact() {
+        if (!this._visualRepresentation?.image) return;
+        const shotPath = `/tmp/ibr-annotate-step-${this.executionIndex}-${Date.now()}.png`;
+        try {
+            await fsPromises.writeFile(shotPath, this._visualRepresentation.image);
+            await wsmAdapter.recordArtifact(shotPath, 'screenshot').catch(() => {});
+        } catch {
+            // non-fatal — mirrors the .catch(()=>{}) tolerance on the
+            // text-mode disk-capture annotate paths
+        }
     }
 
     /**
