@@ -496,7 +496,7 @@ function printUsage(stream = process.stdout) {
     '  BROWSER_SLOWMO        - Slow down actions (ms) [default: 100]',
     '  VISUAL_AI_MODEL       - AI model for visual mode (overrides AI_MODEL) [default: AI_MODEL]',
     '  VISUAL_MAX_ESCALATIONS - Max auto-escalation steps to visual (--mode auto only) [default: 3]',
-    '  VISUAL_GRID           - Fallback grid dimensions for visual mode (R,C format) [default: 8x8]',
+    '  VISUAL_GRID           - Fallback grid dimensions for visual mode (RxC format) [default: 8x8]',
     '',
     '  OBEY_ROBOTS           - Check robots.txt before automation (true/false) [default: false]',
     '  IBR_DAEMON            - Enable daemon mode (true/false) [default: false]',
