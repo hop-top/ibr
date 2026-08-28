@@ -5,7 +5,10 @@ import {
   makeFindInstructionWithDiffMessage,
   makeActionInstructionMessage,
   makeExtractInstructionMessage,
+  makeVisualFindMessage,
+  makeVisualExtractMessage,
 } from '../../../src/utils/prompts.js';
+import { parseFindElementsResponse, parseExtractionResponse } from '../../../src/ai/baml-parser.js';
 
 describe('makeTaskDescriptionMessage', () => {
   const msg = makeTaskDescriptionMessage('Go to https://example.com and click login');
@@ -123,6 +126,103 @@ describe('makeExtractInstructionMessage', () => {
 
   it('system prompt mentions JSON array', () => {
     expect(msg[0].content).toContain('JSON array');
+  });
+});
+
+// ── visual (Set-of-Marks) find/extract prompts ─────────────────────────────────
+// Unit 2 (vision-mode): the model reads a marked screenshot instead of an
+// ARIA/DOM snapshot, but MUST reply in the SAME JSON shapes the text find/
+// extract paths already emit, so baml-parser.js + verdict handling need ZERO
+// changes downstream. Find: an array of descriptor objects (mirroring
+// [{"role":...}] / [{"x":...}]) whose descriptor is {"mark": N} instead of a
+// role/name or x ref. Extract: identical framing to the text extract prompt
+// (JSON array, verdict guidance reused verbatim).
+
+describe('makeVisualFindMessage', () => {
+  const msg = makeVisualFindMessage('find the login button', 12);
+
+  it('returns array of length 2', () => {
+    expect(msg).toHaveLength(2);
+  });
+
+  it('[0].role is system', () => {
+    expect(msg[0].role).toBe('system');
+  });
+
+  it('[1].role is user', () => {
+    expect(msg[1].role).toBe('user');
+  });
+
+  it('user message contains supplied userPrompt', () => {
+    expect(msg[1].content).toContain('find the login button');
+  });
+
+  it('system prompt mentions the mark id JSON shape', () => {
+    expect(msg[0].content).toContain('"mark"');
+  });
+
+  it('system prompt states the valid mark range (1..markCount)', () => {
+    expect(msg[0].content).toContain('1');
+    expect(msg[0].content).toContain('12');
+  });
+
+  it('system prompt mentions JSON array (matches existing find shape)', () => {
+    expect(msg[0].content).toContain('JSON array');
+  });
+
+  it('reply parses via parseFindElementsResponse into the existing find shape (array of descriptors)', () => {
+    const modelReply = '[{"mark": 7}]';
+    const parsed = parseFindElementsResponse(modelReply);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0].mark).toBe(7);
+  });
+
+  it('empty-match reply ([]) parses to an empty array, same as text find', () => {
+    expect(parseFindElementsResponse('[]')).toEqual([]);
+  });
+});
+
+describe('makeVisualExtractMessage', () => {
+  const msg = makeVisualExtractMessage('extract the total price');
+
+  it('returns array of length 2', () => {
+    expect(msg).toHaveLength(2);
+  });
+
+  it('[0].role is system', () => {
+    expect(msg[0].role).toBe('system');
+  });
+
+  it('[1].role is user', () => {
+    expect(msg[1].role).toBe('user');
+  });
+
+  it('user message contains supplied userPrompt', () => {
+    expect(msg[1].content).toContain('extract the total price');
+  });
+
+  it('system prompt mentions JSON array (matches existing extract shape)', () => {
+    expect(msg[0].content).toContain('JSON array');
+  });
+
+  it('system prompt says if nothing found, return empty array (same contract as text extract)', () => {
+    expect(msg[0].content).toContain('If nothing found, return empty array: []');
+  });
+
+  it('reply parses via parseExtractionResponse into the existing extract shape (array)', () => {
+    const modelReply = '["$42.00"]';
+    const parsed = parseExtractionResponse(modelReply);
+    expect(parsed).toEqual(['$42.00']);
+  });
+
+  it('a verdict-style reply parses like text extract (single-object array)', () => {
+    const modelReply = '{"verdict":"PAGE_OK"}';
+    const parsed = parseExtractionResponse(modelReply);
+    expect(parsed).toEqual([{ verdict: 'PAGE_OK' }]);
+  });
+
+  it('empty reply ([]) parses to an empty array, same as text extract', () => {
+    expect(parseExtractionResponse('[]')).toEqual([]);
   });
 });
 

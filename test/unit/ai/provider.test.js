@@ -192,3 +192,109 @@ describe('generateAIResponse', () => {
     expect(Number.isInteger(result.usage.totalTokens)).toBe(true);
   });
 });
+
+// ── Unit 2 (vision-mode): image message part + VISUAL_AI_MODEL + capability gate ──
+// generateAIResponse gains the ability to include an image content part when the
+// caller passes {image: Buffer, mime} in options. This is additive: every prior
+// test above (no {image}) must stay green — text-only behavior is unchanged.
+describe('generateAIResponse — visual (image) path', () => {
+  const fakeModel = { _provider: 'openai' };
+  const messages = [{ role: 'user', content: 'hello' }];
+  const textPrompt = [{ role: 'user', content: [{ type: 'text', text: 'find the login button' }] }];
+  const fakeImage = Buffer.from('fake-png-bytes');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    generateText.mockResolvedValue({
+      text: '[{"mark":1}]',
+      usage: { promptTokens: 10, completionTokens: 5 }
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('no {image} passed → messages sent to the sdk are unchanged (text-only)', async () => {
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await generateAIResponse(fakeModel, messages);
+    const callArgs = generateText.mock.calls[0][0];
+    expect(callArgs.messages).toEqual(messages);
+  });
+
+  it('{image, mime} passed → an image content part is included in the message sent to the sdk', async () => {
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await generateAIResponse(fakeModel, textPrompt, { image: fakeImage, mime: 'image/png' });
+    const callArgs = generateText.mock.calls[0][0];
+    const lastMessage = callArgs.messages[callArgs.messages.length - 1];
+    expect(Array.isArray(lastMessage.content)).toBe(true);
+    const imagePart = lastMessage.content.find((part) => part.type === 'image');
+    expect(imagePart).toBeDefined();
+    expect(imagePart.image).toBe(fakeImage);
+    expect(imagePart.mediaType).toBe('image/png');
+    // Original text part(s) are preserved alongside the image part.
+    const textPart = lastMessage.content.find((part) => part.type === 'text');
+    expect(textPart).toBeDefined();
+    expect(textPart.text).toBe('find the login button');
+  });
+
+  it('{image} passed but options.image is falsy/absent → no image part added (unchanged)', async () => {
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await generateAIResponse(fakeModel, textPrompt, { temperature: 0.2 });
+    const callArgs = generateText.mock.calls[0][0];
+    const lastMessage = callArgs.messages[callArgs.messages.length - 1];
+    // Message content is passed through as-is — no image part synthesized.
+    const hasImagePart = Array.isArray(lastMessage.content) &&
+      lastMessage.content.some((part) => part.type === 'image');
+    expect(hasImagePart).toBe(false);
+  });
+
+  it('VISUAL_AI_MODEL is consulted only when an image is present — no image → normal model used', async () => {
+    vi.stubEnv('VISUAL_AI_MODEL', 'gpt-4o');
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await generateAIResponse(fakeModel, messages);
+    const callArgs = generateText.mock.calls[0][0];
+    // No image → the caller-supplied modelInstance is used verbatim, VISUAL_AI_MODEL ignored.
+    expect(callArgs.model).toBe(fakeModel);
+  });
+
+  it('VISUAL_AI_MODEL set + image present + a resolvable provider → builds and uses the override model', async () => {
+    vi.stubEnv('AI_PROVIDER', 'openai');
+    vi.stubEnv('VISUAL_AI_MODEL', 'gpt-4o');
+    const { openai } = await import('@ai-sdk/openai');
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await generateAIResponse(fakeModel, textPrompt, { image: fakeImage, mime: 'image/png', provider: 'openai' });
+    expect(openai).toHaveBeenCalledWith('gpt-4o');
+    const callArgs = generateText.mock.calls[0][0];
+    expect(callArgs.model).not.toBe(fakeModel);
+  });
+
+  it('no VISUAL_AI_MODEL + image present → falls back to the run\'s configured (passed-in) model', async () => {
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await generateAIResponse(fakeModel, textPrompt, { image: fakeImage, mime: 'image/png', provider: 'openai' });
+    const callArgs = generateText.mock.calls[0][0];
+    expect(callArgs.model).toBe(fakeModel);
+  });
+
+  it('known non-vision VISUAL_AI_MODEL + image present → throws CliError CONFIG_ERROR before calling the sdk', async () => {
+    vi.stubEnv('AI_PROVIDER', 'openai');
+    vi.stubEnv('VISUAL_AI_MODEL', 'gpt-3.5-turbo');
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    const { CliError } = await import('../../../src/utils/cliErrors.js');
+    await expect(
+      generateAIResponse(fakeModel, textPrompt, { image: fakeImage, mime: 'image/png', provider: 'openai' })
+    ).rejects.toThrow(CliError);
+    await expect(
+      generateAIResponse(fakeModel, textPrompt, { image: fakeImage, mime: 'image/png', provider: 'openai' })
+    ).rejects.toMatchObject({ code: 'CONFIG_ERROR' });
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it('known non-vision model gate does NOT trigger for text-only calls (no image)', async () => {
+    vi.stubEnv('AI_PROVIDER', 'openai');
+    vi.stubEnv('VISUAL_AI_MODEL', 'gpt-3.5-turbo');
+    const { generateAIResponse } = await import('../../../src/ai/provider.js');
+    await expect(generateAIResponse(fakeModel, messages)).resolves.toBeDefined();
+    expect(generateText).toHaveBeenCalledTimes(1);
+  });
+});
