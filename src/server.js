@@ -32,7 +32,10 @@ const _stateFile =
 const STATE_DIR = path.dirname(_stateFile);
 const STATE_FILE = _stateFile;
 const IDLE_CHECK_INTERVAL_MS = 60_000;
-const IDLE_TIMEOUT_MS = 30 * 60_000; // 30 min
+// Configurable so tests can shorten it drastically — a daemon orphaned by a
+// test-helper bug should self-destruct in seconds, not survive the default
+// 30 min amplifying whatever leaked it (see IBR_DAEMON_IDLE_TIMEOUT_MS).
+const IDLE_TIMEOUT_MS = parseInt(process.env.IBR_DAEMON_IDLE_TIMEOUT_MS || '', 10) || 30 * 60_000; // default 30 min
 
 // ---------------------------------------------------------------------------
 // State
