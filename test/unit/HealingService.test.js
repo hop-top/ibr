@@ -132,4 +132,142 @@ describe('HealingService', () => {
     const persisted = JSON.parse(await fs.readFile(learningsFile, 'utf8'));
     expect(persisted[`${signature}:Error`]).toEqual([generatedRule]);
   });
+
+  describe('visualContext (optional 5th arg)', () => {
+    function makeMockOps() {
+      return {
+        ctx: {
+          aiProvider: {
+            modelInstance: { id: 'fake-model' },
+          },
+        },
+      };
+    }
+
+    const generatedRule = {
+      id: 'fix-1',
+      urlPattern: 'example\\.com',
+      domMutations: { remove: ['.overlay'] },
+    };
+
+    beforeEach(() => {
+      generateAIResponse.mockResolvedValue({
+        content: JSON.stringify(generatedRule),
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      });
+    });
+
+    it('includes the image in the generateAIResponse options when visualContext.image is passed', async () => {
+      const service = new HealingService(makeMockOps());
+      await service.init();
+
+      const page = makePage();
+      const locator = makeLocator();
+      const error = new Error('element is obscured');
+      const imageBuf = Buffer.from('fake-png-bytes');
+      const markMap = new Map([['@e7', { bbox: { x: 0, y: 0, width: 10, height: 10 } }]]);
+
+      const result = await service.attemptHeal(page, { prompt: 'click button' }, locator, error, {
+        image: imageBuf,
+        mime: 'image/png',
+        markMap,
+      });
+
+      expect(result).toEqual(generatedRule);
+      expect(generateAIResponse).toHaveBeenCalledOnce();
+      const [, , options] = generateAIResponse.mock.calls[0];
+      expect(options.image).toBe(imageBuf);
+      expect(options.mime).toBe('image/png');
+    });
+
+    it('mentions the visual marks in the heal prompt when an image is passed', async () => {
+      const service = new HealingService(makeMockOps());
+      await service.init();
+
+      const page = makePage();
+      const locator = makeLocator();
+      const error = new Error('element is obscured');
+      const imageBuf = Buffer.from('fake-png-bytes');
+      const markMap = new Map([['@e7', { bbox: { x: 0, y: 0, width: 10, height: 10 } }]]);
+
+      await service.attemptHeal(page, { prompt: 'click button' }, locator, error, {
+        image: imageBuf,
+        mime: 'image/png',
+        markMap,
+      });
+
+      const [, messages] = generateAIResponse.mock.calls[0];
+      const prompt = messages[0].content;
+      expect(prompt).toMatch(/@e7/);
+      expect(prompt).toMatch(/screenshot|visual|image/i);
+    });
+
+    it('behaves exactly as before (no image option) when visualContext is omitted — 4-arg call', async () => {
+      const service = new HealingService(makeMockOps());
+      await service.init();
+
+      const page = makePage();
+      const locator = makeLocator();
+      const error = new Error('element is obscured');
+
+      const result = await service.attemptHeal(page, { prompt: 'click button' }, locator, error);
+
+      expect(result).toEqual(generatedRule);
+      expect(generateAIResponse).toHaveBeenCalledOnce();
+      const [, messages, options] = generateAIResponse.mock.calls[0];
+      expect(options.image).toBeUndefined();
+      expect(options.mime).toBeUndefined();
+      expect(messages[0].content).not.toMatch(/screenshot|visual mark/i);
+    });
+
+    it('behaves exactly as before when visualContext is null', async () => {
+      const service = new HealingService(makeMockOps());
+      await service.init();
+
+      const page = makePage();
+      const locator = makeLocator();
+      const error = new Error('element is obscured');
+
+      const result = await service.attemptHeal(page, { prompt: 'click button' }, locator, error, null);
+
+      expect(result).toEqual(generatedRule);
+      const [, , options] = generateAIResponse.mock.calls[0];
+      expect(options.image).toBeUndefined();
+    });
+
+    it('behaves exactly as before when visualContext has no image (markMap-only)', async () => {
+      const service = new HealingService(makeMockOps());
+      await service.init();
+
+      const page = makePage();
+      const locator = makeLocator();
+      const error = new Error('element is obscured');
+
+      const result = await service.attemptHeal(page, { prompt: 'click button' }, locator, error, { markMap: new Map() });
+
+      expect(result).toEqual(generatedRule);
+      const [, , options] = generateAIResponse.mock.calls[0];
+      expect(options.image).toBeUndefined();
+    });
+
+    it('emits the same persisted fix shape (augmentations rule) whether or not an image was used', async () => {
+      const withImageService = new HealingService(makeMockOps());
+      await withImageService.init();
+      const withoutImageService = new HealingService(makeMockOps());
+      await withoutImageService.init();
+
+      const page = makePage();
+      const locator = makeLocator();
+      const error = new Error('element is obscured');
+
+      const withImageResult = await withImageService.attemptHeal(page, { prompt: 'click button' }, locator, error, {
+        image: Buffer.from('x'),
+        mime: 'image/png',
+      });
+      const withoutImageResult = await withoutImageService.attemptHeal(page, { prompt: 'click button' }, locator, error);
+
+      expect(withImageResult).toEqual(withoutImageResult);
+      expect(withImageResult).toEqual(generatedRule);
+    });
+  });
 });

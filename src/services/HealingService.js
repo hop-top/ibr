@@ -120,12 +120,23 @@ export class HealingService {
 
   /**
    * Attempt to heal a failed operation.
+   *
+   * `visualContext` (SPEC Unit 4) is an OPTIONAL trailing arg — {image, mime,
+   * markMap} from Operations.js's cached _visualRepresentation, when a visual
+   * escalation resolved a mark but the subsequent action then failed. When
+   * omitted (every caller before this feature, and the pure-text-failure
+   * path), behavior is byte-identical to before this feature: no image is
+   * added to the heal prompt or the generateAIResponse options, and the
+   * emitted fix shape (the persisted augmentations rule) is unchanged either
+   * way — the image only informs the HYPOTHESIS, never the output shape.
+   *
    * @param {import('playwright').Page} page
    * @param {Object} instruction
    * @param {import('playwright').Locator} targetLocator
    * @param {Error} error
+   * @param {{image?: Buffer, mime?: string, markMap?: Map}} [visualContext]
    */
-  async attemptHeal(page, instruction, targetLocator, error) {
+  async attemptHeal(page, instruction, targetLocator, error, visualContext = null) {
     logger.info('HealingService: initiating Heal Mode', { instruction: instruction.prompt });
     
     const url = page.url();
@@ -137,6 +148,17 @@ export class HealingService {
     const similarRules = this.learningsStore.getSimilarLearnings(signature, errorType);
     const iclContext = similarRules.length > 0 
       ? `\n\nPreviously successful fixes for similar structures:\n${similarRules.map(r => `- ${JSON.stringify(r.domMutations)}`).join('\n')}`
+      : '';
+
+    // Visual-informed hypothesis (SPEC Unit 4, additive-only): when the
+    // caller passed a screenshot from a visual escalation attempt, name its
+    // marks in the prompt so the healer can point at the visual obstruction
+    // (e.g. "mark @e7 is a full-screen modal"). With no image, this block
+    // contributes nothing and the prompt is byte-identical to before.
+    const hasVisualImage = Boolean(visualContext?.image);
+    const visualMarkLabels = visualContext?.markMap ? [...visualContext.markMap.keys()] : [];
+    const visualContextText = hasVisualImage
+      ? `\n\nA screenshot of the current page is attached, with visual marks overlaid at candidate elements${visualMarkLabels.length > 0 ? ` (labels: ${visualMarkLabels.join(', ')})` : ''}. Use it to identify what is visually blocking or obscuring the target — name the mark if relevant.`
       : '';
 
     // 2. Define fit Advisor (LLM as Healer)
@@ -162,14 +184,16 @@ Return ONLY a valid JSON object matching AugmentationProfile schema:
   "urlPattern": "${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}",
   "domMutations": { "remove": ["#the-blocking-selector"] }
 }
-${iclContext}${cloudContext}`;
+${iclContext}${cloudContext}${visualContextText}`;
 
         const response = await generateAIResponse(
             this.ops.ctx.aiProvider.modelInstance,
             [{ role: 'user', content: prompt }],
-            { temperature: 0, purpose: 'healing' }
+            hasVisualImage
+              ? { temperature: 0, purpose: 'healing', image: visualContext.image, mime: visualContext.mime }
+              : { temperature: 0, purpose: 'healing' }
         );
-        
+
         return {
           steering_text: response.content,
           metadata: { response: response.content }

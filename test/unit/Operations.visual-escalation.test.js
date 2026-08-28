@@ -271,6 +271,67 @@ describe('Operations auto-mode visual escalation', () => {
         expect(attemptHealSpy).not.toHaveBeenCalled();
     });
 
+    // (f) SPEC Unit 4 wiring: escalation resolves a mark but the subsequent
+    // action itself then fails -> falls through to healing WITH the cached
+    // visual representation (image/mime/markMap) as the 5th attemptHeal arg.
+    it('(f) passes the cached visual representation into attemptHeal when escalation resolved a mark but the action failed', async () => {
+        const failingVisualLocator = makeLocator({ clickFails: true });
+        mockRepresent = vi.fn().mockResolvedValue({
+            image: IMAGE_BUFFER,
+            mime: 'image/png',
+            markMap: elementMarkMap('@e2', failingVisualLocator),
+            strategy: 'elements',
+        });
+        VisualRepresenter.mockImplementation(() => ({ represent: mockRepresent }));
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(TEXT_ACTION_RESP)) // text action fails
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }]))); // visual find resolves a mark
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+        ).rejects.toThrow();
+
+        expect(failingVisualLocator.click).toHaveBeenCalled();
+        expect(attemptHealSpy).toHaveBeenCalledTimes(1);
+        const [, , , , visualContext] = attemptHealSpy.mock.calls[0];
+        expect(visualContext).toEqual(
+            expect.objectContaining({ image: IMAGE_BUFFER, mime: 'image/png' })
+        );
+        expect(visualContext.markMap).toBeInstanceOf(Map);
+    });
+
+    // (g) pure-text-failure path (no visual attempt ran for this instruction
+    // because the cap was already spent by a prior instruction) -> attemptHeal
+    // called with NO 5th arg (the existing 4-arg call, unchanged). Mirrors
+    // test (c)'s cap scenario but asserts the attemptHeal call shape.
+    it('(g) calls attemptHeal with no visual context (4-arg call) when no visual attempt ran for the instruction', async () => {
+        process.env.VISUAL_MAX_ESCALATIONS = '1';
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(TEXT_ACTION_RESP)) // instr 1 text action (fails)
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }]))) // instr 1 visual find (resolves, spends the cap)
+            .mockResolvedValueOnce(aiResp(TEXT_ACTION_RESP)); // instr 2 text action (fails); cap already spent
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({
+                ...TASK,
+                instructions: [
+                    { name: 'click', prompt: 'submit' },
+                    { name: 'click', prompt: 'submit again' },
+                ],
+            })
+        ).rejects.toThrow();
+
+        // Escalation attempted only for instr 1 (consumes the cap); instr 2's
+        // healing call is the pure-text-failure path with no visual context.
+        expect(mockRepresent).toHaveBeenCalledTimes(1);
+        expect(attemptHealSpy).toHaveBeenCalledTimes(1);
+        expect(attemptHealSpy.mock.calls[0]).toHaveLength(4);
+    });
+
     // (e) a 'visual.escalation' event is emitted on escalation.
     it('(e) emits a visual.escalation NDJSON event when escalating', async () => {
         generateAIResponse

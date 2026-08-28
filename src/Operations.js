@@ -986,7 +986,22 @@ export class Operations {
 
                         // Attempt to heal if not already raw/ignored
                         if (!this.ignoreAugmentations) {
-                            const fix = await this.healingService.attemptHeal(this.ctx.page, instruction, locator, actionError);
+                            // SPEC Unit 4: when an auto-escalation visual attempt
+                            // ran for THIS instruction (it resolved a mark, then
+                            // the action itself still failed — falling through
+                            // here), this._visualRepresentation holds the frame
+                            // the model just saw. Pass it so healing's hypothesis
+                            // is visually grounded. On the pure-text-failure path
+                            // (mode !== 'auto', or auto with no escalation attempt)
+                            // #resetVisualRepresentation() left this null, so the
+                            // call stays the existing 4-arg call — unchanged.
+                            const fix = this._visualRepresentation
+                                ? await this.healingService.attemptHeal(this.ctx.page, instruction, locator, actionError, {
+                                    image: this._visualRepresentation.image,
+                                    mime: this._visualRepresentation.mime,
+                                    markMap: this._visualRepresentation.markMap,
+                                })
+                                : await this.healingService.attemptHeal(this.ctx.page, instruction, locator, actionError);
                             if (fix) {
                                 if (fix.action === 'switch_provider') {
                                     logger.info(`${context}: Switching infrastructure`, { provider: fix.provider });
