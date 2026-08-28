@@ -12,13 +12,12 @@ import { spawn } from 'child_process';
 import { readFileSync, unlinkSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { resolve as resolve_path, dirname } from 'path';
-import os from 'os';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startFakeAIServerE2E } from '../helpers/fakeAIServerE2E.js';
 import { startStaticServer } from '../helpers/staticServer.js';
+import { startDaemon, stopDaemon } from '../helpers/daemon.js';
 
 const CWD = resolve_path(dirname(fileURLToPath(import.meta.url)), '../..');
-const SERVER_JS = resolve_path(CWD, 'src/server.js');
 const NODE = process.execPath;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -50,40 +49,6 @@ function readStateFile(path) {
   } catch {
     return null;
   }
-}
-
-/** Kill a pid silently. */
-function killPid(pid) {
-  try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
-}
-
-/**
- * Start the daemon server directly (src/server.js) and wait until its state
- * file appears and /health responds.
- */
-async function startDaemon(stateFile, env = {}) {
-  const child = spawn(NODE, [SERVER_JS], {
-    detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, ...env, IBR_STATE_FILE: stateFile },
-    cwd: CWD,
-  });
-  child.unref();
-
-  // Poll state file up to 10 s
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 150));
-    const state = readStateFile(stateFile);
-    if (state?.port && state?.token) {
-      // Verify health
-      try {
-        const res = await fetch(`http://127.0.0.1:${state.port}/health`);
-        if (res.ok) return state;
-      } catch { /* not ready yet */ }
-    }
-  }
-  throw new Error('Daemon did not start within 10s');
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -129,7 +94,7 @@ describe('cli daemon mode — server lifecycle (story 020)', () => {
   }, 30000);
 
   afterAll(async () => {
-    if (daemonState?.pid) killPid(daemonState.pid);
+    stopDaemon(daemonState);
     if (existsSync(stateFile)) unlinkSync(stateFile);
     await ai?.close();
     await web?.close();
@@ -224,7 +189,7 @@ describe('cli daemon mode — IBR_DAEMON=true invocation (story 020)', () => {
   }, 30000);
 
   afterAll(async () => {
-    if (daemonState?.pid) killPid(daemonState.pid);
+    stopDaemon(daemonState);
     if (existsSync(stateFile)) unlinkSync(stateFile);
     await ai?.close();
     await web?.close();
