@@ -139,6 +139,8 @@ describe('HealingService', () => {
         ctx: {
           aiProvider: {
             modelInstance: { id: 'fake-model' },
+            provider: 'anthropic',
+            model: 'claude-3-5-haiku-20241022',
           },
         },
       };
@@ -178,6 +180,25 @@ describe('HealingService', () => {
       const [, , options] = generateAIResponse.mock.calls[0];
       expect(options.image).toBe(imageBuf);
       expect(options.mime).toBe('image/png');
+    });
+
+    it('passes provider and model from ctx.aiProvider when visualContext.image is present, so VISUAL_AI_MODEL resolves to the right client', async () => {
+      const service = new HealingService(makeMockOps());
+      await service.init();
+
+      const page = makePage();
+      const locator = makeLocator();
+      const error = new Error('element is obscured');
+      const imageBuf = Buffer.from('fake-png-bytes');
+
+      await service.attemptHeal(page, { prompt: 'click button' }, locator, error, {
+        image: imageBuf,
+        mime: 'image/png',
+      });
+
+      const [, , options] = generateAIResponse.mock.calls[0];
+      expect(options.provider).toBe('anthropic');
+      expect(options.model).toBe('claude-3-5-haiku-20241022');
     });
 
     it('mentions the visual marks in the heal prompt when an image is passed', async () => {

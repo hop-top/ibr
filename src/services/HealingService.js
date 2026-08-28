@@ -190,7 +190,14 @@ ${iclContext}${cloudContext}${visualContextText}`;
             this.ops.ctx.aiProvider.modelInstance,
             [{ role: 'user', content: prompt }],
             hasVisualImage
-              ? { temperature: 0, purpose: 'healing', image: visualContext.image, mime: visualContext.mime }
+              ? {
+                  temperature: 0,
+                  purpose: 'healing',
+                  provider: this.ops.ctx.aiProvider.provider,
+                  model: this.ops.ctx.aiProvider.model,
+                  image: visualContext.image,
+                  mime: visualContext.mime,
+                }
               : { temperature: 0, purpose: 'healing' }
         );
 
