@@ -127,14 +127,19 @@ macOS: Keychain dialog appears on first use per browser — click **Allow**.
 ## Page Representation (`--mode`)
 
 ```bash
-ibr --mode aria "<prompt>"   # force ARIA tree (semantic SPAs, forms)
-ibr --mode dom  "<prompt>"   # force DOM+XPath (canvas, legacy, shadow DOM)
-ibr --mode auto "<prompt>"   # default — auto quality-based selection
+ibr --mode aria    "<prompt>"   # force ARIA tree (semantic SPAs, forms)
+ibr --mode dom     "<prompt>"   # force DOM+XPath (canvas, legacy, shadow DOM)
+ibr --mode visual  "<prompt>"   # screenshot + Set-of-Marks; vision-based element detection
+ibr --mode auto    "<prompt>"   # default — auto quality-based; escalates aria → dom → visual
 ```
+
+Auto escalation: in `--mode auto`, when aria + dom text find/act fails, ibr escalates to visual (screenshot + numbered overlays sent to LLM). Capped at `VISUAL_MAX_ESCALATIONS` (default 3). Visual uses vision tokens (~1000–2000/screenshot); prefer text modes for cost.
 
 ---
 
-## Visual Debugging
+## Visual Debugging & Mode
+
+### --annotate (disk sink)
 
 ```bash
 ibr --annotate "<prompt>"                        # annotated PNG after each find step
@@ -143,6 +148,14 @@ ANNOTATED_SCREENSHOTS_ON_FAILURE=true ibr "..."  # auto-capture on any failure
 ```
 
 Output: `/tmp/ibr-annotate-step-<N>-<ts>.png` / `/tmp/ibr-failure-step-<N>-<ts>.png`
+
+### --mode visual + --annotate (both sinks)
+
+```bash
+ibr --mode visual --annotate "<prompt>"   # screenshot to LLM + disk (same marked frame)
+```
+
+The marked frame is both the model input AND written to `/tmp/…png` for inspection.
 
 ---
 
@@ -281,6 +294,9 @@ ibr upgrade preamble         # emit agent skill preamble fragment
 | `NDJSON_STREAM` | `false` | Also emit structured browser events (stderr) |
 | `ANNOTATED_SCREENSHOTS_ON_FAILURE` | `false` | Auto-capture on failure |
 | `IBR_WAIT_FOR_HUMAN_ALLOW_PIPED` | `false` | Allow "wait for me to …" to block on piped stdin |
+| `VISUAL_AI_MODEL` | _(AI_MODEL)_ | Vision model for visual mode only (overrides AI_MODEL when vision-based) |
+| `VISUAL_MAX_ESCALATIONS` | `3` | Auto-escalation cap (explicit --mode visual ignores) |
+| `VISUAL_GRID` | `8x8` | Grid fallback dimensions (RxC format) |
 
 Console logs (info/debug, colorized) go to **stdout**; progress + structured
 events go to **stderr**. Verbosity is `debug` unless `NODE_ENV=production` (then

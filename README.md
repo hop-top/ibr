@@ -241,9 +241,10 @@ Control which page-representation mode the AI receives:
 
 | Flag | Mode | When to use |
 |------|------|-------------|
-| _(none)_ | `auto` | Default — quality-based selection |
+| _(none)_ | `auto` | Default — quality-based selection; escalates aria → dom → visual (last resort) if text fails |
 | `--mode aria` | ARIA tree | Force ariaSnapshot (semantic, compact) |
 | `--mode dom` | DOM + XPath | Force DomSimplifier (raw structure) |
+| `--mode visual` | Screenshot + Set-of-Marks | Vision-based element detection; numbered overlays sent to the model |
 
 ### `--interactive` / `-i` Flag
 
@@ -288,7 +289,28 @@ falling back to dom mode: empty
 |------|---------------|
 | `aria` | Modern semantic SPAs, accessible sites, form-heavy UIs |
 | `dom` | Canvas-heavy apps, legacy table-soup HTML, Shadow DOM, `aria-hidden`-heavy pages |
-| `auto` | Unknown sites; safe default — quality-checked per page |
+| `visual` | Canvas apps, custom widgets, unlabelled elements, overlays blocking text find/act |
+| `auto` | Unknown sites; safe default — quality-checked per page; escalates to visual as last resort when text fails |
+
+**Auto-escalation ladder** (`--mode auto`): when aria + dom text-based find/act fails for an instruction, ibr escalates to `--mode visual` (screenshot + Set-of-Marks) before attempting healing. The visual attempt is capped at `VISUAL_MAX_ESCALATIONS` (default 3 per run; explicit `--mode visual` ignores the cap). Each escalation is logged via progress feedback; a visual-informed healing step follows if visual also fails. This allows recovery from obstructions (modals, paywalls) the text representation cannot describe.
+
+**Cost note:** Visual mode uses vision tokens (typically ~1000–2000 per screenshot vs. 10–100 for text). Auto-escalation and explicit `--mode visual` are the two engagement points; prefer text modes when possible to minimize token usage.
+
+### Visual Mode & `--annotate` Coexistence
+
+`--mode visual` and `--annotate` are complementary, not mutually exclusive — both run from the same overlay engine:
+
+```bash
+ibr --mode visual --annotate "url: https://example.com
+instructions:
+  - click the submit button"
+```
+
+| Flag | Sink | Purpose |
+|------|------|---------|
+| `--mode visual` | Model | Screenshot with numbered overlays sent to the LLM for resolution |
+| `--annotate` | Disk (`/tmp/…png`) | Same marked frame written to `/tmp/ibr-annotate-step-<N>-<ts>.png` for human inspection |
+| Both | Both sinks | The marked screenshot drives the model AND is preserved as a debug artifact |
 
 ### Visual Debugging (`--annotate`)
 
@@ -1038,6 +1060,13 @@ Now you can watch exactly what the script is doing and see where it fails.
 |----------|--------|---------|---------|
 | `NDJSON_STREAM` | true/false | false | Stream browser events as NDJSON to stdout |
 | `ANNOTATED_SCREENSHOTS_ON_FAILURE` | true/false | false | Auto-capture annotated PNG on action failure |
+
+### Visual Mode Configuration
+| Variable | Values | Default | Purpose |
+|----------|--------|---------|---------|
+| `VISUAL_AI_MODEL` | Model name | _(AI_MODEL)_ | Vision model for visual mode only; overrides `AI_MODEL` when `--mode visual` or auto-escalation uses vision |
+| `VISUAL_MAX_ESCALATIONS` | number | 3 | Max auto-mode visual escalations per run (explicit `--mode visual` ignores cap) |
+| `VISUAL_GRID` | RxC format | 8x8 | Grid fallback dimensions (e.g. `4x4`, `10x10`) when no interactive elements detected |
 
 ### API Keys (REQUIRED)
 - `OPENAI_API_KEY` - For OpenAI provider
