@@ -874,6 +874,14 @@ async function run() {
       ops.ctx.browserHandle = browserHandle;
       ops.domSimplifier.page = page;
       ops.annotationService.page = page;
+      // --mode visual (vision-mode): VisualRepresenter is constructed in the
+      // Operations constructor before this real page exists (ctx.page is
+      // undefined there), and it holds its OWN AnnotationService instance
+      // (not ops.annotationService) — so it needs the same page-patch the
+      // two lines above already do for domSimplifier/annotationService, or
+      // every visual capture throws reading .locator on an undefined page.
+      ops.visualRepresenter.page = page;
+      ops.visualRepresenter.annotationService.page = page;
 
       // Attach popup listener now that context is available
       context.on('page', (newPage) => {

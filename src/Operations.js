@@ -255,6 +255,13 @@ export class Operations {
         this.ctx.page = page;
         this.domSimplifier = new DomSimplifier(page);
         this.annotationService = new AnnotationService(page);
+        // Same staleness the constructor guards against (see index.js's
+        // post-launch page patch): visualRepresenter owns its OWN
+        // AnnotationService instance, so a page switch (popup) must refresh
+        // it too, or a visual capture after switching throws reading
+        // .locator on the pre-switch page.
+        this.visualRepresenter.page = page;
+        this.visualRepresenter.annotationService.page = page;
         this.dialogManager = new DialogManager(page, {
             autoAccept: DIALOG_AUTO_ACCEPT,
             defaultPromptText: DIALOG_DEFAULT_PROMPT_TEXT,
@@ -1036,6 +1043,8 @@ export class Operations {
                                         this.annotationService.page = newPage;
                                         this.dialogManager.page = newPage;
                                         this.domSimplifier.page = newPage;
+                                        this.visualRepresenter.page = newPage;
+                                        this.visualRepresenter.annotationService.page = newPage;
 
                                         if (resumeUrl) {
                                             await newPage.goto(resumeUrl, { waitUntil: 'networkidle' });
