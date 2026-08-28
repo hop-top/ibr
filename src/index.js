@@ -184,12 +184,12 @@ function extractTargetUrlFromPrompt(prompt) {
   return normalizePromptUrl(hostnameMatch?.[0]);
 }
 
-const VALID_MODES = new Set(['aria', 'dom', 'auto']);
+const VALID_MODES = new Set(['aria', 'dom', 'auto', 'visual']);
 
 /**
  * Parse CLI flags from argv.
  * Strips recognised flags and returns remaining positional args + parsed options.
- * @returns {{ args: string[], mode: 'aria'|'dom'|'auto', annotate: boolean, obeyRobots: boolean, ignoreAugmentations: boolean, interactive: boolean, quiet: boolean, output: ({ path: string, format: 'json'|'markdown' } | null) }}
+ * @returns {{ args: string[], mode: 'aria'|'dom'|'auto'|'visual', annotate: boolean, obeyRobots: boolean, ignoreAugmentations: boolean, interactive: boolean, quiet: boolean, output: ({ path: string, format: 'json'|'markdown' } | null) }}
  */
 function parseCliFlags() {
   const argv = process.argv.slice(2);
@@ -212,8 +212,8 @@ function parseCliFlags() {
       const val = argv[++i].toLowerCase();
       if (!VALID_MODES.has(val)) {
         logger.error(
-          `Invalid --mode value: "${val}". Must be one of: aria, dom, auto. ` +
-          `Use "aria" to force accessibility tree, "dom" for XPath-based DOM, or "auto" (default) to let ibr choose based on page quality.`
+          `Invalid --mode value: "${val}". Must be one of: aria, dom, auto, visual. ` +
+          `Use "aria" to force accessibility tree, "dom" for XPath-based DOM, "auto" (default) to let ibr choose based on page quality, or "visual" for screenshot + Set-of-Marks.`
         );
         process.exit(1);
       }
@@ -404,7 +404,7 @@ function printUsage(stream = process.stdout) {
     'ibr - Intent Browser Runtime',
     '',
     'Usage:',
-    '  ibr [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto] [--annotate] "<user_prompt>"',
+    '  ibr [--cookies <browser>[:<domain,...>]] [--mode aria|dom|auto|visual] [--annotate] "<user_prompt>"',
     '  ibr [--daemon] "<user_prompt>"  - use persistent daemon (faster warm invocations)',
     '  ibr snap <url> [flags]          - inspect DOM at URL',
     '  ibr tool <name> [--param k=v]   - run a YAML-defined tool',
@@ -424,6 +424,7 @@ function printUsage(stream = process.stdout) {
     '  --mode aria   Force ARIA accessibility tree (ariaSnapshot)',
     '  --mode dom    Force DOM simplifier + XPath',
     '  --mode auto   Auto-select based on quality (default)',
+    '  --mode visual Screenshot + Set-of-Marks; last-resort / vision-based',
     '  --raw, --ignore-augmentations   Skip domain-specific augmentations',
     '  --output <path>, -o <path>   Write the extraction to <path> (parent dirs auto-created)',
     '  --output-format json|markdown   Output file format [default: json]',
@@ -493,7 +494,10 @@ function printUsage(stream = process.stdout) {
     '  BROWSER_REUSE_PAGE    - Reuse existing page in CDP-connected browser (true/false)',
     '  --interactive, -i     - Run in interactive mode (show browser, enable HITM)',
     '  BROWSER_SLOWMO        - Slow down actions (ms) [default: 100]',
-
+    '  VISUAL_AI_MODEL       - AI model for visual mode (overrides AI_MODEL) [default: AI_MODEL]',
+    '  VISUAL_MAX_ESCALATIONS - Max auto-escalation steps to visual (--mode auto only) [default: 3]',
+    '  VISUAL_GRID           - Fallback grid dimensions for visual mode (R,C format) [default: 8x8]',
+    '',
     '  OBEY_ROBOTS           - Check robots.txt before automation (true/false) [default: false]',
     '  IBR_DAEMON            - Enable daemon mode (true/false) [default: false]',
     '  IBR_STATE_FILE        - Daemon state file path [default: ~/.ibr/server.json]',
