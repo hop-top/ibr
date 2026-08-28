@@ -145,6 +145,24 @@ describe('--mode visual support', () => {
     expect(opts.mode).toBe('visual');
   });
 
+  it('invalid --mode errors with message listing visual', async () => {
+    const { execSync } = await import('node:child_process');
+    try {
+      execSync('node src/index.js --mode bogus "test prompt" 2>&1', {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        cwd: process.cwd()
+      });
+      throw new Error('Expected --mode bogus to exit with error');
+    } catch (err) {
+      const output = err.stdout || err.message;
+      // Verify error message includes "visual" in the allowed modes list
+      expect(output).toMatch(/aria, dom, auto, visual/);
+      // Verify it's an error about invalid --mode
+      expect(output).toMatch(/Invalid --mode value/);
+    }
+  });
+
   it('--help output includes visual mode documentation', async () => {
     const { execSync } = await import('node:child_process');
     const output = execSync('node src/index.js --help', {

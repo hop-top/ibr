@@ -20,7 +20,7 @@ afterEach(() => {
 
 // ── Copy of parseCliFlags from src/index.js (pure, no side-effects) ──────────
 
-const VALID_MODES = new Set(['aria', 'dom', 'auto']);
+const VALID_MODES = new Set(['aria', 'dom', 'auto', 'visual']);
 
 function parseCliFlags(argv) {
     const remaining = [];
