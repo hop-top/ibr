@@ -99,7 +99,7 @@ export class VisualRepresenter {
      * @param {{interactiveOnly?: boolean}} [_opts] - reserved; interactiveOnly
      *   defaults true (this iteration only supports the interactive-element
      *   set — no non-interactive element marking).
-     * @returns {Promise<{image: Buffer, mime: string, markMap: Map<number, Object>, strategy: 'elements'|'grid'}>}
+     * @returns {Promise<{image: Buffer, mime: string, markMap: Map<string, Object>, strategy: 'elements'|'grid'}>}
      */
     async represent(page, _opts = {}) {
         const targetPage = page || this.page;
@@ -113,8 +113,13 @@ export class VisualRepresenter {
 
     /**
      * Element strategy (primary): capture the marked screenshot for the
-     * detected interactive elements and build markMap keyed by 1-based mark
-     * number, matching the numbered labels drawn on the overlay.
+     * detected interactive elements and build markMap keyed by the literal
+     * ref label the overlay draws on the pixels (AnnotationService.js does
+     * `label.textContent = ref`, e.g. "@e0", "@c1") — NOT a synthetic
+     * sequential index. The model sees these exact strings in the image and
+     * replies with one of them, so markMap.get(<label the model returns>)
+     * must resolve directly; renumbering to 1..N would make every visual
+     * resolution miss.
      */
     async #representElements(page, elements, xpaths) {
         const captured = await this.annotationService.captureAnnotatedBuffer(elements, xpaths);
@@ -133,13 +138,12 @@ export class VisualRepresenter {
         }
 
         const markMap = new Map();
-        captured.boxes.forEach((entry, idx) => {
-            const mark = idx + 1;
+        captured.boxes.forEach((entry) => {
             const refStr = entry.ref.replace(/^@/, '');
             const locator = refStr.startsWith('c')
                 ? page.locator(`[data-ibr-ref="${refStr}"]`)
                 : page.locator(`xpath=${xpaths[refStr.replace(/^e/, '')]}`);
-            markMap.set(mark, { element: locator, bbox: entry.box });
+            markMap.set(entry.ref, { element: locator, bbox: entry.box });
         });
 
         return {
@@ -153,6 +157,9 @@ export class VisualRepresenter {
     /**
      * Grid strategy (fallback): no interactive elements detected — overlay
      * the uniform labeled grid (Unit-0 core) and map cells with no element.
+     * markMap is keyed by cell.ref (renderGrid sets ref === cellId, e.g.
+     * "r0c0"), the same string the overlay draws on the pixels — see
+     * #representElements for why this must not be a synthetic index.
      */
     async #representGrid() {
         const captured = await this.annotationService.captureAnnotatedBuffer([], {}, { useGrid: true });
@@ -169,8 +176,8 @@ export class VisualRepresenter {
         }
 
         const markMap = new Map();
-        captured.boxes.forEach((cell, idx) => {
-            markMap.set(idx + 1, { bbox: cell.box, cellId: cell.cellId });
+        captured.boxes.forEach((cell) => {
+            markMap.set(cell.ref, { bbox: cell.box, cellId: cell.cellId });
         });
 
         return {
