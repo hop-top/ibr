@@ -131,8 +131,8 @@ describe('cli --mode visual: find + click (element strategy)', () => {
     //    visual mark that is `visual-mark=<label>`. This proves the model's
     //    "@e6" resolved through markMap to a real locator and the click
     //    machinery was invoked against THAT element (a grid fallback logs
-    //    "Clicking grid cell center" instead; a find miss logs "No matching
-    //    elements found" and never reaches this line).
+    //    "Visual grid cell: performing <type>" instead; a find miss logs "No
+    //    matching elements found" and never reaches this line).
     // 2. "executed successfully" is logged only after locator.click()
     //    resolved without throwing — Playwright's click waits for the
     //    element to be visible/enabled/stable and dispatches the event; a
@@ -145,7 +145,7 @@ describe('cli --mode visual: find + click (element strategy)', () => {
 
     // Inverse guards: none of the skip/fallback/failure paths fired.
     expect(combined).not.toMatch(/No matching elements found, skipping action/i);
-    expect(combined).not.toMatch(/Clicking grid cell center/i);
+    expect(combined).not.toMatch(/Visual grid cell: performing/i);
     expect(combined).not.toMatch(/ELEMENT_NOT_FOUND|RUNTIME_ERROR/i);
   }, 30000);
 
@@ -197,10 +197,11 @@ describe('cli --mode visual: grid fallback (no detectable elements)', () => {
     const combined = result.stdout + result.stderr;
     expect(combined).toMatch(/Task execution completed/i);
 
-    // Real outcome: Operations.js logs "Clicking grid cell center" with the
-    // resolved label + the actual pixel coordinates ONLY on the grid-mark
-    // branch (#actionInstruction / #attemptVisualEscalation) — this is the
-    // proof the grid overlay was rendered AND a cell resolved AND
+    // Real outcome: Operations.js logs "Visual grid cell: performing <type>"
+    // with the resolved label + the actual pixel coordinates ONLY on the
+    // grid-mark branch (#performVisualGridAction, shared by
+    // #actionInstruction and #attemptVisualEscalation) — this is the proof
+    // the grid overlay was rendered AND a cell resolved AND
     // page.mouse.click(cx, cy) actually fired, not just that find "succeeded"
     // in the abstract. LOG_LEVEL=error suppresses logger.info, so re-run this
     // one assertion path at info level to surface it.
@@ -233,7 +234,10 @@ describe('cli --mode visual: grid fallback (no detectable elements)', () => {
       // {x:0,y:0,w:160,h:90} — center (80,45). This is the REAL grid-render
       // math (AnnotationService.renderGrid), not a mocked stand-in: the log
       // line only appears on the executed page.mouse.click(cx, cy) call.
-      expect(combined).toMatch(/Clicking grid cell center/i);
+      // The log line names the action type it is about to perform, so this
+      // also pins that a `click` instruction performed a CLICK on the cell,
+      // not some other action the grid executor happened to fall back to.
+      expect(combined).toMatch(/Visual grid cell: performing click/i);
       expect(combined).toMatch(/"label":"r0c0"/);
       expect(combined).toMatch(/"x":80/);
       expect(combined).toMatch(/"y":45/);

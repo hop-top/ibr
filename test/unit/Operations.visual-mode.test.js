@@ -105,6 +105,10 @@ function makePage() {
         getByText: vi.fn().mockReturnValue(locatorInstance),
         getByPlaceholder: vi.fn().mockReturnValue(locatorInstance),
         mouse: { click: vi.fn().mockResolvedValue(undefined) },
+        keyboard: {
+            type: vi.fn().mockResolvedValue(undefined),
+            press: vi.fn().mockResolvedValue(undefined),
+        },
         on: vi.fn(),
         off: vi.fn(),
         _locatorInstance: locatorInstance,
@@ -366,6 +370,56 @@ describe('Operations --mode visual (explicit)', () => {
 
             expect(targetLocator.click).toHaveBeenCalled();
             expect(targetLocator.fill).not.toHaveBeenCalled();
+        });
+    });
+
+    // ── scroll must never be executed on the visual path ──────────────────
+    // A page-level scroll needs no element at all (the action reply's
+    // `no_element_needed` outcome exists for exactly that). There is no
+    // coherent "scroll to this mark" semantics that cannot be wrong, so a
+    // scroll reaching the visual path is refused outright rather than
+    // silently performing some OTHER action.
+    describe('(i) scroll is refused on the visual path, never silently clicked', () => {
+        it('element mark: a scroll instruction does not click the locator', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+            generateAIResponse.mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'scroll', prompt: 'scroll down the page' }],
+            });
+
+            expect(targetLocator.click).not.toHaveBeenCalled();
+            expect(targetLocator.fill).not.toHaveBeenCalled();
+            expect(page.mouse.click).not.toHaveBeenCalled();
+        });
+
+        it('grid mark: a scroll instruction does not click the cell centre', async () => {
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: gridMarkMap('r0c0', { x: 100, y: 200, width: 50, height: 60 }),
+                strategy: 'grid',
+            });
+            generateAIResponse.mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: 'r0c0' }])));
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'scroll', prompt: 'scroll down the page' }],
+            });
+
+            expect(page.mouse.click).not.toHaveBeenCalled();
+            expect(page.keyboard.type).not.toHaveBeenCalled();
         });
     });
 
