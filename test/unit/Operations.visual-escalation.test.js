@@ -332,6 +332,77 @@ describe('Operations auto-mode visual escalation', () => {
         expect(attemptHealSpy.mock.calls[0]).toHaveLength(4);
     });
 
+    // (h) the failed text action's value is reused by the visual retry: the
+    // escalation must perform the SAME action with the SAME value the text
+    // attempt intended, not fill/type/press with undefined.
+    it('(h) reuses the failed text action value when the visual retry fills', async () => {
+        const failingFillLocator = makeLocator();
+        failingFillLocator.fill = vi.fn().mockRejectedValue(new Error('element is not visible'));
+        resolveElement.mockReturnValue(failingFillLocator);
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(JSON.stringify({
+                elements: [{ role: 'textbox', name: 'Email' }],
+                type: 'fill',
+                value: 'user@example.com',
+            }))) // text action (fill fails)
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }]))); // visual find, no value
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await ops.executeTask({
+            ...TASK,
+            instructions: [{ name: 'fill', prompt: "type 'user@example.com' in the email box" }],
+        });
+
+        expect(failingFillLocator.fill).toHaveBeenCalledWith('user@example.com');
+        expect(visualLocator.fill).toHaveBeenCalledWith('user@example.com');
+        expect(attemptHealSpy).not.toHaveBeenCalled();
+    });
+
+    it('(h) reuses the failed text action value when the visual retry types', async () => {
+        const failingTypeLocator = makeLocator();
+        failingTypeLocator.type = vi.fn().mockRejectedValue(new Error('element is not visible'));
+        resolveElement.mockReturnValue(failingTypeLocator);
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(JSON.stringify({
+                elements: [{ role: 'textbox', name: 'Search' }],
+                type: 'type',
+                value: 'hello world',
+            })))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await ops.executeTask({
+            ...TASK,
+            instructions: [{ name: 'type', prompt: "type 'hello world' into the search field" }],
+        });
+
+        expect(visualLocator.type).toHaveBeenCalledWith('hello world');
+    });
+
+    it('(h) reuses the failed text action key when the visual retry presses', async () => {
+        const failingPressLocator = makeLocator();
+        failingPressLocator.press = vi.fn().mockRejectedValue(new Error('element is not visible'));
+        resolveElement.mockReturnValue(failingPressLocator);
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(JSON.stringify({
+                elements: [{ role: 'textbox', name: 'Search' }],
+                type: 'press',
+                value: 'Enter',
+            })))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await ops.executeTask({
+            ...TASK,
+            instructions: [{ name: 'press', prompt: 'press Enter in the search field' }],
+        });
+
+        expect(visualLocator.press).toHaveBeenCalledWith('Enter');
+    });
+
     // (e) a 'visual.escalation' event is emitted on escalation.
     it('(e) emits a visual.escalation NDJSON event when escalating', async () => {
         generateAIResponse

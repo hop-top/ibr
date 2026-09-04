@@ -966,7 +966,12 @@ export class Operations {
                         // never attempts a text action), so it is naturally
                         // excluded — the cap only ever gates this branch.
                         if (this.mode === 'auto') {
-                            const escalated = await this.#attemptVisualEscalation(instruction);
+                            // The failed text action already carries the
+                            // value the model resolved from this prose
+                            // (fill/type text, press key) — hand it to the
+                            // visual retry so it performs the SAME action
+                            // with the SAME value, instead of re-asking.
+                            const escalated = await this.#attemptVisualEscalation(instruction, action.value);
                             if (escalated) {
                                 // Visual attempt resolved AND executed the
                                 // action successfully — fall through to the
@@ -1237,10 +1242,20 @@ export class Operations {
      * resolve (unknown label, empty response, etc.) — mirrors the text-mode
      * "no matching elements found" outcome rather than throwing.
      *
-     * @param {string} userPrompt
+     * fill/type/press need a value, which lives only in the free-form
+     * instruction prose — so the visual find prompt asks for an optional
+     * "value" alongside the mark (same {type,value} pairing the text action
+     * prompt already uses). `fallbackValue` takes precedence when supplied:
+     * on the auto-escalation path the failed TEXT action already carries the
+     * value the model resolved from the same prose, so the retry reuses it
+     * verbatim rather than asking the model a second time.
+     *
+     * @param {Object} instruction
+     * @param {string} [fallbackValue] value from a failed text action, reused
+     *   for the visual retry in preference to re-deriving it.
      * @returns {Promise<{elements: Array, type: 'click'|'fill'|'type'|'press', value?: string, visual?: {locator?: Object, gridCenter?: {x:number,y:number}, label: string}}>}
      */
-    async #resolveVisualAction(instruction) {
+    async #resolveVisualAction(instruction, fallbackValue) {
         const { image, mime, markMap } = await this.#getVisualRepresentation();
         const labels = [...markMap.keys()];
 
@@ -1268,8 +1283,14 @@ export class Operations {
             : instruction.name === 'press' ? 'press'
             : 'click';
 
-        const label = Array.isArray(found) && found.length > 0 ? found[0]?.mark : null;
+        const descriptor = Array.isArray(found) && found.length > 0 ? found[0] : null;
+        const label = descriptor?.mark ?? null;
         const mark = label != null ? markMap.get(label) : null;
+        // A click reply legitimately omits "value" — keep it undefined then,
+        // exactly as the text action path does.
+        const value = fallbackValue !== undefined && fallbackValue !== null
+            ? fallbackValue
+            : (descriptor?.value ?? undefined);
 
         if (!mark) {
             // Label missing/unparseable/not in markMap: visual-find failure —
@@ -1278,12 +1299,13 @@ export class Operations {
             if (label != null) {
                 logger.warn('Visual find: model returned a label not present in markMap', { label, availableLabels: labels });
             }
-            return { elements: [], type: actionType };
+            return { elements: [], type: actionType, value };
         }
 
         return {
             elements: [{ visualMark: label }],
             type: actionType,
+            value,
             visual: mark.element
                 ? { locator: mark.element, label }
                 : { gridCenter: { x: mark.bbox.x + mark.bbox.width / 2, y: mark.bbox.y + mark.bbox.height / 2 }, label },
@@ -1311,6 +1333,9 @@ export class Operations {
      * note when the cap blocks the attempt.
      *
      * @param {Object} instruction
+     * @param {string} [failedActionValue] the value the failed text action
+     *   was going to use (fill/type text, press key). Reused verbatim by the
+     *   visual retry so it performs the SAME action with the SAME value.
      * @returns {Promise<boolean>} true if the visual attempt resolved AND
      *   the action executed successfully (caller should treat the
      *   instruction as done and skip healing); false if escalation was
@@ -1318,7 +1343,7 @@ export class Operations {
      *   visual action itself failed (caller should fall through to the
      *   existing healingService.attemptHeal flow).
      */
-    async #attemptVisualEscalation(instruction) {
+    async #attemptVisualEscalation(instruction, failedActionValue) {
         if (this._visualEscalationsUsed >= this.visualMaxEscalations) {
             streamer.visualEscalationCapped({
                 instructionIndex: this.executionIndex,
@@ -1346,7 +1371,7 @@ export class Operations {
 
         let visualAction;
         try {
-            visualAction = await this.#resolveVisualAction(instruction);
+            visualAction = await this.#resolveVisualAction(instruction, failedActionValue);
         } catch (err) {
             logger.warn('Auto-escalation: visual resolution errored, falling through to healing', { error: err.message });
             return false;
@@ -1390,7 +1415,7 @@ export class Operations {
      * @param {{type: string, value?: string}} action
      */
     async #performVisualAction(locator, action) {
-        switch (action.type) {
+        switch (action.type?.toLowerCase()) {
             case 'fill':
                 await locator.fill(action.value);
                 break;
