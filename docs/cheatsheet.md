@@ -135,6 +135,15 @@ ibr --mode auto    "<prompt>"   # default — auto quality-based; escalates aria
 
 Auto escalation: in `--mode auto`, when the aria + dom text attempt fails (the model reports `"outcome": "not_found"`, or the action on a found element throws), ibr escalates to visual (screenshot + numbered overlays sent to LLM). Capped at `VISUAL_MAX_ESCALATIONS` (default 3). Visual uses vision tokens (~1000–2000/screenshot); prefer text modes for cost.
 
+The model's `outcome` on an element-less reply decides whether escalation happens at all:
+
+| `outcome` | Means | Auto-mode effect |
+|-----------|-------|------------------|
+| `found` | The reply carries the element(s) to act on | Normal action |
+| `not_found` | Looked for the named element, it is not on the page — a genuine miss | Escalates to visual |
+| `no_element_needed` | The step needs no element (page-level `scroll`, an optional action legitimately absent) | Skipped; no escalation, no vision call |
+| _(absent / unrecognised)_ | The model said nothing | Skipped, exactly as before this field existed |
+
 ---
 
 ## Visual Debugging & Mode
@@ -156,6 +165,41 @@ ibr --mode visual --annotate "<prompt>"   # screenshot to LLM + disk (same marke
 ```
 
 The marked frame is both the model input AND written to `/tmp/…png` for inspection.
+
+### What the visual path can perform
+
+The visual path acts on a *mark* — a specific element or grid cell the model
+picked out of the screenshot. Only `click`, `fill`, `type` and `press` mean
+anything against a mark, so those are the only action types it performs.
+
+Anything else — `scroll` above all — is **refused, not substituted**. A
+page-level scroll needs no element, so a `scroll` arriving here has already
+claimed a missing element target; scrolling to the model's guess, or
+wheel-scrolling at a cell, would silently perform a *different* action than the
+one asked for. Refusal is deliberate: earlier versions fell through to a click.
+
+- Under `--mode auto`, a `scroll` never spends an escalation or a vision call —
+  it is skipped before the screenshot is taken.
+- Under explicit `--mode visual`, an element-backed mark logs the refusal and
+  skips the step; a grid cell raises `UNSUPPORTED_VISUAL_ACTION`.
+
+### Grid cells honour the action type and its value
+
+When no interactive elements are detected (canvas, unlabelled pages), the
+overlay falls back to a labelled grid (`VISUAL_GRID`, default `8x8`). A grid
+mark is a coordinate, not an element, so text entry clicks the cell centre to
+focus it and then types on the keyboard:
+
+| Action | On a grid cell |
+|--------|----------------|
+| `click` | Mouse click at the cell centre |
+| `fill` / `type` | Click the centre to focus, then `keyboard.type(value)` |
+| `press` | Click the centre to focus, then `keyboard.press(value)` |
+
+A `fill`/`type`/`press` with no value is refused with `MISSING_ACTION_VALUE`
+rather than degraded to a bare click — dropping the value silently and
+reporting success is the worse outcome. State the text or key explicitly in the
+instruction (e.g. `type 'hello' into the canvas field`).
 
 ---
 

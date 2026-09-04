@@ -246,6 +246,17 @@ Control which page-representation mode the AI receives:
 | `--mode dom` | DOM + XPath | Force DomSimplifier (raw structure) |
 | `--mode visual` | Screenshot + Set-of-Marks | Vision-based element detection; numbered overlays sent to the model |
 
+The visual path acts on a mark — an element or a grid cell picked out of the
+screenshot — so it performs `click`, `fill`, `type` and `press` only. Any other
+action type, notably `scroll`, is **refused rather than substituted**: a
+page-level scroll needs no element, so a `scroll` reaching this path has
+already claimed a missing element target, and scrolling to the model's guess
+would silently perform a different action than the one requested. Under
+`--mode auto` such a step is skipped before the screenshot is taken, spending
+neither an escalation nor a vision call; under explicit `--mode visual` an
+element-backed mark logs the refusal and skips, while a grid cell raises
+`UNSUPPORTED_VISUAL_ACTION`.
+
 ### `--interactive` / `-i` Flag
 
 Run `ibr` in interactive mode. This forces `BROWSER_HEADLESS=false` (showing the browser window) and is recommended when using `wait for human` instructions for solving CAPTCHAs, MFA, or manual logins.
@@ -1067,6 +1078,15 @@ Now you can watch exactly what the script is doing and see where it fails.
 | `VISUAL_AI_MODEL` | Model name | _(AI_MODEL)_ | Vision model for visual mode only; overrides `AI_MODEL` when `--mode visual` or auto-escalation uses vision |
 | `VISUAL_MAX_ESCALATIONS` | number | 3 | Max auto-mode visual escalations per run (explicit `--mode visual` ignores cap) |
 | `VISUAL_GRID` | RxC format | 8x8 | Grid fallback dimensions (e.g. `4x4`, `10x10`) when no interactive elements detected |
+
+**Grid-cell targets.** When the grid fallback is in play the resolved target is
+a coordinate (`visual-grid=r0c0`), not an element, so text entry clicks the
+cell centre to focus it and then types on the keyboard: `fill`/`type` become
+`keyboard.type(value)` and `press` becomes `keyboard.press(value)`, while
+`click` is the mouse click alone. A `fill`/`type`/`press` with no value fails
+with `MISSING_ACTION_VALUE` rather than degrading to a bare click, which would
+drop the value silently and still report success — state the text or key
+explicitly in the instruction (e.g. `type 'hello' into the canvas field`).
 
 ### API Keys (REQUIRED)
 - `OPENAI_API_KEY` - For OpenAI provider
