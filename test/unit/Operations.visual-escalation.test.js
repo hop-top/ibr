@@ -3,11 +3,12 @@
  * vision-mode Unit 3, auto path / plan task "Operations: auto-escalation
  * ladder (aria->dom->visual, capped)").
  *
- * At the existing action-failure point in #actionInstruction (the
- * try/catch around performAction() that otherwise reaches
- * healingService.attemptHeal), when this.mode === 'auto' and the text
- * find/act has failed for this instruction, escalate to a visual attempt
- * BEFORE calling attemptHeal. Reuses the explicit --mode visual resolve path
+ * At both text-failure points in #actionInstruction — the find reported a
+ * genuine miss (outcome "not_found"; tests h–n) or the try/catch around
+ * performAction() that otherwise reaches healingService.attemptHeal (tests
+ * a–g) — when this.mode === 'auto' and the text find/act has failed for this
+ * instruction, escalate to a visual attempt (BEFORE calling attemptHeal on
+ * the act-failure path). Reuses the explicit --mode visual resolve path
  * (VisualRepresenter.represent() + the visual find provider call). Capped
  * per run by VISUAL_MAX_ESCALATIONS (default 3, read once at construction).
  * Explicit --mode visual is unaffected by the cap (separate, already-tested
@@ -351,5 +352,155 @@ describe('Operations auto-mode visual escalation', () => {
         );
 
         escalationSpy.mockRestore();
+    });
+
+    // ── find-miss path: the text find resolves NO elements ─────────────────
+    // An empty element set is a FIND failure, not an ACT failure — it never
+    // reaches the performAction catch. But `{"elements": []}` on its own is
+    // AMBIGUOUS: it is also the shape of a legitimate no-op (a page-level
+    // scroll, an optional click). The reply's `outcome` field disambiguates:
+    // only "not_found" is a genuine miss worth a visual attempt. Everything
+    // else — "no_element_needed", an unknown value, or NO outcome field at
+    // all (every pre-existing cassette) — stays the historical silent skip.
+
+    const MISS_RESP = JSON.stringify({ elements: [], type: 'click', outcome: 'not_found' });
+    const NOOP_SCROLL_RESP = JSON.stringify({ elements: [], type: 'scroll', outcome: 'no_element_needed' });
+    const LEGACY_EMPTY_RESP = JSON.stringify({ elements: [], type: 'scroll' });
+
+    // (h) find-miss under auto -> visual attempt runs, resolves, and the
+    // instruction completes via the visual click; healing never runs.
+    it('(h) escalates to visual when the text find reports outcome not_found under --mode auto', async () => {
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(MISS_RESP)) // text find: genuine miss
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }]))); // visual find resolves
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+        ).resolves.toBeUndefined();
+
+        expect(mockRepresent).toHaveBeenCalledTimes(1);
+        expect(visualLocator.click).toHaveBeenCalledTimes(1);
+        expect(textLocator.click).not.toHaveBeenCalled();
+        expect(attemptHealSpy).not.toHaveBeenCalled();
+    });
+
+    // (i) inverse guard of (h): a find-miss outside auto is the historical
+    // silent skip — no visual attempt, no healing, no throw.
+    it('(i) does not escalate on a not_found text find when mode is not auto', async () => {
+        generateAIResponse.mockResolvedValueOnce(aiResp(MISS_RESP));
+
+        const ops = new Operations(makeCtx(page), { mode: 'aria' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+        ).resolves.toBeUndefined();
+
+        expect(mockRepresent).not.toHaveBeenCalled();
+        expect(visualLocator.click).not.toHaveBeenCalled();
+        expect(attemptHealSpy).not.toHaveBeenCalled();
+    });
+
+    // (j) find-miss under auto where the visual attempt resolves no mark ->
+    // back to the historical skip: not fatal, and healing is not invoked
+    // (there is no locator or action error for it to work with).
+    it('(j) falls back to the skip (no throw, no heal) when the find-miss visual attempt resolves nothing', async () => {
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(MISS_RESP))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@nope' }]))); // label absent from markMap
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+        ).resolves.toBeUndefined();
+
+        expect(mockRepresent).toHaveBeenCalledTimes(1);
+        expect(visualLocator.click).not.toHaveBeenCalled();
+        expect(attemptHealSpy).not.toHaveBeenCalled();
+    });
+
+    // (k) find-miss escalations spend VISUAL_MAX_ESCALATIONS exactly like
+    // act-failure ones; once the cap is spent, a find-miss is the plain skip
+    // again (cap-hit note emitted, task still completes).
+    it('(k) find-miss escalations are capped by VISUAL_MAX_ESCALATIONS', async () => {
+        process.env.VISUAL_MAX_ESCALATIONS = '1';
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(MISS_RESP)) // instr 1 text find: miss
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }]))) // instr 1 visual find (spends the cap)
+            .mockResolvedValueOnce(aiResp(MISS_RESP)); // instr 2 text find: miss, cap spent
+        const capNoteSpy = vi.spyOn(streamer, 'visualEscalationCapped');
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({
+                ...TASK,
+                instructions: [
+                    { name: 'click', prompt: 'submit' },
+                    { name: 'click', prompt: 'submit again' },
+                ],
+            })
+        ).resolves.toBeUndefined();
+
+        expect(mockRepresent).toHaveBeenCalledTimes(1);
+        expect(visualLocator.click).toHaveBeenCalledTimes(1);
+        expect(capNoteSpy).toHaveBeenCalledWith(expect.objectContaining({ cap: 1 }));
+        expect(attemptHealSpy).not.toHaveBeenCalled();
+
+        capNoteSpy.mockRestore();
+    });
+
+    // (l) a find-miss escalation emits the SAME visual.escalation event the
+    // act-failure path does.
+    it('(l) emits a visual.escalation NDJSON event on a find-miss escalation', async () => {
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(MISS_RESP))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+        const escalationSpy = vi.spyOn(streamer, 'visualEscalation');
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] });
+
+        expect(escalationSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                instructionIndex: expect.any(Number),
+                reason: expect.any(String),
+            })
+        );
+
+        escalationSpy.mockRestore();
+    });
+
+    // ── no-op regression guards: an empty `elements` array that is NOT a miss
+    // must never trigger a visual attempt. This is what a blanket
+    // "escalate on every empty find" would break: an extra screenshot +
+    // vision call on every legitimate no-op step.
+
+    // (m) explicit no_element_needed (page-level scroll) -> no escalation.
+    it('(m) does not escalate on a page-level scroll reply (outcome no_element_needed)', async () => {
+        generateAIResponse.mockResolvedValueOnce(aiResp(NOOP_SCROLL_RESP));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'scroll', prompt: 'scroll down' }] })
+        ).resolves.toBeUndefined();
+
+        expect(mockRepresent).not.toHaveBeenCalled();
+        expect(visualLocator.click).not.toHaveBeenCalled();
+        expect(attemptHealSpy).not.toHaveBeenCalled();
+    });
+
+    // (n) backward compatibility: a reply with NO outcome field at all — the
+    // shape every pre-existing cassette and unit fixture emits — keeps
+    // behaving exactly as before: a silent skip, never an escalation.
+    it('(n) does not escalate on an empty-elements reply carrying no outcome field', async () => {
+        generateAIResponse.mockResolvedValueOnce(aiResp(LEGACY_EMPTY_RESP));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'scroll', prompt: 'scroll down' }] })
+        ).resolves.toBeUndefined();
+
+        expect(mockRepresent).not.toHaveBeenCalled();
+        expect(visualLocator.click).not.toHaveBeenCalled();
+        expect(attemptHealSpy).not.toHaveBeenCalled();
     });
 });

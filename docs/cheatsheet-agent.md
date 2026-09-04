@@ -196,7 +196,7 @@ affected.
 
 ## Visual Mode & Extract-from-Image
 
-`--mode visual` sends a marked screenshot to the LLM for both element location (model picks a mark) and data extraction directly from pixels. Extract-from-image results land in the same `.extracts` array as text extractions, preserving the existing parse paths. Auto-mode escalates to visual as a **last resort** when aria + dom text find succeeds but the action fails, so scripts using only text extraction need no changes. To use visual explicitly for extraction:
+`--mode visual` sends a marked screenshot to the LLM for both element location (model picks a mark) and data extraction directly from pixels. Extract-from-image results land in the same `.extracts` array as text extractions, preserving the existing parse paths. Auto-mode escalates to visual as a **last resort** when the aria + dom text attempt fails (the model reports `"outcome": "not_found"`, or the action on a found element throws) — never for an instruction the model marks `"no_element_needed"`, so page-level scrolls and optional actions stay free. Scripts using only text extraction need no changes. To use visual explicitly for extraction:
 
 ```javascript
 const args = ['url: https://example.com', '--mode', 'visual', 'instructions:', '  - extract the price from pixels'];
