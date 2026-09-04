@@ -376,7 +376,10 @@ Return ONLY the JSON array.`;
 // emit, so downstream parsing (baml-parser.js's parseFindElementsResponse /
 // parseExtractionResponse) and verdict handling need ZERO changes. Find
 // replies as a one-element JSON array of descriptor objects —
-// [{"mark": "<label>"}] — mirroring the existing [{"role":...}] /
+// [{"mark": "<label>"}], plus an OPTIONAL "value" for fill/type/press
+// (mirroring makeActionInstructionMessage's {elements,type,value}: a click
+// reply carries no value and stays valid) — mirroring the existing
+// [{"role":...}] /
 // [{"x":...}] descriptor-array shape (never raw pixel coordinates, per spec:
 // Set-of-Marks only). Extract reuses the identical extraction framing
 // (JSON array, "If nothing found, return empty array: []"), so a visual
@@ -407,10 +410,12 @@ You will be given:
 
 The valid labels in this image are: ${labelList}
 
-Return ONLY a valid JSON array containing ONE object with the following property:
+Return ONLY a valid JSON array containing ONE object with the following properties:
   - "mark": the exact label text (a string, e.g. "@e2" or "r0c0") printed on the mark that matches the instruction — reproduce it verbatim, exactly as shown in the image. Do not invent a label that is not listed above, and do not renumber or reformat it.
+  - "value": the text to fill or type into that element, or the key to press (e.g. "user@example.com", "Enter"), taken from the instruction. Omit "value" entirely when the instruction is a plain click or needs no value.
 
-Example: [{"mark":"@e2"}]
+Example (fill/type/press): [{"mark":"@e2","value":"user@example.com"}]
+Example (click): [{"mark":"@e2"}]
 
 If nothing in the image matches, return an empty array: []
 Never return raw pixel coordinates — only one of the listed labels, verbatim.
