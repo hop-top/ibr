@@ -139,6 +139,48 @@ describe('parseActionInstructionResponse', () => {
     const input = JSON.stringify({ elements: ['input'], type: 'fill', value: 'hello' });
     expect(parseActionInstructionResponse(input).value).toBe('hello');
   });
+
+  // ── outcome: disambiguates an empty `elements` array ───────────────────────
+  // `{"elements": []}` alone means BOTH "genuine miss" and "nothing to act on"
+  // (page-level scroll, optional click). `outcome` carries which. Only the
+  // literal "not_found" is a miss; anything else — including a reply with NO
+  // outcome field at all (every pre-existing cassette / caller) — is not, so
+  // the historical silent-skip behaviour is preserved verbatim.
+
+  it('outcome is undefined when the field is absent (backward compatible)', () => {
+    const input = JSON.stringify({ elements: [], type: 'scroll' });
+    expect(parseActionInstructionResponse(input).outcome).toBeUndefined();
+  });
+
+  it('passes outcome "not_found" through', () => {
+    const input = JSON.stringify({ elements: [], type: 'click', outcome: 'not_found' });
+    expect(parseActionInstructionResponse(input).outcome).toBe('not_found');
+  });
+
+  it('passes outcome "no_element_needed" through', () => {
+    const input = JSON.stringify({ elements: [], type: 'scroll', outcome: 'no_element_needed' });
+    expect(parseActionInstructionResponse(input).outcome).toBe('no_element_needed');
+  });
+
+  it('passes outcome "found" through', () => {
+    const input = JSON.stringify({ elements: ['#btn'], type: 'click', outcome: 'found' });
+    expect(parseActionInstructionResponse(input).outcome).toBe('found');
+  });
+
+  it('normalizes outcome case and surrounding whitespace', () => {
+    const input = JSON.stringify({ elements: [], type: 'click', outcome: '  NOT_FOUND ' });
+    expect(parseActionInstructionResponse(input).outcome).toBe('not_found');
+  });
+
+  it('drops an unrecognized outcome value rather than treating it as a miss', () => {
+    const input = JSON.stringify({ elements: [], type: 'click', outcome: 'maybe' });
+    expect(parseActionInstructionResponse(input).outcome).toBeUndefined();
+  });
+
+  it('drops a non-string outcome value', () => {
+    const input = JSON.stringify({ elements: [], type: 'click', outcome: 3 });
+    expect(parseActionInstructionResponse(input).outcome).toBeUndefined();
+  });
 });
 
 // ── parseExtractionResponse ───────────────────────────────────────────────────

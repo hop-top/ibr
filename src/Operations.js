@@ -971,27 +971,12 @@ export class Operations {
                             // (fill/type text, press key) — hand it to the
                             // visual retry so it performs the SAME action
                             // with the SAME value, instead of re-asking.
-                            const escalated = await this.#attemptVisualEscalation(instruction, action.value);
-                            if (escalated) {
+                            const escalatedTo = await this.#attemptVisualEscalation(instruction, 'text find/act failed', action.value);
+                            if (escalatedTo) {
                                 // Visual attempt resolved AND executed the
-                                // action successfully — fall through to the
-                                // normal success bookkeeping below, skip
-                                // healing entirely for this instruction.
-                                streamer.action({
-                                    actionType: actionType || instruction.name,
-                                    selector: locatorDesc,
-                                    valueLength: action.value != null ? String(action.value).length : 0,
-                                    status: 'success',
-                                });
-                                await wsmAdapter.recordToolCall(
-                                    actionType || instruction.name,
-                                    { selector: locatorDesc, prompt: instruction.prompt },
-                                    { status: 'success' },
-                                    Date.now() - actionStartMs,
-                                );
-                                await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
-                                this.snapshotDiffer.reset();
-                                logger.info(`${context}: resolved via auto-escalation to visual`, { actionType });
+                                // action successfully — record success and
+                                // skip healing entirely for this instruction.
+                                await this.#completeEscalatedAction(context, instruction, action, escalatedTo, actionStartMs);
                                 return;
                             }
                         }
@@ -1147,7 +1132,34 @@ export class Operations {
                     ).catch(() => {});
                 }
             } else {
-                logger.info(`${context}: No matching elements found, skipping action`);
+                // The text find resolved NO elements. That reply shape is
+                // ambiguous on its own — it is BOTH "I could not find the
+                // target" and "there is nothing to act on" (a page-level
+                // scroll, an optional click). Only the model's own
+                // `outcome: "not_found"` marks a genuine miss, and only a
+                // genuine miss is worth escalating: escalating every empty
+                // reply would add a screenshot + vision call to every
+                // legitimate no-op step. A reply carrying no outcome at all
+                // (every pre-existing caller and cassette) is NOT a miss.
+                //
+                // A find failure never reaches the performAction catch above,
+                // so under --mode auto this is the ladder's second entry
+                // point; a resolved+executed visual attempt completes the
+                // instruction here. Otherwise (mode not auto, no miss signal,
+                // cap spent, visual resolved nothing) it stays the historical
+                // skip: there is no locator and no action error for healing
+                // to work with.
+                const isFindMiss = action?.outcome === 'not_found';
+                const escalatedTo = isFindMiss && this.mode === 'auto'
+                    ? await this.#attemptVisualEscalation(instruction, 'text find reported not_found')
+                    : null;
+                if (escalatedTo) {
+                    await this.#completeEscalatedAction(context, instruction, action, escalatedTo, actionStartMs);
+                    return;
+                }
+                logger.info(`${context}: No matching elements found, skipping action`, {
+                    outcome: action?.outcome ?? 'unspecified',
+                });
             }
         } catch (error) {
             // ANNOTATED_SCREENSHOTS_ON_FAILURE: capture screenshot on action failure
@@ -1315,9 +1327,11 @@ export class Operations {
     /**
      * Auto-mode escalation ladder (aria->dom->visual, capped) — SPEC Unit 3
      * auto path / plan "Operations: auto-escalation ladder". Called from
-     * #actionInstruction's actionError handler, BEFORE
-     * healingService.attemptHeal, when this.mode === 'auto' and the normal
-     * text (aria/dom) find/act has just failed for this instruction.
+     * #actionInstruction when this.mode === 'auto' and the normal text
+     * (aria/dom) attempt has just failed for this instruction, at either
+     * failure point: the find reported a genuine miss (outcome "not_found",
+     * no action attempted), or the found element's action threw (BEFORE
+     * healingService.attemptHeal).
      *
      * Escalation is PER-INSTRUCTION and capped per run by
      * VISUAL_MAX_ESCALATIONS (this.visualMaxEscalations, read once at
@@ -1333,17 +1347,22 @@ export class Operations {
      * note when the cap blocks the attempt.
      *
      * @param {Object} instruction
+     * @param {string} [reason] - which failure point triggered the escalation,
+     *   carried on the 'visual.escalation' event
      * @param {string} [failedActionValue] the value the failed text action
      *   was going to use (fill/type text, press key). Reused verbatim by the
      *   visual retry so it performs the SAME action with the SAME value.
-     * @returns {Promise<boolean>} true if the visual attempt resolved AND
-     *   the action executed successfully (caller should treat the
-     *   instruction as done and skip healing); false if escalation was
-     *   capped, the visual find didn't resolve a mark, or the resolved
-     *   visual action itself failed (caller should fall through to the
-     *   existing healingService.attemptHeal flow).
+     * @returns {Promise<string|null>} the executed visual target's
+     *   description (`visual-mark=<label>` / `visual-grid=<label>`, the
+     *   explicit --mode visual path's locatorDesc convention) when the visual
+     *   attempt resolved AND the action executed successfully — the caller
+     *   treats the instruction as done and skips healing; null if escalation
+     *   was capped, the visual find didn't resolve a mark, or the resolved
+     *   visual action itself failed (the caller falls through to its own
+     *   failure handling — healing on the act-failure path, the historical
+     *   skip on the find-miss path).
      */
-    async #attemptVisualEscalation(instruction, failedActionValue) {
+    async #attemptVisualEscalation(instruction, reason = 'text find/act failed', failedActionValue) {
         if (this._visualEscalationsUsed >= this.visualMaxEscalations) {
             streamer.visualEscalationCapped({
                 instructionIndex: this.executionIndex,
@@ -1353,17 +1372,17 @@ export class Operations {
                 instructionIndex: this.executionIndex,
                 cap: this.visualMaxEscalations,
             });
-            return false;
+            return null;
         }
 
         this._visualEscalationsUsed += 1;
         streamer.visualEscalation({
             instructionIndex: this.executionIndex,
-            reason: 'text find/act failed',
+            reason,
             escalationsUsed: this._visualEscalationsUsed,
             cap: this.visualMaxEscalations,
         });
-        logger.info('Auto-escalation: text find/act failed, attempting visual resolution', {
+        logger.info(`Auto-escalation: ${reason}, attempting visual resolution`, {
             instructionIndex: this.executionIndex,
             escalationsUsed: this._visualEscalationsUsed,
             cap: this.visualMaxEscalations,
@@ -1373,35 +1392,68 @@ export class Operations {
         try {
             visualAction = await this.#resolveVisualAction(instruction, failedActionValue);
         } catch (err) {
-            logger.warn('Auto-escalation: visual resolution errored, falling through to healing', { error: err.message });
-            return false;
+            logger.warn('Auto-escalation: visual resolution errored, visual attempt abandoned', { error: err.message });
+            return null;
         }
 
         if (!visualAction?.visual) {
             // Visual find didn't resolve a mark (empty/unknown label) — same
             // "no matching elements" shape #resolveVisualAction already
-            // returns for the explicit path. Fall through to healing.
-            return false;
+            // returns for the explicit path. Nothing to execute.
+            return null;
         }
 
+        const { locator, gridCenter, label } = visualAction.visual;
+        const target = locator ? `visual-mark=${label}` : `visual-grid=${label}`;
         try {
-            if (visualAction.visual.locator) {
-                await this.#performVisualAction(visualAction.visual.locator, visualAction);
+            if (locator) {
+                await this.#performVisualAction(locator, visualAction);
             } else {
-                const { x: cx, y: cy } = visualAction.visual.gridCenter;
-                logger.info('Auto-escalation: clicking grid cell center', { label: visualAction.visual.label, x: cx, y: cy });
+                const { x: cx, y: cy } = gridCenter;
+                logger.info('Auto-escalation: clicking grid cell center', { label, x: cx, y: cy });
                 await this.ctx.page.mouse.click(cx, cy);
             }
         } catch (err) {
-            logger.warn('Auto-escalation: visual action execution failed, falling through to healing', { error: err.message });
-            return false;
+            logger.warn('Auto-escalation: visual action execution failed, visual attempt abandoned', { target, error: err.message });
+            return null;
         }
 
         if (this.annotateMode) {
             await this.#writeVisualAnnotateArtifact();
         }
 
-        return true;
+        return target;
+    }
+
+    /**
+     * Success bookkeeping for an instruction completed by an auto-escalation
+     * visual attempt, shared by both entry points in #actionInstruction (the
+     * act-failure catch and the find-miss else branch): emit the action event,
+     * record the tool call, then the same post-action settle the text path
+     * performs.
+     * @param {string} context
+     * @param {Object} instruction
+     * @param {{type?: string, value?: string}|null} action - parsed text action; carries no usable type on a find miss
+     * @param {string} selector - executed visual target, as returned by #attemptVisualEscalation
+     * @param {number} actionStartMs
+     */
+    async #completeEscalatedAction(context, instruction, action, selector, actionStartMs) {
+        const actionType = action?.type?.toLowerCase() || instruction.name;
+        streamer.action({
+            actionType,
+            selector,
+            valueLength: action?.value != null ? String(action.value).length : 0,
+            status: 'success',
+        });
+        await wsmAdapter.recordToolCall(
+            actionType,
+            { selector, prompt: instruction.prompt },
+            { status: 'success' },
+            Date.now() - actionStartMs,
+        );
+        await this.#waitJitteredDelay(INSTRUCTION_EXECUTION_DELAY_MS);
+        this.snapshotDiffer.reset();
+        logger.info(`${context}: resolved via auto-escalation to visual`, { actionType, selector });
     }
 
     /**
