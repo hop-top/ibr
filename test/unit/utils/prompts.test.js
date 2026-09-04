@@ -4,6 +4,7 @@ import {
   makeFindInstructionMessage,
   makeFindInstructionWithDiffMessage,
   makeActionInstructionMessage,
+  makeActionInstructionMessageDom,
   makeExtractInstructionMessage,
   makeVisualFindMessage,
   makeVisualExtractMessage,
@@ -568,4 +569,44 @@ describe('makeFindInstructionWithDiffMessage', () => {
     const msgs = makeFindInstructionWithDiffMessage('find nav', diff, fullDom);
     expect(msgs[0].content).not.toMatch(/\\$/m);
   });
+});
+
+// ── action-reply outcome field: miss vs no-op ─────────────────────────────────
+// An empty `elements` array is ambiguous on its own: it means BOTH "I could not
+// find the target" (a genuine miss) and "nothing to act on / no element needed"
+// (a page-level scroll, an optional click). Both action prompts must ask the
+// model for an explicit `outcome` so the two are distinguishable downstream.
+
+describe('action prompts — outcome field (miss vs no-op)', () => {
+  const variants = [
+    ['aria', () => makeActionInstructionMessage('click submit', '- button "Submit"')],
+    ['dom', () => makeActionInstructionMessageDom('click submit', '{"n":"button"}')],
+  ];
+
+  for (const [name, factory] of variants) {
+    const system = () => factory()[0].content;
+
+    it(`${name}: system prompt asks for an "outcome" field`, () => {
+      expect(system()).toContain('outcome');
+    });
+
+    it(`${name}: system prompt enumerates all three outcome values`, () => {
+      const content = system();
+      expect(content).toContain('"found"');
+      expect(content).toContain('"not_found"');
+      expect(content).toContain('"no_element_needed"');
+    });
+
+    it(`${name}: system prompt ties not_found to a genuine miss`, () => {
+      expect(system()).toMatch(/not_found[\s\S]{0,200}(could not find|no element (?:in|on) the page|not present)/i);
+    });
+
+    it(`${name}: system prompt ties no_element_needed to page-level scroll`, () => {
+      expect(system()).toMatch(/no_element_needed[\s\S]{0,200}scroll/i);
+    });
+
+    it(`${name}: system prompt keeps the empty-array instruction for both empty cases`, () => {
+      expect(system()).toMatch(/empty array/i);
+    });
+  }
 });

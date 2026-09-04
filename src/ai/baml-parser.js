@@ -196,10 +196,25 @@ export function parseFindElementsResponse(response) {
   }
 }
 
+// The action reply's `outcome` field, when the model supplies one. An empty
+// `elements` array alone cannot distinguish a genuine miss from a legitimate
+// no-op (page-level scroll, optional click), so this is what callers read to
+// tell them apart. Anything outside this set — including the field being
+// absent, which is every pre-existing caller and cassette — normalises to
+// undefined, i.e. "the model said nothing", which callers must treat exactly
+// as they treated an empty array before this field existed.
+const ACTION_OUTCOMES = new Set(['found', 'not_found', 'no_element_needed']);
+
+function normaliseActionOutcome(raw) {
+  if (typeof raw !== 'string') return undefined;
+  const value = raw.trim().toLowerCase();
+  return ACTION_OUTCOMES.has(value) ? value : undefined;
+}
+
 /**
  * Parse action instruction response
  * @param {string} response - Raw AI response
- * @returns {Object} {elements: array, type: string, value?: string}
+ * @returns {Object} {elements: array, type: string, value?: string, outcome?: 'found'|'not_found'|'no_element_needed'}
  */
 export function parseActionInstructionResponse(response) {
   try {
@@ -209,14 +224,15 @@ export function parseActionInstructionResponse(response) {
     const result = {
       elements: Array.isArray(parsed.elements) ? parsed.elements : [],
       type: parsed.type || 'click',
-      value: parsed.value || undefined
+      value: parsed.value || undefined,
+      outcome: normaliseActionOutcome(parsed.outcome)
     };
 
     return result;
   } catch (error) {
     throw new Error(
       `Failed to parse action instruction: ${error.message} ` +
-      `Expected response format: {"elements":[...],"type":"click|fill|type|press","value":"..."}. ` +
+      `Expected response format: {"elements":[...],"type":"click|fill|type|press","value":"...","outcome":"found|not_found|no_element_needed"}. ` +
       `Run "ibr snap <url> -i" to see available elements and retry with a more specific prompt.`
     );
   }

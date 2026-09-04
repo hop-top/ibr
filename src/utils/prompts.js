@@ -101,6 +101,21 @@ Do not include any other text, explanation, or markdown formatting. Return ONLY 
   ];
 }
 
+// An empty `elements` array is AMBIGUOUS on its own: it is the shape the model
+// returns BOTH when it genuinely could not find the target AND when the
+// instruction needs no element at all (a page-level scroll, an optional click
+// on something that isn't there by design). Downstream, those two want opposite
+// handling — a genuine miss is worth escalating to a screenshot-based visual
+// attempt, a no-op is not (escalating it would add a screenshot + vision call
+// to every legitimate no-op step). `outcome` is the model's own statement of
+// which one it means; it is ADDITIVE, so a reply that omits it stays the
+// historical no-op skip.
+const ACTION_OUTCOME_GUIDANCE = `4. outcome: which case this reply is — one of:
+   - "found": the elements array holds the element(s) to act on
+   - "not_found": you looked for the element the instruction names and it is not present in the page — a genuine miss (elements stays an empty array)
+   - "no_element_needed": the instruction needs no element at all — a page-level scroll, or an optional action whose target is legitimately absent (elements stays an empty array)
+   Use "not_found" ONLY for a real miss; never for a page-level scroll.`;
+
 function makeActionInstructionMessage(userPrompt, pageContext) {
   const systemPrompt = `You are helping the user automate the browser by finding elements based on what the user wants to act on in the page.
 
@@ -115,8 +130,9 @@ Return ONLY a valid JSON object with the following properties:
    If no match, return an empty array.
 2. type: action to perform — "click", "fill", "type", "press", or "scroll"
 3. value: value to fill, type, or press (omit if not applicable)
+${ACTION_OUTCOME_GUIDANCE}
 
-Example: {"elements": [{"role": "textbox", "name": "Email"}], "type": "fill", "value": "user@example.com"}
+Example: {"elements": [{"role": "textbox", "name": "Email"}], "type": "fill", "value": "user@example.com", "outcome": "found"}
 
 Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON object.`;
 
@@ -298,8 +314,9 @@ Return ONLY a valid JSON object with the following properties:
    If no match, return an empty array.
 2. type: action to perform — "click", "fill", "type", "press", or "scroll"
 3. value: value to fill, type, or press (omit if not applicable)
+${ACTION_OUTCOME_GUIDANCE}
 
-Example: {"elements": [{"x": 5}], "type": "fill", "value": "user@example.com"}
+Example: {"elements": [{"x": 5}], "type": "fill", "value": "user@example.com", "outcome": "found"}
 
 Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON object.
 ${PSEUDO_BUTTON_GUIDANCE}`;
