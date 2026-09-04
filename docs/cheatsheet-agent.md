@@ -84,6 +84,8 @@ On failure, ibr emits one JSON object to stderr (prefixed by a leading newline):
 | `TIMEOUT` | Run exceeded `EXECUTION_TIMEOUT_MS` |
 | `WAIT_FOR_HUMAN_NO_TTY` | A "wait for me to …" step hit a non-TTY stdin without `IBR_WAIT_FOR_HUMAN_ALLOW_PIPED=true` |
 | `WAIT_FOR_HUMAN_STDIN_CLOSED` | Piped stdin ended (EOF) before the human line arrived |
+| `UNSUPPORTED_VISUAL_ACTION` | Visual path asked to perform an action it cannot do against a mark — the visual path supports `click`/`fill`/`type`/`press` only |
+| `MISSING_ACTION_VALUE` | `fill`/`type`/`press` resolved to a visual **grid cell** with no value to apply |
 
 `step` / `action` fields are present on `error` only when the failing
 instruction index/action is known (`RUNTIME_ERROR` from a browser action).
@@ -203,6 +205,26 @@ const args = ['url: https://example.com', '--mode', 'visual', 'instructions:', '
 ```
 
 Vision model defaults to `AI_MODEL` unless `VISUAL_AI_MODEL` is set (recommend for stronger vision quality; text mode remains on the cheaper model). Escalation count exposed via progress feedback and NDJSON events if `NDJSON_STREAM=true`.
+
+### What the visual path performs
+
+The visual path acts on a mark (an element or a grid cell), so it performs `click`, `fill`, `type` and `press` — nothing else. Any other type, `scroll` above all, is **refused, never substituted**: a page-level scroll needs no element, so a `scroll` on this path already claimed a missing element target, and scrolling to the model's guess would be a different action than the one requested. Earlier versions silently clicked instead.
+
+- **DON'T** retry an `UNSUPPORTED_VISUAL_ACTION` unchanged — the refusal is deterministic. Drop the step or restate it against a real target.
+- **DO** expect `--mode auto` to skip a `scroll` before the screenshot: it spends no escalation and no vision call.
+- Under explicit `--mode visual`, an element-backed mark logs the refusal and skips the step; a grid cell raises `UNSUPPORTED_VISUAL_ACTION`.
+
+### Grid-cell targets (`visual-grid=<label>`)
+
+When no interactive elements are detected (canvas / unlabelled pages), marks are `VISUAL_GRID` cells (default `8x8`) and the target reads `visual-grid=r0c0` rather than `visual-mark=@e6`. A cell is a coordinate, not an element:
+
+| Action | Performed as |
+|--------|--------------|
+| `click` | Mouse click at the cell centre |
+| `fill` / `type` | Click centre to focus, then `keyboard.type(value)` |
+| `press` | Click centre to focus, then `keyboard.press(value)` |
+
+A `fill`/`type`/`press` with no value raises `MISSING_ACTION_VALUE` instead of degrading to a bare click — **DO** put the literal text or key in the instruction. The `<action>` NDJSON event's `valueLength` reports the real value length on this path.
 
 ---
 
@@ -466,6 +488,8 @@ error object and NDJSON events still come through.
 | No usable Chromium | `RUNTIME_ERROR` | Message names the fix: `npx playwright install chromium` or `BROWSER_CHANNEL=chrome`; ibr already tried cached + system builds |
 | "wait for me to …" on piped stdin | `WAIT_FOR_HUMAN_NO_TTY` | Rephrase as a timed wait, or set `IBR_WAIT_FOR_HUMAN_ALLOW_PIPED=true` |
 | Piped stdin closed mid-wait | `WAIT_FOR_HUMAN_STDIN_CLOSED` | Feed a line on stdin, or drop the human-wait step |
+| `scroll` (or other non-actionable type) reached the visual path | `UNSUPPORTED_VISUAL_ACTION` (+ `step`/`action`) | Do **not** retry as-is — it is refused by design, never substituted. Drop the step (page-level scrolls need no element) or restate it as a `click`/`fill`/`type`/`press` on a real target |
+| `fill`/`type`/`press` on a grid cell with no value | `MISSING_ACTION_VALUE` (+ `step`/`action`) | Put the literal text or key in the instruction (`type 'hello' into the canvas field`); a grid cell has no element to infer a value from |
 
 ---
 
