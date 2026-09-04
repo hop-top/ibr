@@ -12,8 +12,9 @@
  * cli-cache-reuse.test.js use — no cassette dir needed since these are simple
  * ordered-queue replays, not request-matched), and drives a REAL headless
  * Chromium against a static test page. Per T-0138's lesson, every assertion
- * below checks a REAL outcome (DOM state after a click, extracted content
- * value) — never exit-0-only.
+ * below checks a REAL outcome (the click log lines naming the resolved mark
+ * and its successful execution, the grid cell's real pixel coordinates, the
+ * extracted content value) — never exit-0-only.
  *
  * AI response queue order (mirrors ops.parseTaskDescription + per-instruction
  * calls in Operations.js): [0] task description (url + instructions, a plain
@@ -111,22 +112,41 @@ describe('cli --mode visual: find + click (element strategy)', () => {
       JSON.stringify([{ mark: '@e6' }]),
     ]);
 
+    // LOG_LEVEL=info: the positive proof below lives in logger.info lines.
+    // BASE_ENV's 'error' level would hide them — and would equally hide the
+    // "No matching elements found" skip, which is why absence-of-error
+    // assertions alone cannot tell a landed click from a silent skip.
     const result = await runIbr(
       ['--mode', 'visual', `url: ${url}\ninstructions:\n  - accept the cookie banner`],
-      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl },
+      { ...BASE_ENV, OPENAI_BASE_URL: ai.baseUrl, LOG_LEVEL: 'info' },
     );
 
     expect(result.code).toBe(0);
-    expect(result.stdout + result.stderr).toMatch(/Task execution completed/i);
+    const combined = result.stdout + result.stderr;
+    expect(combined).toMatch(/Task execution completed/i);
 
-    // Real outcome: reload the same page fresh and independently verify the
-    // button's onclick handler does what the click should have triggered —
-    // proves the click machinery actually ran against a real element, not
-    // just that the process exited 0. (We can't inspect ibr's own closed
-    // browser context, so we assert the mechanism the click depends on:
-    // the button's onclick removes #banner.)
-    expect(result.stdout + result.stderr).not.toMatch(/No matching elements found, skipping action/i);
-    expect(result.stdout + result.stderr).not.toMatch(/ELEMENT_NOT_FOUND|RUNTIME_ERROR/i);
+    // Positive proof the click landed on the marked element:
+    // 1. "Clicking element" is logged by #actionInstruction immediately
+    //    before locator.click(), carrying the resolved locatorDesc — for a
+    //    visual mark that is `visual-mark=<label>`. This proves the model's
+    //    "@e6" resolved through markMap to a real locator and the click
+    //    machinery was invoked against THAT element (a grid fallback logs
+    //    "Clicking grid cell center" instead; a find miss logs "No matching
+    //    elements found" and never reaches this line).
+    // 2. "executed successfully" is logged only after locator.click()
+    //    resolved without throwing — Playwright's click waits for the
+    //    element to be visible/enabled/stable and dispatches the event; a
+    //    thrown click surfaces as RUNTIME_ERROR + non-zero exit instead.
+    // ibr's browser context is closed by the time we get here, so the DOM
+    // cannot be re-read; these two lines are the closest observable evidence
+    // of the actual click, not merely of exit 0.
+    expect(combined).toMatch(/Clicking element[^\n]*"locator":"visual-mark=@e6"/);
+    expect(combined).toMatch(/executed successfully[^\n]*"actionType":"click"/);
+
+    // Inverse guards: none of the skip/fallback/failure paths fired.
+    expect(combined).not.toMatch(/No matching elements found, skipping action/i);
+    expect(combined).not.toMatch(/Clicking grid cell center/i);
+    expect(combined).not.toMatch(/ELEMENT_NOT_FOUND|RUNTIME_ERROR/i);
   }, 30000);
 
   afterAll(async () => {
