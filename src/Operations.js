@@ -34,6 +34,21 @@ import { HealingService } from './services/HealingService.js';
 import { infraManager } from './browser/resolvers/InfraManager.js';
 import { CliError, ensureCliError } from './utils/cliErrors.js';
 
+/**
+ * Action types the visual (Set-of-Marks) path can actually perform against a
+ * resolved mark. `scroll` is deliberately absent: a page-level scroll needs
+ * no element at all (the action reply's `no_element_needed` outcome keeps it
+ * off this path in the first place), and there is no coherent "scroll to
+ * this mark" semantics — scrolling to whatever the vision model guessed, or
+ * wheel-scrolling at a grid cell, are both a DIFFERENT action from the one
+ * asked for. Anything not listed here resolves to VISUAL_UNSUPPORTED_ACTION
+ * and is refused with a warning rather than silently downgraded to a click.
+ */
+const VISUAL_ACTION_TYPES = new Set(['click', 'fill', 'type', 'press']);
+
+/** Sentinel action type for an instruction the visual path must not perform. */
+const VISUAL_UNSUPPORTED_ACTION = 'unsupported';
+
 /** Strip query params from URL before emitting to NDJSON stream (avoid leaking tokens/keys). */
 function sanitizeUrlForStream(rawUrl) {
     try {
@@ -850,19 +865,21 @@ export class Operations {
                 if (action.visual) {
                     // --mode visual resolution: either the element locator
                     // markMap resolved directly, or (grid strategy) no
-                    // element — click the cell center via page.mouse.click.
+                    // element — act on the cell centre via mouse/keyboard.
                     if (action.visual.locator) {
                         locator = action.visual.locator;
                         locatorDesc = `visual-mark=${action.visual.label}`;
                     } else {
-                        const { x: cx, y: cy } = action.visual.gridCenter;
-                        logger.info(`${context}: Clicking grid cell center`, { label: action.visual.label, x: cx, y: cy });
-                        await this.ctx.page.mouse.click(cx, cy);
                         locatorDesc = `visual-grid=${action.visual.label}`;
+                        await this.#performVisualGridAction(
+                            action.visual.gridCenter,
+                            action,
+                            action.visual.label,
+                        );
                         streamer.action({
                             actionType: action.type || instruction.name,
                             selector: locatorDesc,
-                            valueLength: 0,
+                            valueLength: action.value != null ? String(action.value).length : 0,
                             status: 'success',
                         });
                         await wsmAdapter.recordToolCall(
@@ -951,7 +968,23 @@ export class Operations {
                                 await locator.press(action.value);
                                 break;
                             default:
-                                logger.warn(`${context}: Unknown action type`, { actionType });
+                                // No fallthrough to click: performing SOME
+                                // other action is strictly worse than
+                                // performing none. On the visual path this
+                                // is the `scroll` refusal (the mark cannot
+                                // be scrolled to meaningfully); on the text
+                                // path an element-scoped scroll is already
+                                // satisfied by the scrollIntoViewIfNeeded
+                                // above, so there is nothing left to do.
+                                if (action.visual) {
+                                    logger.warn(`${context}: Action type not performable on a visual mark, skipping`, {
+                                        actionType,
+                                        instruction: instruction.name,
+                                        locator: locatorDesc,
+                                    });
+                                } else {
+                                    logger.warn(`${context}: Unknown action type`, { actionType });
+                                }
                         }
                     };
 
@@ -1265,9 +1298,22 @@ export class Operations {
      * @param {Object} instruction
      * @param {string} [fallbackValue] value from a failed text action, reused
      *   for the visual retry in preference to re-deriving it.
-     * @returns {Promise<{elements: Array, type: 'click'|'fill'|'type'|'press', value?: string, visual?: {locator?: Object, gridCenter?: {x:number,y:number}, label: string}}>}
+     * An instruction the visual path cannot PERFORM (scroll — see
+     * VISUAL_ACTION_TYPES) short-circuits to the empty-elements shape before
+     * the screenshot and vision call: resolving a mark we could only act on
+     * wrongly buys nothing but a wasted request.
+     *
+     * @returns {Promise<{elements: Array, type: 'click'|'fill'|'type'|'press'|'unsupported', value?: string, visual?: {locator?: Object, gridCenter?: {x:number,y:number}, label: string}}>}
      */
     async #resolveVisualAction(instruction, fallbackValue) {
+        if (!VISUAL_ACTION_TYPES.has(instruction.name)) {
+            logger.warn('Visual find: action type not performable on a visual mark, skipping visual resolution', {
+                instructionIndex: this.executionIndex,
+                actionType: instruction.name,
+            });
+            return { elements: [], type: VISUAL_UNSUPPORTED_ACTION, value: fallbackValue ?? undefined };
+        }
+
         const { image, mime, markMap } = await this.#getVisualRepresentation();
         const labels = [...markMap.keys()];
 
@@ -1289,11 +1335,14 @@ export class Operations {
             found = [];
         }
 
-        const actionType = instruction.name === 'click' ? 'click'
-            : instruction.name === 'fill' ? 'fill'
-            : instruction.name === 'type' ? 'type'
-            : instruction.name === 'press' ? 'press'
-            : 'click';
+        // Only the action types the visual path can actually PERFORM map
+        // through. Anything else — `scroll` above all — maps to an explicit
+        // unsupported marker so the executors refuse it; mapping it to
+        // 'click' would make a scroll instruction silently click whatever
+        // element the vision model happened to pick.
+        const actionType = VISUAL_ACTION_TYPES.has(instruction.name)
+            ? instruction.name
+            : VISUAL_UNSUPPORTED_ACTION;
 
         const descriptor = Array.isArray(found) && found.length > 0 ? found[0] : null;
         const label = descriptor?.mark ?? null;
@@ -1363,6 +1412,17 @@ export class Operations {
      *   skip on the find-miss path).
      */
     async #attemptVisualEscalation(instruction, reason = 'text find/act failed', failedActionValue) {
+        if (!VISUAL_ACTION_TYPES.has(instruction.name)) {
+            // The visual path cannot perform this instruction (scroll).
+            // Refuse BEFORE spending an escalation and a vision call — the
+            // screenshot would resolve a mark we could only act on wrongly.
+            logger.warn('Auto-escalation: action type not performable on a visual mark, skipping visual attempt', {
+                instructionIndex: this.executionIndex,
+                actionType: instruction.name,
+            });
+            return null;
+        }
+
         if (this._visualEscalationsUsed >= this.visualMaxEscalations) {
             streamer.visualEscalationCapped({
                 instructionIndex: this.executionIndex,
@@ -1409,9 +1469,7 @@ export class Operations {
             if (locator) {
                 await this.#performVisualAction(locator, visualAction);
             } else {
-                const { x: cx, y: cy } = gridCenter;
-                logger.info('Auto-escalation: clicking grid cell center', { label, x: cx, y: cy });
-                await this.ctx.page.mouse.click(cx, cy);
+                await this.#performVisualGridAction(gridCenter, visualAction, label);
             }
         } catch (err) {
             logger.warn('Auto-escalation: visual action execution failed, visual attempt abandoned', { target, error: err.message });
@@ -1467,7 +1525,11 @@ export class Operations {
      * @param {{type: string, value?: string}} action
      */
     async #performVisualAction(locator, action) {
-        switch (action.type?.toLowerCase()) {
+        const actionType = action.type?.toLowerCase();
+        switch (actionType) {
+            case 'click':
+                await locator.click();
+                break;
             case 'fill':
                 await locator.fill(action.value);
                 break;
@@ -1477,9 +1539,80 @@ export class Operations {
             case 'press':
                 await locator.press(action.value);
                 break;
-            case 'click':
             default:
-                await locator.click();
+                // Never fall through to a click: performing SOME other
+                // action is strictly worse than performing none. `scroll`
+                // lands here by design (see VISUAL_ACTION_TYPES).
+                throw new CliError(
+                    'UNSUPPORTED_VISUAL_ACTION',
+                    `Action type "${actionType ?? 'unknown'}" cannot be performed on a visual mark. ` +
+                    `The visual (Set-of-Marks) path supports ${[...VISUAL_ACTION_TYPES].join(', ')}. ` +
+                    `A page-level scroll needs no element — it is handled without visual resolution.`,
+                    { step: this.executionIndex, action: actionType },
+                );
+        }
+    }
+
+    /**
+     * Execute the resolved action type against a GRID cell centre — the
+     * fallback strategy when VisualRepresenter detected no interactive
+     * elements (canvas / unlabelled pages). There is no locator here, only a
+     * coordinate, so text entry is click-to-focus followed by
+     * page.keyboard.type/press rather than locator.fill/type/press.
+     *
+     * A grid cell is a plausible text target on exactly the pages this
+     * strategy exists for, so a fill/type must NOT degrade to a bare click:
+     * that silently drops the value the model resolved and reports success.
+     * A missing value is refused outright for the same reason.
+     *
+     * @param {{x: number, y: number}} gridCenter
+     * @param {{type: string, value?: string}} action
+     * @param {string} label - the grid mark label, for logging
+     */
+    async #performVisualGridAction(gridCenter, action, label) {
+        const { x: cx, y: cy } = gridCenter;
+        const actionType = action.type?.toLowerCase();
+
+        if (!VISUAL_ACTION_TYPES.has(actionType)) {
+            throw new CliError(
+                'UNSUPPORTED_VISUAL_ACTION',
+                `Action type "${actionType ?? 'unknown'}" cannot be performed on a visual grid cell. ` +
+                `The visual (Set-of-Marks) path supports ${[...VISUAL_ACTION_TYPES].join(', ')}. ` +
+                `A page-level scroll needs no element — it is handled without visual resolution.`,
+                { step: this.executionIndex, action: actionType },
+            );
+        }
+
+        if (actionType !== 'click' && (action.value == null || action.value === '')) {
+            throw new CliError(
+                'MISSING_ACTION_VALUE',
+                `Action type "${actionType}" on visual grid cell ${label} has no value to apply. ` +
+                `The grid strategy has no element to inspect, so there is nothing to ${actionType}. ` +
+                `Make the instruction state the text or key explicitly (e.g. "type 'hello' into the canvas field").`,
+                { step: this.executionIndex, action: actionType },
+            );
+        }
+
+        logger.info(`Visual grid cell: performing ${actionType}`, {
+            label,
+            x: cx,
+            y: cy,
+            valueLength: action.value != null ? String(action.value).length : 0,
+        });
+
+        // Focus the cell first — every supported type needs the click, and
+        // for click it IS the whole action.
+        await this.ctx.page.mouse.click(cx, cy);
+
+        switch (actionType) {
+            case 'click':
+                break;
+            case 'fill':
+            case 'type':
+                await this.ctx.page.keyboard.type(action.value);
+                break;
+            case 'press':
+                await this.ctx.page.keyboard.press(action.value);
                 break;
         }
     }

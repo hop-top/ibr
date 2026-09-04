@@ -96,6 +96,10 @@ function makePage(textLocator) {
         getByText: vi.fn().mockReturnValue(textLocator),
         getByPlaceholder: vi.fn().mockReturnValue(textLocator),
         mouse: { click: vi.fn().mockResolvedValue(undefined) },
+        keyboard: {
+            type: vi.fn().mockResolvedValue(undefined),
+            press: vi.fn().mockResolvedValue(undefined),
+        },
         on: vi.fn(),
         off: vi.fn(),
     };
@@ -129,6 +133,12 @@ const TEXT_ACTION_RESP = JSON.stringify({
 function elementMarkMap(label, locator) {
     const m = new Map();
     m.set(label, { element: locator, bbox: { x: 10, y: 20, width: 30, height: 40 } });
+    return m;
+}
+
+function gridMarkMap(cellId = 'r0c0', bbox = { x: 100, y: 200, width: 50, height: 60 }) {
+    const m = new Map();
+    m.set(cellId, { bbox, cellId });
     return m;
 }
 
@@ -572,6 +582,90 @@ describe('Operations auto-mode visual escalation', () => {
 
         expect(mockRepresent).not.toHaveBeenCalled();
         expect(visualLocator.click).not.toHaveBeenCalled();
+        expect(attemptHealSpy).not.toHaveBeenCalled();
+    });
+
+    // ── scroll never performs some OTHER action on the visual path ────────
+    // `no_element_needed` already keeps a page-level scroll off this path
+    // (test m). But a model that mislabels a scroll as `not_found` still
+    // drags it here — and a scroll has no coherent "act on this mark"
+    // meaning. It must resolve to nothing, never to a click.
+
+    const SCROLL_MISS_RESP = JSON.stringify({ elements: [], type: 'scroll', outcome: 'not_found' });
+
+    // (o) THE regression guard for the silent-click defect: a scroll that
+    // escalates must not click the resolved element mark.
+    it('(o) a scroll escalation never clicks the resolved element mark', async () => {
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(SCROLL_MISS_RESP))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'scroll', prompt: 'scroll to the footer' }] })
+        ).resolves.toBeUndefined();
+
+        expect(visualLocator.click).not.toHaveBeenCalled();
+        expect(visualLocator.fill).not.toHaveBeenCalled();
+        expect(visualLocator.press).not.toHaveBeenCalled();
+        expect(page.mouse.click).not.toHaveBeenCalled();
+    });
+
+    // (p) same guard on the grid strategy: no mouse click at the cell centre.
+    it('(p) a scroll escalation never clicks a resolved grid cell centre', async () => {
+        mockRepresent = vi.fn().mockResolvedValue({
+            image: IMAGE_BUFFER,
+            mime: 'image/png',
+            markMap: gridMarkMap('r0c0', { x: 100, y: 200, width: 50, height: 60 }),
+            strategy: 'grid',
+        });
+        VisualRepresenter.mockImplementation(() => ({ represent: mockRepresent }));
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(SCROLL_MISS_RESP))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: 'r0c0' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'scroll', prompt: 'scroll to the footer' }] })
+        ).resolves.toBeUndefined();
+
+        expect(page.mouse.click).not.toHaveBeenCalled();
+        expect(page.keyboard.type).not.toHaveBeenCalled();
+    });
+
+    // (q) grid strategy on the escalation path threads the value the same
+    // way the explicit path does — click-to-focus then keyboard.type, never
+    // a bare click that drops the text.
+    it('(q) a fill escalation onto a grid cell focuses the cell then types the value', async () => {
+        mockRepresent = vi.fn().mockResolvedValue({
+            image: IMAGE_BUFFER,
+            mime: 'image/png',
+            markMap: gridMarkMap('r0c0', { x: 100, y: 200, width: 50, height: 60 }),
+            strategy: 'grid',
+        });
+        VisualRepresenter.mockImplementation(() => ({ represent: mockRepresent }));
+
+        const failingFillLocator = makeLocator();
+        failingFillLocator.fill = vi.fn().mockRejectedValue(new Error('element is not visible'));
+        resolveElement.mockReturnValue(failingFillLocator);
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(JSON.stringify({
+                elements: [{ role: 'textbox', name: 'Email' }],
+                type: 'fill',
+                value: 'user@example.com',
+            })))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: 'r0c0' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await ops.executeTask({
+            ...TASK,
+            instructions: [{ name: 'fill', prompt: "type 'user@example.com' in the email box" }],
+        });
+
+        expect(page.mouse.click).toHaveBeenCalledWith(125, 230);
+        expect(page.keyboard.type).toHaveBeenCalledWith('user@example.com');
         expect(attemptHealSpy).not.toHaveBeenCalled();
     });
 });
