@@ -370,6 +370,83 @@ Return ONLY the JSON array.`;
   ];
 }
 
+// ── Visual mode prompts (Set-of-Marks) ─────────────────────────────────────
+// The model reads a marked screenshot instead of an ARIA/DOM snapshot, but
+// MUST reply in the SAME JSON shapes the text find/extract prompts already
+// emit, so downstream parsing (baml-parser.js's parseFindElementsResponse /
+// parseExtractionResponse) and verdict handling need ZERO changes. Find
+// replies as a one-element JSON array of descriptor objects —
+// [{"mark": "<label>"}] — mirroring the existing [{"role":...}] /
+// [{"x":...}] descriptor-array shape (never raw pixel coordinates, per spec:
+// Set-of-Marks only). Extract reuses the identical extraction framing
+// (JSON array, "If nothing found, return empty array: []"), so a visual
+// extract reply parses exactly like a text extract reply, verdict guidance
+// included.
+//
+// Mark identity is the drawn LABEL STRING, not a sequential integer.
+// AnnotationService draws the ref-label text verbatim on the overlay pixels
+// (elements: "@e0"/"@c1"; grid cells: "r0c0" — see AnnotationService.js's
+// label.textContent = ref and renderGrid's ref === cellId), and that same
+// string is VisualRepresenter.markMap's key. Those labels are the
+// --annotate human-readable scheme and are NOT renumbered for the
+// model — the model can only report what it visually reads off the pixels,
+// so it must echo the label verbatim; markMap.get(<that label>) then
+// resolves the element/cell directly. makeVisualFindMessage therefore takes
+// the actual list of drawn labels (markLabels), not a count, so the model
+// knows the valid label set to pick from.
+
+function makeVisualFindMessage(userPrompt, markLabels) {
+  const labels = Array.isArray(markLabels) ? markLabels : [];
+  const labelList = labels.join(', ');
+
+  const systemPrompt = `You are helping the user automate the browser by finding an element in a screenshot annotated with labeled marks (Set-of-Marks).
+
+You will be given:
+1. An instruction describing the element to find
+2. A screenshot where candidate elements (or grid cells, if no elements were detected) are outlined and labeled with a text label printed directly on the image (e.g. "@e2" for an element, "r0c0" for a grid cell)
+
+The valid labels in this image are: ${labelList}
+
+Return ONLY a valid JSON array containing ONE object with the following property:
+  - "mark": the exact label text (a string, e.g. "@e2" or "r0c0") printed on the mark that matches the instruction — reproduce it verbatim, exactly as shown in the image. Do not invent a label that is not listed above, and do not renumber or reformat it.
+
+Example: [{"mark":"@e2"}]
+
+If nothing in the image matches, return an empty array: []
+Never return raw pixel coordinates — only one of the listed labels, verbatim.
+Do not include any other text, explanation, or markdown formatting. Return ONLY the JSON array.`;
+
+  return [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `User Instructions: ${userPrompt}\nMarks available: ${labelList}` }
+  ];
+}
+
+function makeVisualExtractMessage(userPrompt) {
+  const verdictBlock = isVerdictExtractPrompt(userPrompt) ? VERDICT_EXTRACT_GUIDANCE : '';
+  const systemPrompt = `You are a JSON extraction tool. Your ONLY task is to read a screenshot and return valid JSON.
+
+CRITICAL RULES:
+- Return ONLY a JSON array (starting with [ and ending with ])
+- Do NOT include any text before or after the JSON
+- Do NOT use markdown code blocks or backticks
+- Do NOT include explanations, headers, or titles
+- Extract exactly what the user asks for
+- If nothing found, return empty array: []
+
+You will be given:
+1. An extraction instruction
+2. A screenshot of the page to read the value from
+
+Read the exact text as shown in the image, preserving symbols and line breaks.
+Return valid JSON array ONLY. Nothing else.${verdictBlock}`;
+
+  return [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: `Extract: ${userPrompt}\nFrom the attached screenshot.` }
+  ];
+}
+
 export {
   makeTaskDescriptionMessage,
   // aria mode
@@ -382,4 +459,7 @@ export {
   makeExtractInstructionMessageDom,
   // diff mode
   makeFindInstructionWithDiffMessage,
+  // visual mode (Set-of-Marks)
+  makeVisualFindMessage,
+  makeVisualExtractMessage,
 };

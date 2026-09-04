@@ -194,6 +194,18 @@ affected.
 
 ---
 
+## Visual Mode & Extract-from-Image
+
+`--mode visual` sends a marked screenshot to the LLM for both element location (model picks a mark) and data extraction directly from pixels. Extract-from-image results land in the same `.extracts` array as text extractions, preserving the existing parse paths. Auto-mode escalates to visual as a **last resort** when aria + dom text find succeeds but the action fails, so scripts using only text extraction need no changes. To use visual explicitly for extraction:
+
+```javascript
+const args = ['url: https://example.com', '--mode', 'visual', 'instructions:', '  - extract the price from pixels'];
+```
+
+Vision model defaults to `AI_MODEL` unless `VISUAL_AI_MODEL` is set (recommend for stronger vision quality; text mode remains on the cheaper model). Escalation count exposed via progress feedback and NDJSON events if `NDJSON_STREAM=true`.
+
+---
+
 ## NDJSON Event Stream (`NDJSON_STREAM=true`)
 
 For real-time event consumption without polling. Events go to **stderr**.
@@ -430,6 +442,9 @@ routed through it. Use stateless invocation for those.
 | `ANNOTATED_SCREENSHOTS_ON_FAILURE=true` | Auto-capture debug PNGs on failure |
 | `OBEY_ROBOTS=true` | Compliant scraping; exit 1 (`ROBOTS_DISALLOWED`) if path disallowed |
 | `IBR_WAIT_FOR_HUMAN_ALLOW_PIPED=true` | Only if a prompt intentionally waits for a line on piped stdin (otherwise such a step fails fast — see below) |
+| `VISUAL_AI_MODEL=<model>` | Use stronger vision model for `--mode visual` or auto-escalation; text remains on `AI_MODEL` |
+| `VISUAL_MAX_ESCALATIONS=3` | Limit auto-escalation to visual per run (explicit `--mode visual` ignores) |
+| `VISUAL_GRID=8x8` | Grid fallback dimensions (RxC) when no interactive elements detected |
 
 Use `--quiet` to drop progress lines from stderr in a subprocess; the structured
 error object and NDJSON events still come through.

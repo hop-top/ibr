@@ -4,6 +4,7 @@ import { google } from '@ai-sdk/google';
 import { generateText } from 'ai';
 import { xrrService } from '../services/XrrService.js';
 import logger from '../utils/logger.js';
+import { CliError } from '../utils/cliErrors.js';
 
 /**
  * Default models for each provider
@@ -13,6 +14,152 @@ const DEFAULT_MODELS = {
   anthropic: 'claude-3-5-haiku-20241022',
   google: 'gemini-1.5-flash'
 };
+
+/**
+ * Known non-vision (text-only) models, keyed lowercase. This is a deny-list,
+ * not an allow-list: the vast majority of current-generation models across
+ * all three providers are vision-capable (per spec §Unit 2 — gpt-4.1-mini,
+ * claude-3-5-haiku-*, gemini-1.5-flash are all vision-capable), so defaulting
+ * "unknown → vision-capable" avoids blocking legitimate/future models on an
+ * incomplete list. This only needs to catch the well-known text-only holdouts
+ * (older GPT-3.5 family, text-only Claude 2.x line) so a visual call fails
+ * fast with a clear CONFIG_ERROR instead of silently sending an image to a
+ * model that will ignore or choke on it. Matched by prefix so date/version
+ * suffixes (e.g. "gpt-3.5-turbo-0125") still match.
+ */
+const NON_VISION_MODEL_PREFIXES = [
+  'gpt-3.5',
+  'gpt-3',
+  'claude-1',
+  'claude-2',
+  'claude-instant',
+  'text-davinci',
+  'text-curie',
+  'text-babbage',
+  'text-ada',
+];
+
+/**
+ * True when `modelName` is a known non-vision (text-only) model. Unknown
+ * model names are treated as vision-capable (fail open toward allowing the
+ * call) — see NON_VISION_MODEL_PREFIXES for the rationale.
+ * @param {string} modelName
+ * @returns {boolean}
+ */
+export function isKnownNonVisionModel(modelName) {
+  if (!modelName || typeof modelName !== 'string') return false;
+  const normalized = modelName.trim().toLowerCase();
+  return NON_VISION_MODEL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
+/**
+ * Build a model instance for `modelName` using the SDK factory for `provider`,
+ * mirroring the provider switch in createAIProvider(). Used to resolve
+ * VISUAL_AI_MODEL to a concrete model instance for the visual call only —
+ * does not touch the run's configured aiProvider.modelInstance.
+ * @param {string} provider - 'openai' | 'anthropic' | 'google'
+ * @param {string} modelName
+ * @returns {Object} model instance
+ */
+function buildModelInstance(provider, modelName) {
+  switch ((provider || 'openai').toLowerCase()) {
+    case 'anthropic':
+      return anthropic(modelName);
+    case 'google':
+      return google(modelName);
+    case 'openai':
+    default: {
+      const baseURL = process.env.OPENAI_BASE_URL;
+      if (baseURL) {
+        const customOpenAI = createOpenAI({
+          apiKey: process.env.OPENAI_API_KEY || 'sk-default',
+          baseURL
+        });
+        return customOpenAI(modelName);
+      }
+      return openai(modelName);
+    }
+  }
+}
+
+/**
+ * Resolve the model instance + name to use for a call that carries an image.
+ * VISUAL_AI_MODEL, when set, overrides the model for visual calls ONLY —
+ * falls back to the run's configured model (the modelInstance/options.model
+ * already in play) when unset. Gate: a known non-vision resolved model throws
+ * CliError('CONFIG_ERROR', ...) rather than silently sending an image to a
+ * text-only model.
+ * @param {Object} modelInstance - the run's configured model instance (fallback)
+ * @param {Object} options - call options; options.provider names the SDK
+ *   factory to use when building a VISUAL_AI_MODEL override instance;
+ *   options.model names the run's configured model (for the capability gate
+ *   when no override applies and no override is needed).
+ * @returns {Object} the model instance to use for this call
+ */
+function resolveVisualModelInstance(modelInstance, options) {
+  const visualModel = process.env.VISUAL_AI_MODEL;
+
+  if (!visualModel) {
+    // No override — still gate on the run's configured model name, if known,
+    // so an explicitly-configured non-vision text model can't slip an image
+    // through unchecked either.
+    if (isKnownNonVisionModel(options.model)) {
+      throw new CliError(
+        'CONFIG_ERROR',
+        `Visual call requires a vision-capable model, but the configured model "${options.model}" is known to be text-only. ` +
+        `Set VISUAL_AI_MODEL to a vision-capable model (e.g. gpt-4.1-mini, claude-3-5-haiku-20241022, gemini-1.5-flash) or change AI_MODEL.`
+      );
+    }
+    return modelInstance;
+  }
+
+  if (isKnownNonVisionModel(visualModel)) {
+    throw new CliError(
+      'CONFIG_ERROR',
+      `VISUAL_AI_MODEL is set to "${visualModel}", which is known to be a text-only model. ` +
+      `Vision calls require a vision-capable model (e.g. gpt-4.1-mini, claude-3-5-haiku-20241022, gemini-1.5-flash).`
+    );
+  }
+
+  return buildModelInstance(options.provider, visualModel);
+}
+
+/**
+ * Inject an image content part into the last message's content when
+ * options.image is present. Additive-only: with no options.image, messages
+ * are returned unchanged (byte-identical reference), so every text-only
+ * caller/test is unaffected.
+ *
+ * @ai-sdk image-part shape (verified against @ai-sdk/provider-utils ImagePart,
+ * re-exported by the `ai` package's public ModelMessage/UserContent types):
+ *   { type: 'image', image: Buffer|Uint8Array|ArrayBuffer|string|URL, mediaType?: string }
+ * Note the SDK field is `mediaType`, not `mime` — ibr's own {image, mime}
+ * convention (matching AnnotationService/VisualRepresenter) is translated here.
+ *
+ * @param {Array} messages
+ * @param {Object} options
+ * @returns {Array} messages, with an image part appended to the last message
+ *   when options.image is set; otherwise the original `messages` reference.
+ */
+function withImagePart(messages, options) {
+  if (!options || !options.image) return messages;
+
+  const imagePart = { type: 'image', image: options.image };
+  if (options.mime) imagePart.mediaType = options.mime;
+
+  const lastIndex = messages.length - 1;
+  const lastMessage = messages[lastIndex];
+  const existingContent = Array.isArray(lastMessage.content)
+    ? lastMessage.content
+    : [{ type: 'text', text: lastMessage.content }];
+
+  const patchedMessage = {
+    ...lastMessage,
+    content: [...existingContent, imagePart]
+  };
+
+  return [...messages.slice(0, lastIndex), patchedMessage];
+}
 
 /**
  * Retry configuration
@@ -133,16 +280,28 @@ export function createAIProvider() {
  *
  * @param {Object} modelInstance - The AI model instance from Vercel AI SDK
  * @param {Array} messages - Array of message objects with role and content
- * @param {Object} options - Configuration options (temperature, etc.)
+ * @param {Object} options - Configuration options (temperature, etc.). When
+ *   options.image (a Buffer) is present, an image content part is added to
+ *   the last message (options.mime names its media type) and VISUAL_AI_MODEL
+ *   is consulted for the model to use (options.provider names the SDK to
+ *   build it with; options.model names the run's configured fallback model
+ *   for the capability gate). With no options.image, behavior is unchanged.
  * @returns {Promise<Object>} Normalized response with content and usage
  */
 export async function generateAIResponse(modelInstance, messages, options = {}) {
-  return xrrService.recordAiCall(messages, options, () => _generateAIResponse(modelInstance, messages, options));
+  const resolvedModel = options.image
+    ? resolveVisualModelInstance(modelInstance, options)
+    : modelInstance;
+  const resolvedMessages = withImagePart(messages, options);
+  return xrrService.recordAiCall(resolvedMessages, options, () => _generateAIResponse(resolvedModel, resolvedMessages, options));
 }
 
 async function _generateAIResponse(modelInstance, messages, options = {}) {
   let lastError;
   let attempt = 0;
+  // ibr-specific option keys consumed above (image path / model resolution) —
+  // never forwarded to the SDK's generateText() call.
+  const { image, mime, provider, model, ...sdkOptions } = options;
 
   while (attempt < RETRY_CONFIG.maxAttempts) {
     try {
@@ -150,7 +309,7 @@ async function _generateAIResponse(modelInstance, messages, options = {}) {
         model: modelInstance,
         messages: messages,
         temperature: options.temperature ?? 0,
-        ...options
+        ...sdkOptions
       });
 
       // Validate response has required fields

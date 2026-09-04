@@ -135,3 +135,51 @@ describe('getOperationOptions — AI_TEMPERATURE validation', () => {
     expect(opts.mode).toBe('aria');
   });
 });
+
+// ── Visual mode support ───────────────────────────────────────────────────────
+
+describe('--mode visual support', () => {
+  it('--mode visual parses without error (passes through mode)', () => {
+    vi.stubEnv('AI_TEMPERATURE', '0');
+    const opts = getOperationOptions('visual');
+    expect(opts.mode).toBe('visual');
+  });
+
+  it('invalid --mode errors with message listing visual', async () => {
+    const { execSync } = await import('node:child_process');
+    try {
+      execSync('node src/index.js --mode bogus "test prompt" 2>&1', {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        cwd: process.cwd()
+      });
+      throw new Error('Expected --mode bogus to exit with error');
+    } catch (err) {
+      const output = err.stdout || err.message;
+      // Verify error message includes "visual" in the allowed modes list
+      expect(output).toMatch(/aria, dom, auto, visual/);
+      // Verify it's an error about invalid --mode
+      expect(output).toMatch(/Invalid --mode value/);
+    }
+  });
+
+  it('--help output includes visual mode documentation', async () => {
+    const { execSync } = await import('node:child_process');
+    const output = execSync('node src/index.js --help', {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: process.cwd()
+    });
+
+    // Check that visual appears in mode list in usage
+    expect(output).toMatch(/aria\|dom\|auto\|visual/);
+
+    // Check that visual mode help line exists
+    expect(output).toMatch(/--mode visual/);
+
+    // Check for visual env vars in config section
+    expect(output).toMatch(/VISUAL_AI_MODEL/);
+    expect(output).toMatch(/VISUAL_MAX_ESCALATIONS/);
+    expect(output).toMatch(/VISUAL_GRID/);
+  });
+});

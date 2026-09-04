@@ -5,7 +5,10 @@ import {
   makeFindInstructionWithDiffMessage,
   makeActionInstructionMessage,
   makeExtractInstructionMessage,
+  makeVisualFindMessage,
+  makeVisualExtractMessage,
 } from '../../../src/utils/prompts.js';
+import { parseFindElementsResponse, parseExtractionResponse } from '../../../src/ai/baml-parser.js';
 
 describe('makeTaskDescriptionMessage', () => {
   const msg = makeTaskDescriptionMessage('Go to https://example.com and click login');
@@ -123,6 +126,147 @@ describe('makeExtractInstructionMessage', () => {
 
   it('system prompt mentions JSON array', () => {
     expect(msg[0].content).toContain('JSON array');
+  });
+});
+
+// ── visual (Set-of-Marks) find/extract prompts ─────────────────────────────────
+// Unit 2 (vision-mode): the model reads a marked screenshot instead of an
+// ARIA/DOM snapshot, but MUST reply in the SAME JSON shapes the text find/
+// extract paths already emit, so baml-parser.js + verdict handling need ZERO
+// changes downstream. Find: an array of descriptor objects (mirroring
+// [{"role":...}] / [{"x":...}]) whose descriptor is {"mark": N} instead of a
+// role/name or x ref. Extract: identical framing to the text extract prompt
+// (JSON array, verdict guidance reused verbatim).
+//
+// Contract fix (post-d9fa6df): AnnotationService draws the ref-label STRING
+// on the overlay pixels (elements: "@e0"/"@c1"; grid cells: "r0c0"), and
+// VisualRepresenter.markMap is keyed by exactly those strings — not by a
+// synthetic sequential index. The model can only report what it visually
+// reads off the image, so it must echo the label string verbatim; asking for
+// "the integer 1..N" has no correspondence to what's drawn and every
+// markMap.get(reply) would miss. makeVisualFindMessage therefore takes the
+// actual list of drawn labels (markLabels), not a count, and instructs the
+// model to pick one of THOSE strings.
+
+describe('makeVisualFindMessage', () => {
+  const labels = ['@e0', '@e1', '@c1'];
+  const msg = makeVisualFindMessage('find the login button', labels);
+
+  it('returns array of length 2', () => {
+    expect(msg).toHaveLength(2);
+  });
+
+  it('[0].role is system', () => {
+    expect(msg[0].role).toBe('system');
+  });
+
+  it('[1].role is user', () => {
+    expect(msg[1].role).toBe('user');
+  });
+
+  it('user message contains supplied userPrompt', () => {
+    expect(msg[1].content).toContain('find the login button');
+  });
+
+  it('system prompt mentions the mark label JSON shape with a string example', () => {
+    expect(msg[0].content).toContain('"mark"');
+    expect(msg[0].content).toContain('[{"mark":"@e2"}]');
+  });
+
+  it('system prompt lists the actual drawn labels, not a count', () => {
+    for (const label of labels) {
+      expect(msg[0].content).toContain(label);
+    }
+  });
+
+  it('user message also lists the available labels', () => {
+    for (const label of labels) {
+      expect(msg[1].content).toContain(label);
+    }
+  });
+
+  it('system prompt instructs verbatim reproduction (never invent or renumber)', () => {
+    expect(msg[0].content.toLowerCase()).toContain('verbatim');
+    expect(msg[0].content.toLowerCase()).toMatch(/never invent|do not invent/);
+  });
+
+  it('system prompt mentions JSON array (matches existing find shape)', () => {
+    expect(msg[0].content).toContain('JSON array');
+  });
+
+  it('reply parses via parseFindElementsResponse into the existing find shape (array of descriptors)', () => {
+    const modelReply = '[{"mark": "@e1"}]';
+    const parsed = parseFindElementsResponse(modelReply);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0].mark).toBe('@e1');
+  });
+
+  it('a returned label string resolves via markMap.get() the way Operations (task 4) will use it', () => {
+    const markMap = new Map([
+      ['@e0', { bbox: { x: 0, y: 0, w: 10, h: 10 } }],
+      ['@e1', { bbox: { x: 20, y: 20, w: 10, h: 10 } }],
+      ['@c1', { bbox: { x: 40, y: 40, w: 10, h: 10 } }],
+    ]);
+    const modelReply = '[{"mark": "@e1"}]';
+    const parsed = parseFindElementsResponse(modelReply);
+    const resolved = markMap.get(parsed[0].mark);
+    expect(resolved).toBeDefined();
+    expect(resolved.bbox).toEqual({ x: 20, y: 20, w: 10, h: 10 });
+  });
+
+  it('grid-cell label style ("r0c0") also round-trips through the parser', () => {
+    const gridMsg = makeVisualFindMessage('find the search box', ['r0c0', 'r0c1', 'r1c0']);
+    expect(gridMsg[0].content).toContain('r0c0');
+    const parsed = parseFindElementsResponse('[{"mark": "r1c0"}]');
+    expect(parsed[0].mark).toBe('r1c0');
+  });
+
+  it('empty-match reply ([]) parses to an empty array, same as text find', () => {
+    expect(parseFindElementsResponse('[]')).toEqual([]);
+  });
+});
+
+describe('makeVisualExtractMessage', () => {
+  const msg = makeVisualExtractMessage('extract the total price');
+
+  it('returns array of length 2', () => {
+    expect(msg).toHaveLength(2);
+  });
+
+  it('[0].role is system', () => {
+    expect(msg[0].role).toBe('system');
+  });
+
+  it('[1].role is user', () => {
+    expect(msg[1].role).toBe('user');
+  });
+
+  it('user message contains supplied userPrompt', () => {
+    expect(msg[1].content).toContain('extract the total price');
+  });
+
+  it('system prompt mentions JSON array (matches existing extract shape)', () => {
+    expect(msg[0].content).toContain('JSON array');
+  });
+
+  it('system prompt says if nothing found, return empty array (same contract as text extract)', () => {
+    expect(msg[0].content).toContain('If nothing found, return empty array: []');
+  });
+
+  it('reply parses via parseExtractionResponse into the existing extract shape (array)', () => {
+    const modelReply = '["$42.00"]';
+    const parsed = parseExtractionResponse(modelReply);
+    expect(parsed).toEqual(['$42.00']);
+  });
+
+  it('a verdict-style reply parses like text extract (single-object array)', () => {
+    const modelReply = '{"verdict":"PAGE_OK"}';
+    const parsed = parseExtractionResponse(modelReply);
+    expect(parsed).toEqual([{ verdict: 'PAGE_OK' }]);
+  });
+
+  it('empty reply ([]) parses to an empty array, same as text extract', () => {
+    expect(parseExtractionResponse('[]')).toEqual([]);
   });
 });
 
