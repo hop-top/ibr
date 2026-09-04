@@ -871,7 +871,7 @@ export class Operations {
                         locatorDesc = `visual-mark=${action.visual.label}`;
                     } else {
                         locatorDesc = `visual-grid=${action.visual.label}`;
-                        await this.#performVisualGridClick(
+                        await this.#performVisualGridAction(
                             action.visual.gridCenter,
                             action,
                             action.visual.label,
@@ -879,7 +879,7 @@ export class Operations {
                         streamer.action({
                             actionType: action.type || instruction.name,
                             selector: locatorDesc,
-                            valueLength: 0,
+                            valueLength: action.value != null ? String(action.value).length : 0,
                             status: 'success',
                         });
                         await wsmAdapter.recordToolCall(
@@ -1469,7 +1469,7 @@ export class Operations {
             if (locator) {
                 await this.#performVisualAction(locator, visualAction);
             } else {
-                await this.#performVisualGridClick(gridCenter, visualAction, label);
+                await this.#performVisualGridAction(gridCenter, visualAction, label);
             }
         } catch (err) {
             logger.warn('Auto-escalation: visual action execution failed, visual attempt abandoned', { target, error: err.message });
@@ -1554,20 +1554,22 @@ export class Operations {
     }
 
     /**
-     * Click a GRID cell centre — the fallback strategy when VisualRepresenter
-     * detected no interactive elements (canvas / unlabelled pages). There is
-     * no locator here, only a coordinate.
+     * Execute the resolved action type against a GRID cell centre — the
+     * fallback strategy when VisualRepresenter detected no interactive
+     * elements (canvas / unlabelled pages). There is no locator here, only a
+     * coordinate, so text entry is click-to-focus followed by
+     * page.keyboard.type/press rather than locator.fill/type/press.
      *
-     * Refuses an action type the visual path cannot perform rather than
-     * clicking anyway: a `scroll` that reached here would otherwise click a
-     * cell the model picked, which is a DIFFERENT action from the one asked
-     * for.
+     * A grid cell is a plausible text target on exactly the pages this
+     * strategy exists for, so a fill/type must NOT degrade to a bare click:
+     * that silently drops the value the model resolved and reports success.
+     * A missing value is refused outright for the same reason.
      *
      * @param {{x: number, y: number}} gridCenter
      * @param {{type: string, value?: string}} action
      * @param {string} label - the grid mark label, for logging
      */
-    async #performVisualGridClick(gridCenter, action, label) {
+    async #performVisualGridAction(gridCenter, action, label) {
         const { x: cx, y: cy } = gridCenter;
         const actionType = action.type?.toLowerCase();
 
@@ -1581,8 +1583,38 @@ export class Operations {
             );
         }
 
-        logger.info(`Visual grid cell: performing ${actionType}`, { label, x: cx, y: cy });
+        if (actionType !== 'click' && (action.value == null || action.value === '')) {
+            throw new CliError(
+                'MISSING_ACTION_VALUE',
+                `Action type "${actionType}" on visual grid cell ${label} has no value to apply. ` +
+                `The grid strategy has no element to inspect, so there is nothing to ${actionType}. ` +
+                `Make the instruction state the text or key explicitly (e.g. "type 'hello' into the canvas field").`,
+                { step: this.executionIndex, action: actionType },
+            );
+        }
+
+        logger.info(`Visual grid cell: performing ${actionType}`, {
+            label,
+            x: cx,
+            y: cy,
+            valueLength: action.value != null ? String(action.value).length : 0,
+        });
+
+        // Focus the cell first — every supported type needs the click, and
+        // for click it IS the whole action.
         await this.ctx.page.mouse.click(cx, cy);
+
+        switch (actionType) {
+            case 'click':
+                break;
+            case 'fill':
+            case 'type':
+                await this.ctx.page.keyboard.type(action.value);
+                break;
+            case 'press':
+                await this.ctx.page.keyboard.press(action.value);
+                break;
+        }
     }
 
     /**

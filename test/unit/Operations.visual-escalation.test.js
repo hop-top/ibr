@@ -634,4 +634,38 @@ describe('Operations auto-mode visual escalation', () => {
         expect(page.keyboard.type).not.toHaveBeenCalled();
     });
 
+    // (q) grid strategy on the escalation path threads the value the same
+    // way the explicit path does — click-to-focus then keyboard.type, never
+    // a bare click that drops the text.
+    it('(q) a fill escalation onto a grid cell focuses the cell then types the value', async () => {
+        mockRepresent = vi.fn().mockResolvedValue({
+            image: IMAGE_BUFFER,
+            mime: 'image/png',
+            markMap: gridMarkMap('r0c0', { x: 100, y: 200, width: 50, height: 60 }),
+            strategy: 'grid',
+        });
+        VisualRepresenter.mockImplementation(() => ({ represent: mockRepresent }));
+
+        const failingFillLocator = makeLocator();
+        failingFillLocator.fill = vi.fn().mockRejectedValue(new Error('element is not visible'));
+        resolveElement.mockReturnValue(failingFillLocator);
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(JSON.stringify({
+                elements: [{ role: 'textbox', name: 'Email' }],
+                type: 'fill',
+                value: 'user@example.com',
+            })))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: 'r0c0' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await ops.executeTask({
+            ...TASK,
+            instructions: [{ name: 'fill', prompt: "type 'user@example.com' in the email box" }],
+        });
+
+        expect(page.mouse.click).toHaveBeenCalledWith(125, 230);
+        expect(page.keyboard.type).toHaveBeenCalledWith('user@example.com');
+        expect(attemptHealSpy).not.toHaveBeenCalled();
+    });
 });

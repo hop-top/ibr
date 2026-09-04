@@ -57,6 +57,7 @@ import { CacheManager } from '../../src/cache/CacheManager.js';
 import { AnnotationService } from '../../src/services/AnnotationService.js';
 import { VisualRepresenter } from '../../src/VisualRepresenter.js';
 import { wsmAdapter } from '../../src/services/WsmAdapter.js';
+import { streamer } from '../../src/observability/NdjsonStreamer.js';
 import { promises as fsPromises } from 'fs';
 import { Operations } from '../../src/Operations.js';
 
@@ -370,6 +371,102 @@ describe('Operations --mode visual (explicit)', () => {
 
             expect(targetLocator.click).toHaveBeenCalled();
             expect(targetLocator.fill).not.toHaveBeenCalled();
+        });
+    });
+
+    // ── grid-strategy action fidelity ─────────────────────────────────────
+    // The grid strategy is the fallback for canvas / unlabelled pages, where
+    // a text field may genuinely be the target. Executing every grid mark as
+    // a bare mouse click silently DROPS the value the model resolved, so a
+    // fill/type can never enter text. Click-to-focus + page.keyboard.* is
+    // the honest execution; a missing value is refused, never downgraded to
+    // a plain click.
+    describe('(h) grid strategy honours the action type and value', () => {
+        function gridSetup(replyValue) {
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: gridMarkMap('r0c0', { x: 100, y: 200, width: 50, height: 60 }),
+                strategy: 'grid',
+            });
+            generateAIResponse.mockResolvedValueOnce(
+                aiResp(JSON.stringify([replyValue !== undefined
+                    ? { mark: 'r0c0', value: replyValue }
+                    : { mark: 'r0c0' }])),
+            );
+        }
+
+        it('fill on a grid cell focuses the cell then types the value', async () => {
+            gridSetup('user@example.com');
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'fill', prompt: "type 'user@example.com' in the email box" }],
+            });
+
+            expect(page.mouse.click).toHaveBeenCalledWith(125, 230);
+            expect(page.keyboard.type).toHaveBeenCalledWith('user@example.com');
+        });
+
+        it('type on a grid cell focuses the cell then types the value', async () => {
+            gridSetup('hello world');
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'type', prompt: "type 'hello world' into the canvas field" }],
+            });
+
+            expect(page.mouse.click).toHaveBeenCalledWith(125, 230);
+            expect(page.keyboard.type).toHaveBeenCalledWith('hello world');
+        });
+
+        it('press on a grid cell focuses the cell then presses the key', async () => {
+            gridSetup('Enter');
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'press', prompt: 'press Enter in the canvas field' }],
+            });
+
+            expect(page.mouse.click).toHaveBeenCalledWith(125, 230);
+            expect(page.keyboard.press).toHaveBeenCalledWith('Enter');
+        });
+
+        it('a valueless fill on a grid cell is refused, not downgraded to a click', async () => {
+            gridSetup(undefined);
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await expect(
+                ops.executeTask({
+                    ...TASK,
+                    instructions: [{ name: 'fill', prompt: 'fill the canvas field' }],
+                }),
+            ).rejects.toThrow();
+
+            expect(page.keyboard.type).not.toHaveBeenCalled();
+        });
+
+        it('grid telemetry reports the real value length, not a hardcoded 0', async () => {
+            gridSetup('user@example.com');
+            const actionSpy = vi.spyOn(streamer, 'action');
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'fill', prompt: "type 'user@example.com' in the email box" }],
+            });
+
+            expect(actionSpy).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    actionType: 'fill',
+                    valueLength: 'user@example.com'.length,
+                }),
+            );
+
+            actionSpy.mockRestore();
         });
     });
 
