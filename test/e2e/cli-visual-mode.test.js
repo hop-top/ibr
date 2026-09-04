@@ -1,5 +1,5 @@
 /**
- * Vision mode e2e — `--mode visual` (T-0150 / vision-mode track, SPEC §Testing).
+ * Vision mode e2e — `--mode visual` (vision-mode track, SPEC §Testing).
  *
  * Browser-gated: this whole file lives under test/e2e/**, which
  * test/vitest.config.js excludes entirely when detectBrowserSupport() finds
@@ -11,8 +11,8 @@
  * queue via startFakeAIServerE2E (same helper cli-annotate.test.js /
  * cli-cache-reuse.test.js use — no cassette dir needed since these are simple
  * ordered-queue replays, not request-matched), and drives a REAL headless
- * Chromium against a static test page. Per T-0138's lesson, every assertion
- * below checks a REAL outcome (the click log lines naming the resolved mark
+ * Chromium against a static test page. Every assertion below checks a REAL
+ * outcome (the click log lines naming the resolved mark
  * and its successful execution, the grid cell's real pixel coordinates, the
  * extracted content value) — never exit-0-only.
  *

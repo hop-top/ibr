@@ -7,7 +7,7 @@
  * try/catch around performAction() that otherwise reaches
  * healingService.attemptHeal), when this.mode === 'auto' and the text
  * find/act has failed for this instruction, escalate to a visual attempt
- * BEFORE calling attemptHeal. Reuses the T-0146 visual resolve path
+ * BEFORE calling attemptHeal. Reuses the explicit --mode visual resolve path
  * (VisualRepresenter.represent() + the visual find provider call). Capped
  * per run by VISUAL_MAX_ESCALATIONS (default 3, read once at construction).
  * Explicit --mode visual is unaffected by the cap (separate, already-tested
@@ -193,7 +193,7 @@ describe('Operations auto-mode visual escalation', () => {
 
         expect(workingLocator.click).toHaveBeenCalled();
         // VisualRepresenter is constructed unconditionally by Operations'
-        // constructor (T-0146), but its represent() must never be invoked
+        // constructor, but its represent() must never be invoked
         // when the text action succeeds — that is the actual "no escalation"
         // signal for the auto path.
         expect(mockRepresent).not.toHaveBeenCalled();

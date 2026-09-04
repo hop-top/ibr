@@ -124,7 +124,7 @@ export class Operations {
 
         // Auto-mode visual-escalation cap (SPEC Unit 3, auto path): read
         // once at construction, per-run counter. Explicit --mode visual
-        // (T-0146) never consults this — the cap gates only escalation FROM
+        // never consults this — the cap gates only escalation FROM
         // aria/dom text find/act failures in --mode auto.
         this.visualMaxEscalations = Operations.#parseVisualMaxEscalations(process.env.VISUAL_MAX_ESCALATIONS);
         this._visualEscalationsUsed = 0;
@@ -1299,9 +1299,9 @@ export class Operations {
      *
      * Escalation is PER-INSTRUCTION and capped per run by
      * VISUAL_MAX_ESCALATIONS (this.visualMaxEscalations, read once at
-     * construction) — explicit --mode visual (T-0146) never calls this
-     * method, so it is unaffected by the cap. Reuses the T-0146 visual
-     * resolve path (#resolveVisualAction: represent -> visual find ->
+     * construction) — explicit --mode visual never calls this method, so
+     * it is unaffected by the cap. Reuses the explicit-visual resolve path
+     * (#resolveVisualAction: represent -> visual find ->
      * resolve mark) and, on a resolved mark, performs the SAME action the
      * failed text attempt was trying (click / fill / type / press) via the
      * existing click/mouse machinery.

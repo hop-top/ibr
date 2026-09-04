@@ -388,7 +388,7 @@ Return ONLY the JSON array.`;
 // (elements: "@e0"/"@c1"; grid cells: "r0c0" — see AnnotationService.js's
 // label.textContent = ref and renderGrid's ref === cellId), and that same
 // string is VisualRepresenter.markMap's key. Those labels are the
-// --annotate human-readable scheme (T-0143) and are NOT renumbered for the
+// --annotate human-readable scheme and are NOT renumbered for the
 // model — the model can only report what it visually reads off the pixels,
 // so it must echo the label verbatim; markMap.get(<that label>) then
 // resolves the element/cell directly. makeVisualFindMessage therefore takes
