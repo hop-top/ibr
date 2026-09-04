@@ -272,6 +272,103 @@ describe('Operations --mode visual (explicit)', () => {
         });
     });
 
+    describe('(g) fill/type/press carry the value the model returned', () => {
+        it('fill: locator.fill receives the real value from the visual reply', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+
+            generateAIResponse.mockResolvedValueOnce(
+                aiResp(JSON.stringify([{ mark: '@e2', value: 'user@example.com' }]))
+            );
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'fill', prompt: "type 'user@example.com' in the email box" }],
+            });
+
+            expect(targetLocator.fill).toHaveBeenCalledWith('user@example.com');
+        });
+
+        it('type: locator.type receives the real value from the visual reply', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+
+            generateAIResponse.mockResolvedValueOnce(
+                aiResp(JSON.stringify([{ mark: '@e2', value: 'hello world' }]))
+            );
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'type', prompt: "type 'hello world' into the search field" }],
+            });
+
+            expect(targetLocator.type).toHaveBeenCalledWith('hello world');
+        });
+
+        it('press: locator.press receives the key from the visual reply', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+
+            generateAIResponse.mockResolvedValueOnce(
+                aiResp(JSON.stringify([{ mark: '@e2', value: 'Enter' }]))
+            );
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'press', prompt: 'press Enter in the search field' }],
+            });
+
+            expect(targetLocator.press).toHaveBeenCalledWith('Enter');
+        });
+
+        it('click reply without a value stays valid (no value threaded, click still fires)', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+
+            generateAIResponse.mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'click', prompt: 'the submit button' }],
+            });
+
+            expect(targetLocator.click).toHaveBeenCalled();
+            expect(targetLocator.fill).not.toHaveBeenCalled();
+        });
+    });
+
     describe('(e) --mode visual + --annotate coexist (element path)', () => {
         it('writes the captured marked buffer to disk and records the artifact', async () => {
             const targetLocator = makeLocator();

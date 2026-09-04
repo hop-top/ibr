@@ -225,6 +225,35 @@ describe('makeVisualFindMessage', () => {
   it('empty-match reply ([]) parses to an empty array, same as text find', () => {
     expect(parseFindElementsResponse('[]')).toEqual([]);
   });
+
+  // The mark alone cannot drive fill/type/press: those need the value the
+  // user asked for, which lives only in the free-form instruction prose. The
+  // visual find prompt therefore asks for an OPTIONAL "value" alongside the
+  // mark, mirroring makeActionInstructionMessage's {elements,type,value}.
+  it('system prompt asks for an optional value alongside the mark', () => {
+    expect(msg[0].content).toContain('"value"');
+    expect(msg[0].content).toContain('[{"mark":"@e2","value":"user@example.com"}]');
+  });
+
+  it('system prompt keeps the value optional (click replies omit it)', () => {
+    expect(msg[0].content.toLowerCase()).toMatch(/omit .*value|value.*omit/);
+  });
+
+  it('system prompt still forbids raw pixel coordinates', () => {
+    expect(msg[0].content.toLowerCase()).toContain('never return raw pixel coordinates');
+  });
+
+  it('a mark+value reply parses via parseFindElementsResponse with both fields', () => {
+    const parsed = parseFindElementsResponse('[{"mark": "@e1", "value": "user@example.com"}]');
+    expect(parsed[0].mark).toBe('@e1');
+    expect(parsed[0].value).toBe('user@example.com');
+  });
+
+  it('a value-less (click) reply still parses, value undefined', () => {
+    const parsed = parseFindElementsResponse('[{"mark": "@e1"}]');
+    expect(parsed[0].mark).toBe('@e1');
+    expect(parsed[0].value).toBeUndefined();
+  });
 });
 
 describe('makeVisualExtractMessage', () => {
