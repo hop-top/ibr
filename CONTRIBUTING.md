@@ -5,9 +5,10 @@ getting set up, running the tests, and submitting a change.
 
 ## Prerequisites
 
-- **Node.js 22.x or 24.x.** CI runs the test matrix on those two versions
-  across Linux, macOS and Windows, so they are what a change is verified
-  against.
+- **Node.js 22 or newer** — the supported floor, declared as `engines` in
+  `package.json`. CI runs the test matrix on 22.x and 24.x across Linux, macOS
+  and Windows, so those two are what a change is actually verified against;
+  newer versions should work but are not covered.
 - **npm** (the repo ships a `package-lock.json`; use `npm ci` for a
   reproducible install).
 - **Chromium**, installed through Playwright — needed for the browser-backed
