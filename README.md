@@ -251,11 +251,17 @@ screenshot — so it performs `click`, `fill`, `type` and `press` only. Any othe
 action type, notably `scroll`, is **refused rather than substituted**: a
 page-level scroll needs no element, so a `scroll` reaching this path has
 already claimed a missing element target, and scrolling to the model's guess
-would silently perform a different action than the one requested. Under
+would silently perform a different action than the one requested.
+
+Under explicit `--mode visual` the refusal is **always** an
+`UNSUPPORTED_VISUAL_ACTION` error on stderr with a non-zero exit — element mark
+and grid cell alike, and before any screenshot or vision call is spent. It is
+never a silent exit-0 skip, so the run aborts at that instruction and the later
+steps do not run; the message names the action type, the instruction index and
+the remedy. Run that instruction under `--mode auto`/`aria`/`dom` instead, where
+a page-level scroll needs no element and is performed directly. Under
 `--mode auto` such a step is skipped before the screenshot is taken, spending
-neither an escalation nor a vision call; under explicit `--mode visual` an
-element-backed mark logs the refusal and skips, while a grid cell raises
-`UNSUPPORTED_VISUAL_ACTION`.
+neither an escalation nor a vision call, and never raises the error.
 
 ### `--interactive` / `-i` Flag
 
