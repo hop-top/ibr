@@ -49,7 +49,7 @@ supported upstream there.
 
 ## Prerequisites
 
-- Node 20+
+- Node 22+
 - Network access on the **first** run only (subsequent runs hit the
   warm temp cache for the duration of that test process).
 - For tests 5 + 6: Playwright's bundled Chromium must be installed

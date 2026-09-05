@@ -1,5 +1,5 @@
 # CI workflow — runs on every PR and push to main.
-# Matrix: ubuntu × macos × windows, Node 20 and 22.
+# Matrix: ubuntu × macos × windows, Node 22 and 24.
 # Only one build lane (build:bundle) to keep runtime bounded.
 name: CI
 
