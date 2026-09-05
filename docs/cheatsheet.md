@@ -135,6 +135,8 @@ ibr --mode auto    "<prompt>"   # default — auto quality-based; escalates aria
 
 Auto escalation: in `--mode auto`, when the aria + dom text attempt fails (the model reports `"outcome": "not_found"`, or the action on a found element throws), ibr escalates to visual (screenshot + numbered overlays sent to LLM). Capped at `VISUAL_MAX_ESCALATIONS` (default 3). Visual uses vision tokens (~1000–2000/screenshot); prefer text modes for cost.
 
+If the visual attempt errors, the error is absorbed and the instruction falls through to healing — so the run often still exits 0. The absorbed error is reported as a `visual.escalation_failed` NDJSON event and in `visualEscalationFailures` on the run, never only in the logs.
+
 The model's `outcome` on an element-less reply decides whether escalation happens at all:
 
 | `outcome` | Means | Auto-mode effect |
