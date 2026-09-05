@@ -251,6 +251,9 @@ string field is present on failures).
 {"event":"extract","timestamp":"<iso>","field":"title","value":"Page Title","status":"success"}
 {"event":"task_end","timestamp":"<iso>","duration_ms":3421,"status":"success"}
 {"event":"error","timestamp":"<iso>","instruction":"click","error":"Element not found"}
+{"event":"visual.escalation","timestamp":"<iso>","instructionIndex":2,"reason":"text find/act failed","escalationsUsed":1,"cap":3}
+{"event":"visual.escalation_capped","timestamp":"<iso>","instructionIndex":5,"cap":3}
+{"event":"visual.escalation_failed","timestamp":"<iso>","instructionIndex":2,"phase":"execution","error":"element is detached from the DOM","target":"visual-mark=@e2"}
 ```
 
 ### Event Types
@@ -263,6 +266,42 @@ string field is present on failures).
 | `extract` | Extraction step; `field` + `value` + `status` |
 | `task_end` | Run complete; `duration_ms` + `status` (`success`/`error`) |
 | `error` | Instruction-level failure; `instruction` (type) + `error` |
+| `visual.escalation` | `--mode auto` escalated a failed text find/act to a visual attempt; `instructionIndex` + `reason` + `escalationsUsed` + `cap` |
+| `visual.escalation_capped` | `VISUAL_MAX_ESCALATIONS` reached — no visual attempt made, the failure goes straight to healing; `instructionIndex` + `cap` |
+| `visual.escalation_failed` | A visual attempt **errored and was absorbed**; `instructionIndex` + `phase` + `error`, plus `code`/`target` when known. See below |
+
+### Absorbed escalation failures (`visual.escalation_failed`)
+
+An auto-escalation error is deliberately swallowed: the instruction falls
+through to healing and the run frequently still **succeeds and exits 0**. This
+event is the only real-time trace such a failure leaves — `task_end` will say
+`"success"` and no `error` event is emitted.
+
+| Field | Meaning |
+|-------|---------|
+| `instructionIndex` | Which instruction was being escalated |
+| `phase` | `"resolution"` (the vision call itself failed) or `"execution"` (a mark resolved, acting on it failed) |
+| `error` | The absorbed error's message |
+| `code` | The error's code when it has one, e.g. `MISSING_ACTION_VALUE`. Absent for bare Playwright/provider faults |
+| `target` | `visual-mark=<label>` / `visual-grid=<label>`. Present in the `execution` phase only — nothing resolved yet in `resolution` |
+
+```bash
+# Faults hidden inside an otherwise-green run
+NDJSON_STREAM=true ibr "..." 2>&1 1>/dev/null \
+  | jq -c 'select(.event == "visual.escalation_failed")'
+```
+
+The same records are available **after the fact** on the `Operations`
+instance as `visualEscalationFailures` (an array in execution order, empty on
+a clean run, same fields as the event minus `event`/`timestamp`) — and in the
+daemon's JSON response body alongside `extracts` and `tokenUsage`:
+
+```json
+{"extracts":[],"tokenUsage":{},"visualEscalationFailures":[{"instructionIndex":2,"phase":"execution","error":"...","code":"MISSING_ACTION_VALUE","target":"visual-grid=r0c0"}]}
+```
+
+A non-empty `visualEscalationFailures` on an exit-0 run means a real fault was
+absorbed — worth inspecting even though the run reported success.
 
 ### Filter by event type
 
@@ -492,6 +531,7 @@ error object and NDJSON events still come through.
 | Piped stdin closed mid-wait | `WAIT_FOR_HUMAN_STDIN_CLOSED` | Feed a line on stdin, or drop the human-wait step |
 | `scroll` (or other non-actionable type) reached the explicit `--mode visual` path | `UNSUPPORTED_VISUAL_ACTION` (+ `step`/`action`) | Always an error, never a silent skip — the run aborts at that instruction. Do **not** retry as-is; it is refused by design, never substituted. Re-run that instruction under `--mode auto`/`aria`/`dom` (a page-level scroll needs no element), or restate it as a `click`/`fill`/`type`/`press` on a real target |
 | `fill`/`type`/`press` on a grid cell with no value | `MISSING_ACTION_VALUE` (+ `step`/`action`) | Put the literal text or key in the instruction (`type 'hello' into the canvas field`); a grid cell has no element to infer a value from |
+| Run exits 0 but a step clearly did not do what was asked | no error code — check `visual.escalation_failed` / `visualEscalationFailures` | An auto-escalation error was absorbed and healing carried the run. The event's `phase`/`code`/`target` name the real fault; a `resolution` phase points at the vision provider, an `execution` phase at the page |
 
 ---
 

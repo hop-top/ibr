@@ -99,6 +99,31 @@ export class NdjsonStreamer {
             cap,
         });
     }
+
+    /**
+     * An auto-escalation visual attempt errored and was ABSORBED — the run
+     * falls through to healing and usually still succeeds, so this is the
+     * only machine-readable trace the failure ever leaves.
+     *
+     * @param {Object} p
+     * @param {number} p.instructionIndex
+     * @param {'resolution'|'execution'} p.phase - vision call vs acting on the mark
+     * @param {string} p.error - the absorbed error's message
+     * @param {string} [p.code] - the error's code where it has one (e.g. MISSING_ACTION_VALUE)
+     * @param {string} [p.target] - `visual-mark=<label>` / `visual-grid=<label>`, when a mark resolved
+     */
+    visualEscalationFailed({ instructionIndex, phase, error, code, target }) {
+        const ev = {
+            event: 'visual.escalation_failed',
+            timestamp: iso(),
+            instructionIndex,
+            phase,
+            error,
+        };
+        if (code) ev.code = code;
+        if (target) ev.target = target;
+        this.emit(ev);
+    }
 }
 
 function iso() {

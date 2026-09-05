@@ -144,6 +144,16 @@ export class Operations {
         this.visualMaxEscalations = Operations.#parseVisualMaxEscalations(process.env.VISUAL_MAX_ESCALATIONS);
         this._visualEscalationsUsed = 0;
 
+        // Absorbed auto-escalation failures, in execution order. An
+        // escalation error is deliberately swallowed so the run falls
+        // through to healing (see #attemptVisualEscalation) — which means a
+        // genuine fault would otherwise leave no trace a machine consumer
+        // can read, since logger.warn reaches the log sink only. This is the
+        // result-side half of that record; the NDJSON
+        // `visual.escalation_failed` event is the real-time half. Read
+        // alongside `extracts` / `tokenUsage`; empty on a clean run.
+        this.visualEscalationFailures = [];
+
         logger.debug('Operations initialized', {
             provider: ctx.aiProvider.provider,
             model: ctx.aiProvider.model,
@@ -1507,6 +1517,7 @@ export class Operations {
         try {
             visualAction = await this.#resolveVisualAction(instruction, failedActionValue);
         } catch (err) {
+            this.#recordEscalationFailure('resolution', err);
             logger.warn('Auto-escalation: visual resolution errored, visual attempt abandoned', { error: err.message });
             return null;
         }
@@ -1527,6 +1538,7 @@ export class Operations {
                 await this.#performVisualGridAction(gridCenter, visualAction, label);
             }
         } catch (err) {
+            this.#recordEscalationFailure('execution', err, target);
             logger.warn('Auto-escalation: visual action execution failed, visual attempt abandoned', { target, error: err.message });
             return null;
         }
@@ -1536,6 +1548,33 @@ export class Operations {
         }
 
         return target;
+    }
+
+    /**
+     * Surface an auto-escalation error that #attemptVisualEscalation
+     * absorbs. Control flow is unchanged — the caller still returns null and
+     * falls through to healing, which is the deliberate resilience. What
+     * this adds is visibility: without it the only trace is a logger.warn on
+     * the log sink, so a scripted consumer reading the NDJSON stream or the
+     * run result sees a clean run even when a real fault (a detached
+     * element, a mid-action navigation, a vision-provider outage, a refused
+     * MISSING_ACTION_VALUE) was swallowed.
+     *
+     * @param {'resolution'|'execution'} phase - the vision call, or acting on the resolved mark
+     * @param {Error} err - the absorbed error; `code` is carried when it has one
+     * @param {string} [target] - `visual-mark=<label>` / `visual-grid=<label>`, known only in the execution phase
+     */
+    #recordEscalationFailure(phase, err, target) {
+        const record = {
+            instructionIndex: this.executionIndex,
+            phase,
+            error: err?.message ?? String(err),
+        };
+        if (err?.code) record.code = err.code;
+        if (target) record.target = target;
+
+        this.visualEscalationFailures.push(record);
+        streamer.visualEscalationFailed(record);
     }
 
     /**
