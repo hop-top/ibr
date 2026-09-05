@@ -1194,7 +1194,7 @@ Fixtures without `expectedExtracts` are skipped — CI does not fail.
 
 ## Building
 
-Requires Node >=20. Run once to produce `dist/ibr` and `dist/ibr-server`:
+Requires Node >=22. Run once to produce `dist/ibr` and `dist/ibr-server`:
 
     task build
 
