@@ -178,10 +178,20 @@ claimed a missing element target; scrolling to the model's guess, or
 wheel-scrolling at a cell, would silently perform a *different* action than the
 one asked for. Refusal is deliberate: earlier versions fell through to a click.
 
+- Under explicit `--mode visual`, the refusal is **always** an
+  `UNSUPPORTED_VISUAL_ACTION` error on stderr with a non-zero exit — element
+  mark and grid cell alike, and before any screenshot or vision call is spent.
+  Never a silent exit-0 skip: a run told to scroll something it cannot must say
+  so, not report success having done nothing. The message names the offending
+  action type, the instruction index, and the remedy.
+- The run therefore **aborts at that instruction**: an instruction list mixing a
+  `scroll` with other steps stops there and the later steps do not run. Run that
+  instruction under `--mode auto`/`aria`/`dom` instead — a page-level scroll
+  needs no element, so those modes perform it directly.
 - Under `--mode auto`, a `scroll` never spends an escalation or a vision call —
-  it is skipped before the screenshot is taken.
-- Under explicit `--mode visual`, an element-backed mark logs the refusal and
-  skips the step; a grid cell raises `UNSUPPORTED_VISUAL_ACTION`.
+  auto-escalation filters an unperformable type out before attempting it, and
+  never raises `UNSUPPORTED_VISUAL_ACTION`: on the text path the user actually
+  asked for, a page-level scroll is legitimate and keeps working.
 
 ### Grid cells honour the action type and its value
 

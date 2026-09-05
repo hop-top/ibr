@@ -41,8 +41,9 @@ import { CliError, ensureCliError } from './utils/cliErrors.js';
  * off this path in the first place), and there is no coherent "scroll to
  * this mark" semantics — scrolling to whatever the vision model guessed, or
  * wheel-scrolling at a grid cell, are both a DIFFERENT action from the one
- * asked for. Anything not listed here resolves to VISUAL_UNSUPPORTED_ACTION
- * and is refused with a warning rather than silently downgraded to a click.
+ * asked for. Anything not listed here is REFUSED with a structured
+ * UNSUPPORTED_VISUAL_ACTION error — never silently downgraded to a click,
+ * and never silently skipped.
  */
 const VISUAL_ACTION_TYPES = new Set(['click', 'fill', 'type', 'press']);
 
@@ -866,6 +867,22 @@ export class Operations {
                     // --mode visual resolution: either the element locator
                     // markMap resolved directly, or (grid strategy) no
                     // element — act on the cell centre via mouse/keyboard.
+                    //
+                    // Belt-and-braces on the refusal contract: a mark whose
+                    // action type the visual path cannot perform is refused
+                    // HERE, outside the performAction try/catch below, so
+                    // the structured UNSUPPORTED_VISUAL_ACTION reaches the
+                    // caller intact instead of being rewrapped as a
+                    // RUNTIME_ERROR and sent through healing.
+                    // #resolveVisualAction already refuses these up front,
+                    // so this guard is unreachable via that route — it keeps
+                    // the invariant local to where the action is executed.
+                    if (!VISUAL_ACTION_TYPES.has(action.type?.toLowerCase())) {
+                        throw this.#unsupportedVisualAction(
+                            action.type?.toLowerCase() ?? instruction.name,
+                            'a visual mark',
+                        );
+                    }
                     if (action.visual.locator) {
                         locator = action.visual.locator;
                         locatorDesc = `visual-mark=${action.visual.label}`;
@@ -970,21 +987,15 @@ export class Operations {
                             default:
                                 // No fallthrough to click: performing SOME
                                 // other action is strictly worse than
-                                // performing none. On the visual path this
-                                // is the `scroll` refusal (the mark cannot
-                                // be scrolled to meaningfully); on the text
-                                // path an element-scoped scroll is already
-                                // satisfied by the scrollIntoViewIfNeeded
-                                // above, so there is nothing left to do.
-                                if (action.visual) {
-                                    logger.warn(`${context}: Action type not performable on a visual mark, skipping`, {
-                                        actionType,
-                                        instruction: instruction.name,
-                                        locator: locatorDesc,
-                                    });
-                                } else {
-                                    logger.warn(`${context}: Unknown action type`, { actionType });
-                                }
+                                // performing none. A visual mark carrying an
+                                // unperformable type can no longer reach
+                                // here — #resolveVisualAction refuses it up
+                                // front (see the guard above this try) — so
+                                // this is now only the text path's unknown
+                                // type, where an element-scoped scroll is
+                                // already satisfied by the
+                                // scrollIntoViewIfNeeded above.
+                                logger.warn(`${context}: Unknown action type`, { actionType });
                         }
                     };
 
@@ -1279,6 +1290,35 @@ export class Operations {
     }
 
     /**
+     * The single visual-refusal error, shared by every path that can refuse
+     * one: the pre-resolve short-circuit in #resolveVisualAction and both
+     * executors (#performVisualAction, #performVisualGridAction). A refused
+     * visual action is ALWAYS this structured error — stderr JSON and a
+     * non-zero exit — never a silent skip, so the caller never gets exit 0
+     * having had a step quietly dropped.
+     *
+     * Names the offending action type AND the instruction index, because the
+     * caller cannot see which internal strategy the run picked, and states
+     * the remedy: a page-level scroll needs no visual resolution, so the
+     * non-visual modes perform it directly.
+     *
+     * @param {string|undefined} actionType
+     * @param {string} [surface] where the refusal happened, for the message
+     * @returns {CliError}
+     */
+    #unsupportedVisualAction(actionType, surface = 'the visual (Set-of-Marks) path') {
+        const named = actionType ?? 'unknown';
+        return new CliError(
+            'UNSUPPORTED_VISUAL_ACTION',
+            `Instruction ${this.executionIndex} ("${named}") cannot be performed on ${surface}. ` +
+            `The visual (Set-of-Marks) path supports ${[...VISUAL_ACTION_TYPES].join(', ')} only. ` +
+            `Re-run that instruction with --mode auto (or --mode aria / --mode dom): ` +
+            `a page-level scroll needs no element, so it is performed without visual resolution.`,
+            { step: this.executionIndex, action: named },
+        );
+    }
+
+    /**
      * --mode visual find: send the marked screenshot to the model and
      * resolve its {mark:"<label>"} reply against markMap. Returns an
      * `action`-shaped object compatible with #actionInstruction's existing
@@ -1299,19 +1339,22 @@ export class Operations {
      * @param {string} [fallbackValue] value from a failed text action, reused
      *   for the visual retry in preference to re-deriving it.
      * An instruction the visual path cannot PERFORM (scroll — see
-     * VISUAL_ACTION_TYPES) short-circuits to the empty-elements shape before
-     * the screenshot and vision call: resolving a mark we could only act on
-     * wrongly buys nothing but a wasted request.
+     * VISUAL_ACTION_TYPES) is REFUSED before the screenshot and vision call:
+     * resolving a mark we could only act on wrongly buys nothing but a
+     * wasted request. The refusal is a structured UNSUPPORTED_VISUAL_ACTION
+     * error, never a silent skip — under explicit --mode visual a user who
+     * asked for a scroll must learn it cannot be done there rather than get
+     * exit 0 having done nothing. Callers that are NOT an explicit user
+     * request for the visual path (auto-escalation) must filter the
+     * instruction out before calling this, not catch the refusal.
      *
+     * @throws {CliError} UNSUPPORTED_VISUAL_ACTION when the instruction's
+     *   action type cannot be performed against a visual mark.
      * @returns {Promise<{elements: Array, type: 'click'|'fill'|'type'|'press'|'unsupported', value?: string, visual?: {locator?: Object, gridCenter?: {x:number,y:number}, label: string}}>}
      */
     async #resolveVisualAction(instruction, fallbackValue) {
         if (!VISUAL_ACTION_TYPES.has(instruction.name)) {
-            logger.warn('Visual find: action type not performable on a visual mark, skipping visual resolution', {
-                instructionIndex: this.executionIndex,
-                actionType: instruction.name,
-            });
-            return { elements: [], type: VISUAL_UNSUPPORTED_ACTION, value: fallbackValue ?? undefined };
+            throw this.#unsupportedVisualAction(instruction.name);
         }
 
         const { image, mime, markMap } = await this.#getVisualRepresentation();
@@ -1413,9 +1456,26 @@ export class Operations {
      */
     async #attemptVisualEscalation(instruction, reason = 'text find/act failed', failedActionValue) {
         if (!VISUAL_ACTION_TYPES.has(instruction.name)) {
-            // The visual path cannot perform this instruction (scroll).
-            // Refuse BEFORE spending an escalation and a vision call — the
-            // screenshot would resolve a mark we could only act on wrongly.
+            // A refused visual action is ALWAYS a structured error — but
+            // this path must never REACH a refusal, so it filters instead.
+            //
+            // Escalation is a best-effort last rung of the aria->dom->visual
+            // ladder, reached only after the text attempt already failed for
+            // this instruction. The user asked for --mode auto, not for a
+            // visual attempt, and under auto a page-level scroll is
+            // legitimate and must keep working — turning an unperformable
+            // type into a thrown error here would abort a run over an
+            // internal strategy choice the user never made. Escalating an
+            // action the visual rung could not perform is meaningless work,
+            // so the instruction is filtered out before the attempt: no
+            // screenshot, no vision call, and no escalation budget spent.
+            // The caller then falls through to its own handling (healing on
+            // the act-failure path, the historical skip on a find miss),
+            // exactly as if the visual rung did not exist.
+            //
+            // The error contract lives on the EXPLICIT path
+            // (#resolveVisualAction), which is where the user actually asked
+            // for the visual path and so must be told it cannot comply.
             logger.warn('Auto-escalation: action type not performable on a visual mark, skipping visual attempt', {
                 instructionIndex: this.executionIndex,
                 actionType: instruction.name,
@@ -1543,13 +1603,7 @@ export class Operations {
                 // Never fall through to a click: performing SOME other
                 // action is strictly worse than performing none. `scroll`
                 // lands here by design (see VISUAL_ACTION_TYPES).
-                throw new CliError(
-                    'UNSUPPORTED_VISUAL_ACTION',
-                    `Action type "${actionType ?? 'unknown'}" cannot be performed on a visual mark. ` +
-                    `The visual (Set-of-Marks) path supports ${[...VISUAL_ACTION_TYPES].join(', ')}. ` +
-                    `A page-level scroll needs no element — it is handled without visual resolution.`,
-                    { step: this.executionIndex, action: actionType },
-                );
+                throw this.#unsupportedVisualAction(actionType, 'a visual mark');
         }
     }
 
@@ -1574,13 +1628,7 @@ export class Operations {
         const actionType = action.type?.toLowerCase();
 
         if (!VISUAL_ACTION_TYPES.has(actionType)) {
-            throw new CliError(
-                'UNSUPPORTED_VISUAL_ACTION',
-                `Action type "${actionType ?? 'unknown'}" cannot be performed on a visual grid cell. ` +
-                `The visual (Set-of-Marks) path supports ${[...VISUAL_ACTION_TYPES].join(', ')}. ` +
-                `A page-level scroll needs no element — it is handled without visual resolution.`,
-                { step: this.executionIndex, action: actionType },
-            );
+            throw this.#unsupportedVisualAction(actionType, 'a visual grid cell');
         }
 
         if (actionType !== 'click' && (action.value == null || action.value === '')) {

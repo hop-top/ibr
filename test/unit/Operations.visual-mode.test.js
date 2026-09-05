@@ -476,6 +476,12 @@ describe('Operations --mode visual (explicit)', () => {
     // coherent "scroll to this mark" semantics that cannot be wrong, so a
     // scroll reaching the visual path is refused outright rather than
     // silently performing some OTHER action.
+    //
+    // "Refused" means a STRUCTURED ERROR on every visual path, never a
+    // silent exit-0 skip: a user who asked for a scroll under --mode visual
+    // must learn it cannot be done there. The refusal fires before the
+    // screenshot and vision call — resolving a mark we could only act on
+    // wrongly buys nothing but a wasted request.
     describe('(i) scroll is refused on the visual path, never silently clicked', () => {
         it('element mark: a scroll instruction does not click the locator', async () => {
             const targetLocator = makeLocator();
@@ -490,10 +496,12 @@ describe('Operations --mode visual (explicit)', () => {
             generateAIResponse.mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
 
             const ops = new Operations(makeCtx(page), { mode: 'visual' });
-            await ops.executeTask({
-                ...TASK,
-                instructions: [{ name: 'scroll', prompt: 'scroll down the page' }],
-            });
+            await expect(
+                ops.executeTask({
+                    ...TASK,
+                    instructions: [{ name: 'scroll', prompt: 'scroll down the page' }],
+                })
+            ).rejects.toMatchObject({ code: 'UNSUPPORTED_VISUAL_ACTION' });
 
             expect(targetLocator.click).not.toHaveBeenCalled();
             expect(targetLocator.fill).not.toHaveBeenCalled();
@@ -510,13 +518,135 @@ describe('Operations --mode visual (explicit)', () => {
             generateAIResponse.mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: 'r0c0' }])));
 
             const ops = new Operations(makeCtx(page), { mode: 'visual' });
-            await ops.executeTask({
-                ...TASK,
-                instructions: [{ name: 'scroll', prompt: 'scroll down the page' }],
-            });
+            await expect(
+                ops.executeTask({
+                    ...TASK,
+                    instructions: [{ name: 'scroll', prompt: 'scroll down the page' }],
+                })
+            ).rejects.toMatchObject({ code: 'UNSUPPORTED_VISUAL_ACTION' });
 
             expect(page.mouse.click).not.toHaveBeenCalled();
             expect(page.keyboard.type).not.toHaveBeenCalled();
+        });
+
+        // The refusal is structured, not a log line: a silent exit-0 skip
+        // would tell the caller the scroll happened.
+        it('raises UNSUPPORTED_VISUAL_ACTION rather than skipping silently', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            const err = await ops.executeTask({
+                ...TASK,
+                instructions: [{ name: 'scroll', prompt: 'scroll down the page' }],
+            }).then(() => null, (e) => e);
+
+            expect(err).toBeTruthy();
+            expect(err.code).toBe('UNSUPPORTED_VISUAL_ACTION');
+        });
+
+        // The message must name the offending action type, the instruction
+        // index, and the remedy — the caller cannot see which strategy the
+        // run picked, so the error has to say what to change.
+        it('names the action type, the instruction index and the remedy', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            const err = await ops.executeTask({
+                ...TASK,
+                instructions: [
+                    { name: 'click', prompt: 'accept cookies' },
+                    { name: 'scroll', prompt: 'scroll down the page' },
+                ],
+            }).then(() => null, (e) => e);
+
+            expect(err).toBeTruthy();
+            expect(err.code).toBe('UNSUPPORTED_VISUAL_ACTION');
+            expect(err.message).toContain('scroll');
+            // instruction 2 of 2 — 1-based execution index, as carried on
+            // the error's `step` field and named in the message.
+            expect(err.step).toBe(2);
+            expect(err.message).toMatch(/instruction 2\b/i);
+            expect(err.action).toBe('scroll');
+            // remedy: the non-visual modes handle a page-level scroll.
+            expect(err.message).toMatch(/--mode (auto|aria|dom)/);
+        });
+
+        // Refusing BEFORE the screenshot/vision call is the point of the
+        // pre-resolve short-circuit: resolving a mark we could only act on
+        // wrongly is a wasted request.
+        it('refuses before spending a screenshot and a vision call', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await expect(
+                ops.executeTask({
+                    ...TASK,
+                    instructions: [{ name: 'scroll', prompt: 'scroll down the page' }],
+                })
+            ).rejects.toMatchObject({ code: 'UNSUPPORTED_VISUAL_ACTION' });
+
+            expect(mockRepresent).not.toHaveBeenCalled();
+            expect(generateAIResponse).not.toHaveBeenCalled();
+        });
+
+        // Accepted consequence of "always error": a list mixing a scroll
+        // with other steps aborts at the scroll instead of skipping it.
+        it('aborts the run at the offending instruction, leaving later steps unexecuted', async () => {
+            const targetLocator = makeLocator();
+            page.locator.mockReturnValue(targetLocator);
+
+            mockRepresent.mockResolvedValue({
+                image: IMAGE_BUFFER,
+                mime: 'image/png',
+                markMap: elementMarkMap('@e2', targetLocator),
+                strategy: 'elements',
+            });
+            // clearAllMocks() does not drain mockResolvedValueOnce queues
+            // left by earlier tests (whose refusals threw before consuming
+            // them) — reset explicitly so this test's queue starts empty.
+            generateAIResponse.mockReset();
+            // Only the FIRST instruction's visual find should ever be asked.
+            generateAIResponse.mockResolvedValue(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+            const ops = new Operations(makeCtx(page), { mode: 'visual' });
+            await expect(
+                ops.executeTask({
+                    ...TASK,
+                    instructions: [
+                        { name: 'click', prompt: 'accept cookies' },
+                        { name: 'scroll', prompt: 'scroll down the page' },
+                        { name: 'click', prompt: 'submit the form' },
+                    ],
+                })
+            ).rejects.toMatchObject({ code: 'UNSUPPORTED_VISUAL_ACTION' });
+
+            // instruction 1 clicked, instruction 3 never reached.
+            expect(targetLocator.click).toHaveBeenCalledTimes(1);
+            expect(mockRepresent).toHaveBeenCalledTimes(1);
         });
     });
 

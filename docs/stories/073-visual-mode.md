@@ -73,11 +73,25 @@ library or a second overlay engine.
   silent skip, so pre-existing callers and cassettes stay valid.
 - The visual path performs `click`, `fill`, `type` and `press` only
   (`VISUAL_ACTION_TYPES`). Anything else is refused, never downgraded to a
-  click, guarded at three depths: the allowlist, a short-circuit before the
-  screenshot/vision call, and a throw in the grid executor
-  (`UNSUPPORTED_VISUAL_ACTION`); the element-locator escalation executor
-  throws the same code, while the explicit `--mode visual` locator flow logs
-  the refusal and skips the step.
+  click.
+- A refused visual action is **always** a structured error, never a silent
+  skip: explicit `--mode visual` raises `UNSUPPORTED_VISUAL_ACTION` (stderr
+  JSON, non-zero exit) on every route — element mark, grid cell, and the
+  short-circuit before the screenshot/vision call — so a caller can never
+  get exit 0 for a step that was quietly dropped. One error factory backs
+  all of them, and the message names the offending action type, the 1-based
+  instruction index, and the remedy (`--mode auto`/`aria`/`dom`, where a
+  page-level scroll needs no visual resolution). Accepted consequence: an
+  instruction list mixing a `scroll` with other steps aborts at the scroll
+  instead of skipping it.
+- Auto-escalation never reaches that refusal: an action type the visual rung
+  cannot perform is filtered out **before** the attempt, spending no
+  screenshot, vision call or escalation budget, and the instruction falls
+  through to the caller's own handling (healing on the act-failure path, the
+  historical skip on a find miss). Escalation is a best-effort last rung
+  reached only after the text attempt already failed, and under `--mode auto`
+  a page-level scroll is legitimate on the text path — so it must never
+  abort the run over a strategy choice the user did not make.
 - A grid-cell target honours the resolved action type and value: the centre
   is clicked to focus, then `page.keyboard.type`/`press` applies the value;
   `click` remains the mouse click alone. A missing value raises
@@ -132,6 +146,7 @@ library or a second overlay engine.
   the `no_element_needed` counterpart asserting no escalation is spent.
 - `--mode visual --annotate` producing both the model call and the
   on-disk marked frame.
-- A refused `scroll` on the visual path end-to-end — the skip under
-  `--mode auto` (no screenshot, no escalation spent) and the
-  `UNSUPPORTED_VISUAL_ACTION` stderr object on a grid cell.
+- A refused `scroll` on the visual path end-to-end — the filtered skip under
+  `--mode auto` (no screenshot, no escalation spent, no error) and the
+  `UNSUPPORTED_VISUAL_ACTION` stderr object with a non-zero exit under
+  explicit `--mode visual`, on an element mark and on a grid cell alike.

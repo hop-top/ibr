@@ -84,7 +84,7 @@ On failure, ibr emits one JSON object to stderr (prefixed by a leading newline):
 | `TIMEOUT` | Run exceeded `EXECUTION_TIMEOUT_MS` |
 | `WAIT_FOR_HUMAN_NO_TTY` | A "wait for me to …" step hit a non-TTY stdin without `IBR_WAIT_FOR_HUMAN_ALLOW_PIPED=true` |
 | `WAIT_FOR_HUMAN_STDIN_CLOSED` | Piped stdin ended (EOF) before the human line arrived |
-| `UNSUPPORTED_VISUAL_ACTION` | Visual path asked to perform an action it cannot do against a mark — the visual path supports `click`/`fill`/`type`/`press` only |
+| `UNSUPPORTED_VISUAL_ACTION` | Explicit `--mode visual` asked to perform an action it cannot do against a mark — the visual path supports `click`/`fill`/`type`/`press` only. **Always** an error (element mark and grid cell alike), never a silent skip; carries `step`/`action` |
 | `MISSING_ACTION_VALUE` | `fill`/`type`/`press` resolved to a visual **grid cell** with no value to apply |
 
 `step` / `action` fields are present on `error` only when the failing
@@ -210,9 +210,11 @@ Vision model defaults to `AI_MODEL` unless `VISUAL_AI_MODEL` is set (recommend f
 
 The visual path acts on a mark (an element or a grid cell), so it performs `click`, `fill`, `type` and `press` — nothing else. Any other type, `scroll` above all, is **refused, never substituted**: a page-level scroll needs no element, so a `scroll` on this path already claimed a missing element target, and scrolling to the model's guess would be a different action than the one requested. Earlier versions silently clicked instead.
 
+Under explicit `--mode visual` the refusal is **always** an `UNSUPPORTED_VISUAL_ACTION` error on stderr with a non-zero exit — element mark and grid cell alike, and before any screenshot or vision call is spent. It is never a silent exit-0 skip: a run that asked for a scroll it cannot do must say so rather than report success having done nothing.
+
 - **DON'T** retry an `UNSUPPORTED_VISUAL_ACTION` unchanged — the refusal is deterministic. Drop the step or restate it against a real target.
-- **DO** expect `--mode auto` to skip a `scroll` before the screenshot: it spends no escalation and no vision call.
-- Under explicit `--mode visual`, an element-backed mark logs the refusal and skips the step; a grid cell raises `UNSUPPORTED_VISUAL_ACTION`.
+- **DO** expect the run to **abort at that instruction**: an instruction list mixing a `scroll` with other steps under `--mode visual` stops there, and later steps do not run. Split the scroll out and run it under `--mode auto`/`aria`/`dom`, which perform a page-level scroll directly.
+- **DO** expect `--mode auto` to skip a `scroll` before the screenshot: auto-escalation filters an unperformable type out before attempting it, spending no escalation, no screenshot and no vision call — and it never raises `UNSUPPORTED_VISUAL_ACTION`, because a page-level scroll is legitimate on the text path the user actually asked for.
 
 ### Grid-cell targets (`visual-grid=<label>`)
 
@@ -488,7 +490,7 @@ error object and NDJSON events still come through.
 | No usable Chromium | `RUNTIME_ERROR` | Message names the fix: `npx playwright install chromium` or `BROWSER_CHANNEL=chrome`; ibr already tried cached + system builds |
 | "wait for me to …" on piped stdin | `WAIT_FOR_HUMAN_NO_TTY` | Rephrase as a timed wait, or set `IBR_WAIT_FOR_HUMAN_ALLOW_PIPED=true` |
 | Piped stdin closed mid-wait | `WAIT_FOR_HUMAN_STDIN_CLOSED` | Feed a line on stdin, or drop the human-wait step |
-| `scroll` (or other non-actionable type) reached the visual path | `UNSUPPORTED_VISUAL_ACTION` (+ `step`/`action`) | Do **not** retry as-is — it is refused by design, never substituted. Drop the step (page-level scrolls need no element) or restate it as a `click`/`fill`/`type`/`press` on a real target |
+| `scroll` (or other non-actionable type) reached the explicit `--mode visual` path | `UNSUPPORTED_VISUAL_ACTION` (+ `step`/`action`) | Always an error, never a silent skip — the run aborts at that instruction. Do **not** retry as-is; it is refused by design, never substituted. Re-run that instruction under `--mode auto`/`aria`/`dom` (a page-level scroll needs no element), or restate it as a `click`/`fill`/`type`/`press` on a real target |
 | `fill`/`type`/`press` on a grid cell with no value | `MISSING_ACTION_VALUE` (+ `step`/`action`) | Put the literal text or key in the instruction (`type 'hello' into the canvas field`); a grid cell has no element to infer a value from |
 
 ---

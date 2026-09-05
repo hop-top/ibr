@@ -590,6 +590,18 @@ describe('Operations auto-mode visual escalation', () => {
     // (test m). But a model that mislabels a scroll as `not_found` still
     // drags it here — and a scroll has no coherent "act on this mark"
     // meaning. It must resolve to nothing, never to a click.
+    //
+    // Auto-escalation is a best-effort LAST RESORT, reached only after the
+    // text (aria/dom) attempt has already failed for this instruction. The
+    // user asked for `--mode auto`, not for a visual attempt, and under auto
+    // a page-level scroll is legitimate and must keep working. So the visual
+    // refusal contract ("a refused visual action is always a structured
+    // error") is satisfied here by never REACHING a refusal: an action the
+    // visual path cannot perform is filtered out before escalation is
+    // attempted at all — escalating an unperformable action is meaningless.
+    // The instruction then falls through to the caller's own handling
+    // (healing on the act-failure path, the historical skip on a find miss),
+    // exactly as if the visual rung of the ladder did not exist.
 
     const SCROLL_MISS_RESP = JSON.stringify({ elements: [], type: 'scroll', outcome: 'not_found' });
 
@@ -632,6 +644,63 @@ describe('Operations auto-mode visual escalation', () => {
 
         expect(page.mouse.click).not.toHaveBeenCalled();
         expect(page.keyboard.type).not.toHaveBeenCalled();
+    });
+
+    // (o2) the escalation is filtered out BEFORE it is attempted: no
+    // screenshot, no vision call, and — critically — no escalation budget
+    // spent on an action the visual path could never perform.
+    it('(o2) an unperformable action is filtered before the escalation is attempted', async () => {
+        const escalationSpy = vi.spyOn(streamer, 'visualEscalation');
+        generateAIResponse.mockResolvedValueOnce(aiResp(SCROLL_MISS_RESP));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'scroll', prompt: 'scroll to the footer' }] })
+        ).resolves.toBeUndefined();
+
+        expect(mockRepresent).not.toHaveBeenCalled();
+        expect(escalationSpy).not.toHaveBeenCalled();
+        expect(ops._visualEscalationsUsed).toBe(0);
+
+        escalationSpy.mockRestore();
+    });
+
+    // (o3) the escalation budget filtered away in (o2) is still there for a
+    // LATER instruction the visual path can actually perform — proof the
+    // scroll consumed nothing.
+    it('(o3) a filtered scroll leaves the escalation budget intact for a later click', async () => {
+        process.env.VISUAL_MAX_ESCALATIONS = '1';
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(SCROLL_MISS_RESP)) // instr 1: scroll, filtered
+            .mockResolvedValueOnce(aiResp(MISS_RESP)) // instr 2: click, genuine miss
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }]))); // instr 2 visual find
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({
+                ...TASK,
+                instructions: [
+                    { name: 'scroll', prompt: 'scroll to the footer' },
+                    { name: 'click', prompt: 'submit' },
+                ],
+            })
+        ).resolves.toBeUndefined();
+
+        expect(mockRepresent).toHaveBeenCalledTimes(1);
+        expect(visualLocator.click).toHaveBeenCalledTimes(1);
+    });
+
+    // (o4) the accepted consequence of "always error" stops at the EXPLICIT
+    // visual path: under --mode auto a scroll must never abort the run.
+    // This is the inverse guard of the explicit-path refusal tests in
+    // Operations.visual-mode.test.js.
+    it('(o4) a scroll under --mode auto never raises UNSUPPORTED_VISUAL_ACTION', async () => {
+        generateAIResponse.mockResolvedValueOnce(aiResp(SCROLL_MISS_RESP));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'scroll', prompt: 'scroll to the footer' }] })
+        ).resolves.toBeUndefined();
     });
 
     // (q) grid strategy on the escalation path threads the value the same
