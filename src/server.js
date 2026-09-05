@@ -319,9 +319,15 @@ async function handleRequest(req, res) {
 
       await slot.ops.executeTask(taskDescription);
 
+      // `visualEscalationFailures` is additive and always present (empty on
+      // a clean run): an auto-escalation error is absorbed so the run falls
+      // through to healing and still reports success, so this array is the
+      // only place a consumer of the daemon result can see that a genuine
+      // fault occurred.
       const result = JSON.stringify({
         extracts: slot.ops.extracts,
         tokenUsage: slot.ops.tokenUsage,
+        visualEscalationFailures: slot.ops.visualEscalationFailures,
       }, null, 2);
 
       lastActivityAt = Date.now();

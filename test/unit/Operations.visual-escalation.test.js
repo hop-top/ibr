@@ -737,4 +737,169 @@ describe('Operations auto-mode visual escalation', () => {
         expect(page.keyboard.type).toHaveBeenCalledWith('user@example.com');
         expect(attemptHealSpy).not.toHaveBeenCalled();
     });
+
+    // ── absorbed-error visibility (r)–(w) ─────────────────────────────────
+    //
+    // Both catches inside #attemptVisualEscalation absorb EVERYTHING and
+    // return null, so the caller falls through to healing and the run often
+    // still succeeds. That resilience is deliberate and must not change —
+    // what must change is that the absorbed error stops being invisible to a
+    // machine consumer, which reads the NDJSON stream and the Operations
+    // instance, never the winston log sink.
+
+    // The visual find provider call itself blows up (provider/network fault).
+    const RESOLUTION_ERROR = 'vision provider 503';
+
+    it('(r) emits visual.escalation_failed when the visual RESOLUTION errors', async () => {
+        const failedSpy = vi.spyOn(streamer, 'visualEscalationFailed');
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(TEXT_ACTION_RESP))
+            .mockRejectedValueOnce(new Error(RESOLUTION_ERROR)); // visual find call throws
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        // The escalation error is absorbed; the instruction then falls
+        // through to healing, which the stub declines — so the run throws
+        // for the ORIGINAL text-action failure, exactly as before.
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+        ).rejects.toThrow();
+
+        expect(failedSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                instructionIndex: expect.any(Number),
+                phase: 'resolution',
+                error: expect.stringContaining(RESOLUTION_ERROR),
+            })
+        );
+
+        failedSpy.mockRestore();
+    });
+
+    it('(s) records the absorbed resolution error on the Operations instance', async () => {
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(TEXT_ACTION_RESP))
+            .mockRejectedValueOnce(new Error(RESOLUTION_ERROR));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+        ).rejects.toThrow();
+
+        expect(ops.visualEscalationFailures).toHaveLength(1);
+        expect(ops.visualEscalationFailures[0]).toMatchObject({
+            phase: 'resolution',
+            error: expect.stringContaining(RESOLUTION_ERROR),
+        });
+        expect(typeof ops.visualEscalationFailures[0].instructionIndex).toBe('number');
+    });
+
+    it('(t) emits visual.escalation_failed with the target when the visual EXECUTION fails', async () => {
+        const failedSpy = vi.spyOn(streamer, 'visualEscalationFailed');
+        // The visual mark resolves, but acting on it throws (element
+        // detached / navigated mid-action / Playwright timeout).
+        visualLocator.click = vi.fn().mockRejectedValue(new Error('element is detached from the DOM'));
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(TEXT_ACTION_RESP))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+        ).rejects.toThrow();
+
+        expect(failedSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                phase: 'execution',
+                target: 'visual-mark=@e2',
+                error: expect.stringContaining('detached'),
+            })
+        );
+
+        failedSpy.mockRestore();
+    });
+
+    it('(u) surfaces the MISSING_ACTION_VALUE code when a grid fill has no value', async () => {
+        const failedSpy = vi.spyOn(streamer, 'visualEscalationFailed');
+        mockRepresent = vi.fn().mockResolvedValue({
+            image: IMAGE_BUFFER,
+            mime: 'image/png',
+            markMap: gridMarkMap('r0c0', { x: 100, y: 200, width: 50, height: 60 }),
+            strategy: 'grid',
+        });
+        VisualRepresenter.mockImplementation(() => ({ represent: mockRepresent }));
+
+        const failingFillLocator = makeLocator();
+        failingFillLocator.fill = vi.fn().mockRejectedValue(new Error('element is not visible'));
+        resolveElement.mockReturnValue(failingFillLocator);
+
+        // A fill whose value the text path never resolved: the grid strategy
+        // has no element to infer one from, so #performVisualGridAction
+        // raises MISSING_ACTION_VALUE — today swallowed without trace.
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(JSON.stringify({
+                elements: [{ role: 'textbox', name: 'Email' }],
+                type: 'fill',
+            })))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: 'r0c0' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'fill', prompt: 'the email box' }] })
+        ).rejects.toThrow();
+
+        expect(failedSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                phase: 'execution',
+                code: 'MISSING_ACTION_VALUE',
+                target: 'visual-grid=r0c0',
+            })
+        );
+        expect(ops.visualEscalationFailures[0]).toMatchObject({
+            code: 'MISSING_ACTION_VALUE',
+            target: 'visual-grid=r0c0',
+        });
+
+        failedSpy.mockRestore();
+    });
+
+    // (v) THE control-flow guard for this change. Surfacing the absorbed
+    // error must not alter what happens next: the escalation error is still
+    // swallowed (it never becomes the thrown error), the instruction still
+    // falls through to healing, and the run's outcome is decided by healing
+    // exactly as before — here the stub declines, so the run throws for the
+    // ORIGINAL text-action failure, never for the visual one.
+    it('(v) surfacing does not change control flow — the escalation failure still falls through to healing', async () => {
+        visualLocator.click = vi.fn().mockRejectedValue(new Error('element is detached from the DOM'));
+
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(TEXT_ACTION_RESP))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await expect(
+            ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] })
+        ).rejects.toThrow(/element is not visible/);
+
+        // Healing was reached (the fall-through is intact) and the absorbed
+        // error was recorded rather than propagated.
+        expect(attemptHealSpy).toHaveBeenCalledTimes(1);
+        expect(ops.visualEscalationFailures).toHaveLength(1);
+        expect(ops.visualEscalationFailures[0].error).toContain('detached');
+    });
+
+    it('(w) records nothing when the escalation resolves and executes cleanly', async () => {
+        const failedSpy = vi.spyOn(streamer, 'visualEscalationFailed');
+        generateAIResponse
+            .mockResolvedValueOnce(aiResp(TEXT_ACTION_RESP))
+            .mockResolvedValueOnce(aiResp(JSON.stringify([{ mark: '@e2' }])));
+
+        const ops = new Operations(makeCtx(page), { mode: 'auto' });
+        await ops.executeTask({ ...TASK, instructions: [{ name: 'click', prompt: 'submit' }] });
+
+        expect(failedSpy).not.toHaveBeenCalled();
+        expect(ops.visualEscalationFailures).toEqual([]);
+
+        failedSpy.mockRestore();
+    });
 });
