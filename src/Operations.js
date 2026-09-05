@@ -48,7 +48,6 @@ import { CliError, ensureCliError } from './utils/cliErrors.js';
 const VISUAL_ACTION_TYPES = new Set(['click', 'fill', 'type', 'press']);
 
 /** Sentinel action type for an instruction the visual path must not perform. */
-const VISUAL_UNSUPPORTED_ACTION = 'unsupported';
 
 /** Strip query params from URL before emitting to NDJSON stream (avoid leaking tokens/keys). */
 function sanitizeUrlForStream(rawUrl) {
@@ -1350,7 +1349,7 @@ export class Operations {
      *
      * @throws {CliError} UNSUPPORTED_VISUAL_ACTION when the instruction's
      *   action type cannot be performed against a visual mark.
-     * @returns {Promise<{elements: Array, type: 'click'|'fill'|'type'|'press'|'unsupported', value?: string, visual?: {locator?: Object, gridCenter?: {x:number,y:number}, label: string}}>}
+     * @returns {Promise<{elements: Array, type: 'click'|'fill'|'type'|'press', value?: string, visual?: {locator?: Object, gridCenter?: {x:number,y:number}, label: string}}>}
      */
     async #resolveVisualAction(instruction, fallbackValue) {
         if (!VISUAL_ACTION_TYPES.has(instruction.name)) {
@@ -1378,14 +1377,10 @@ export class Operations {
             found = [];
         }
 
-        // Only the action types the visual path can actually PERFORM map
-        // through. Anything else — `scroll` above all — maps to an explicit
-        // unsupported marker so the executors refuse it; mapping it to
-        // 'click' would make a scroll instruction silently click whatever
-        // element the vision model happened to pick.
-        const actionType = VISUAL_ACTION_TYPES.has(instruction.name)
-            ? instruction.name
-            : VISUAL_UNSUPPORTED_ACTION;
+        // Safe unconditionally: the guard at the top of this method already
+        // threw for anything outside VISUAL_ACTION_TYPES, so by here the
+        // instruction names an action the visual path can actually perform.
+        const actionType = instruction.name;
 
         const descriptor = Array.isArray(found) && found.length > 0 ? found[0] : null;
         const label = descriptor?.mark ?? null;
