@@ -488,7 +488,7 @@ function printUsage(stream = process.stdout) {
     '  AI_TEMPERATURE        - AI temperature 0-2 [default: 0]',
     '  BROWSER_CHANNEL       - Browser to use: brave, chrome, msedge, chromium, arc, comet',
     '  BROWSER_EXECUTABLE_PATH - Explicit path to browser binary (overrides BROWSER_CHANNEL)',
-    '  BROWSER_PROFILE       - Browser profile for cookie import [default: Default]',
+    '  BROWSER_PROFILE       - Browser profile for cookie import: dir name or "last-used" [default: Default]',
     '  BROWSER_HEADLESS      - Run headless (true/false) [default: true]',
     '  BROWSER_ARGS          - Extra Chromium launch args (space-separated)',
     '  BROWSER_REUSE_PAGE    - Reuse existing page in CDP-connected browser (true/false)',
@@ -843,14 +843,15 @@ async function run() {
           if (result.count > 0) {
             await context.addCookies(result.cookies);
             logger.info(`Loaded ${result.count} cookies from ${cookiesConfig.browser}`, {
+              profile: result.profile,
               domains: Object.keys(result.domainCounts).length,
               failed: result.failed,
             });
           } else {
             logger.warn(
-              `No unexpired cookies found for ${cookiesConfig.browser} profile "${profile}". ` +
-              `Set BROWSER_PROFILE to read another profile (e.g. "Profile 1").`,
-              { domains: cookiesConfig.domains, profile },
+              `No unexpired cookies found for ${cookiesConfig.browser} profile "${result.profile}". ` +
+              `Set BROWSER_PROFILE to another profile (e.g. "Profile 1") or "last-used".`,
+              { domains: cookiesConfig.domains, profile: result.profile },
             );
           }
         } catch (err) {

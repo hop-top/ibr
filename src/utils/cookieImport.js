@@ -109,6 +109,9 @@ export const BROWSER_REGISTRY = [
 const COOKIE_BROWSER_HELP_TEXT =
   'chrome, brave, edge, arc (macOS), comet (macOS), chromium (Linux/Windows)';
 const LINUX_SAFE_STORAGE_PASSWORD = 'peanuts';
+const DEFAULT_PROFILE = 'Default';
+/** Profile keyword: resolve to the browser's own most-recently-used profile. */
+export const LAST_USED_PROFILE = 'last-used';
 const WINDOWS_DPAPI_KEY_PREFIX = 'DPAPI';
 const WINDOWS_COOKIE_KEY_LENGTH = 256 / 8;
 const WINDOWS_GCM_NONCE_LENGTH = 96 / 8;
@@ -194,9 +197,9 @@ export function findInstalledBrowsers() {
  * @param {string} [profile]
  * @returns {{ domains: Array<{domain:string, count:number}>, browser: string }}
  */
-export function listDomains(browserName, profile = 'Default') {
+export function listDomains(browserName, profile = DEFAULT_PROFILE) {
   const browser = resolveBrowser(browserName);
-  const dbPath = getCookieDbPath(browser, profile);
+  const dbPath = getCookieDbPath(browser, resolveProfile(browser, profile));
   const db = openDb(dbPath, browser.name);
   try {
     const now = chromiumNow();
@@ -219,12 +222,13 @@ export function listDomains(browserName, profile = 'Default') {
  *
  * @param {string} browserName
  * @param {string[]} domains  — empty = all
- * @param {string} [profile]
- * @returns {Promise<{cookies: Array, count: number, failed: number, domainCounts: Object}>}
+ * @param {string} [profile]  — profile dir name, or 'last-used'
+ * @returns {Promise<{cookies: Array, count: number, failed: number, domainCounts: Object, profile: string}>}
  */
-export async function importCookies(browserName, domains, profile = 'Default') {
+export async function importCookies(browserName, domains, profile = DEFAULT_PROFILE) {
   const browser = resolveBrowser(browserName);
-  const dbPath = getCookieDbPath(browser, profile);
+  const resolvedProfile = resolveProfile(browser, profile);
+  const dbPath = getCookieDbPath(browser, resolvedProfile);
   const db = openDb(dbPath, browser.name);
 
   try {
@@ -257,7 +261,7 @@ export async function importCookies(browserName, domains, profile = 'Default') {
       }
     }
 
-    return { cookies, count: cookies.length, failed, domainCounts };
+    return { cookies, count: cookies.length, failed, domainCounts, profile: resolvedProfile };
   } finally {
     db.close();
   }
@@ -308,6 +312,28 @@ function validateProfile(profile) {
       'bad_request',
     );
   }
+}
+
+/**
+ * Map a requested profile to a profile directory name. 'last-used' reads
+ * Local State → profile.last_used; Chromium omits that key until the user
+ * switches profiles, so absence means Default.
+ */
+function resolveProfile(browser, profile) {
+  if (profile !== LAST_USED_PROFILE) return profile;
+
+  const localStatePath = path.join(getConfigBase(), getBrowserDataDir(browser), 'Local State');
+  let localState;
+  try {
+    localState = JSON.parse(fs.readFileSync(localStatePath, 'utf8'));
+  } catch (err) {
+    throw new CookieImportError(
+      `Cannot resolve ${browser.name} profile '${LAST_USED_PROFILE}': ` +
+      `unreadable Local State at ${localStatePath} (${err.message})`,
+      'profile_unresolved',
+    );
+  }
+  return localState?.profile?.last_used || DEFAULT_PROFILE;
 }
 
 function getCookieDbPath(browser, profile) {
