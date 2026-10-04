@@ -847,9 +847,11 @@ async function run() {
               failed: result.failed,
             });
           } else {
-            logger.warn(`No cookies found for ${cookiesConfig.browser}`, {
-              domains: cookiesConfig.domains,
-            });
+            logger.warn(
+              `No unexpired cookies found for ${cookiesConfig.browser} profile "${profile}". ` +
+              `Set BROWSER_PROFILE to read another profile (e.g. "Profile 1").`,
+              { domains: cookiesConfig.domains, profile },
+            );
           }
         } catch (err) {
           logger.error(
