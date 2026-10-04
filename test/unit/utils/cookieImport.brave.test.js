@@ -314,21 +314,23 @@ describe('Brave — listDomains', () => {
 // ── 6. Domain filter ───────────────────────────────────────────────────────
 
 describe('Brave — domain filter expansion', () => {
-  it('expands bare domain to bare + dot variant', async () => {
+  it('bare domain matches both the host-only and leading-dot host_key', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
 
-    let capturedParams;
+    const row = (host_key) => ({
+      host_key, name: 'n', value: 'v', encrypted_value: Buffer.alloc(0), path: '/',
+      expires_utc: 0, has_expires: 0, is_secure: 1, is_httponly: 0, samesite: 1,
+    });
     const Database = (await import('better-sqlite3')).default;
     Database.mockReturnValue({
-      prepare: vi.fn(() => ({ all: vi.fn((...args) => { capturedParams = args; return []; }) })),
+      prepare: vi.fn(() => ({ all: vi.fn(() => ['brave.com', '.brave.com', '.other.com'].map(row)) })),
       close: vi.fn(),
     });
 
     const { importCookies } = await loadModule();
-    await importCookies('brave', ['brave.com']);
+    const result = await importCookies('brave', ['brave.com']);
 
-    expect(capturedParams[0]).toBe('brave.com');
-    expect(capturedParams[1]).toBe('.brave.com');
+    expect(result.cookies.map(c => c.domain)).toEqual(['brave.com', '.brave.com']);
   });
 
   it('passes no domain params when domains array is empty', async () => {

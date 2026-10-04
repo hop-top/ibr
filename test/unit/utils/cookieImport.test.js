@@ -456,61 +456,37 @@ describe('cookieImport — Copilot review regression tests', () => {
       vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
     });
 
-    it('expands bare domain to include leading-dot variant in SQL params', async () => {
-      // Capture the params passed to stmt.all()
-      let capturedParams;
-      const mockStmt = { all: vi.fn((...args) => { capturedParams = args; return []; }) };
-      const Database = (await import('better-sqlite3')).default;
-      Database.mockReturnValue({
-        prepare: vi.fn(() => mockStmt),
-        close: vi.fn(),
-      });
-
-      const { importCookies } = await loadModule();
-      await importCookies('chrome', ['github.com']);
-
-      // params = [...expanded, now]; expanded = ['github.com', '.github.com']
-      expect(capturedParams[0]).toBe('github.com');
-      expect(capturedParams[1]).toBe('.github.com');
+    // Rows the mocked cookie DB returns; the domain filter runs on these.
+    const row = (host_key) => ({
+      host_key, name: 'n', value: 'v', encrypted_value: Buffer.alloc(0), path: '/',
+      expires_utc: 0, has_expires: 0, is_secure: 1, is_httponly: 0, samesite: 1,
     });
 
-    it('does not double-dot a domain that already starts with a dot', async () => {
-      let capturedParams;
-      const mockStmt = { all: vi.fn((...args) => { capturedParams = args; return []; }) };
+    async function importedDomains(domains, hosts) {
       const Database = (await import('better-sqlite3')).default;
       Database.mockReturnValue({
-        prepare: vi.fn(() => mockStmt),
+        prepare: vi.fn(() => ({ all: vi.fn(() => hosts.map(row)) })),
         close: vi.fn(),
       });
-
       const { importCookies } = await loadModule();
-      await importCookies('chrome', ['.github.com']);
+      const result = await importCookies('chrome', domains);
+      return result.cookies.map(c => c.domain);
+    }
 
-      // '.github.com' already starts with dot → expansion keeps it as-is
-      // flatMap(d => [d, d.startsWith('.') ? d : `.${d}`])
-      // → ['.github.com', '.github.com']  (deduped by Set? no — check source)
-      // Source does NOT dedup; both entries are '.github.com'
-      expect(capturedParams[0]).toBe('.github.com');
-      expect(capturedParams[1]).toBe('.github.com');
+    it('bare domain matches both the host-only and leading-dot host_key', async () => {
+      expect(await importedDomains(['github.com'], ['github.com', '.github.com', '.gitlab.com']))
+        .toEqual(['github.com', '.github.com']);
     });
 
-    it('expands multiple domains each to both variants', async () => {
-      let capturedParams;
-      const mockStmt = { all: vi.fn((...args) => { capturedParams = args; return []; }) };
-      const Database = (await import('better-sqlite3')).default;
-      Database.mockReturnValue({
-        prepare: vi.fn(() => mockStmt),
-        close: vi.fn(),
-      });
+    it('leading-dot domain also matches the host-only host_key', async () => {
+      // Previously expanded to ['.github.com', '.github.com'], dropping 'github.com'.
+      expect(await importedDomains(['.github.com'], ['github.com', '.github.com']))
+        .toEqual(['github.com', '.github.com']);
+    });
 
-      const { importCookies } = await loadModule();
-      await importCookies('chrome', ['a.com', 'b.com']);
-
-      // expanded = ['a.com', '.a.com', 'b.com', '.b.com']
-      expect(capturedParams[0]).toBe('a.com');
-      expect(capturedParams[1]).toBe('.a.com');
-      expect(capturedParams[2]).toBe('b.com');
-      expect(capturedParams[3]).toBe('.b.com');
+    it('matches each of multiple domains', async () => {
+      expect(await importedDomains(['a.com', 'b.com'], ['a.com', '.b.com', '.c.com']))
+        .toEqual(['a.com', '.b.com']);
     });
 
     it('uses single SQL statement (no domain filter) when domains array is empty', async () => {

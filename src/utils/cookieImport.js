@@ -230,35 +230,16 @@ export async function importCookies(browserName, domains, profile = 'Default') {
   try {
     const now = chromiumNow();
 
-    let stmt;
-    let params;
-    if (domains.length === 0) {
-      // All non-expired cookies
-      stmt = db.prepare(
-        `SELECT host_key, name, value, encrypted_value, path, expires_utc,
-                is_secure, is_httponly, has_expires, samesite
-         FROM cookies
-         WHERE has_expires = 0 OR expires_utc > ?
-         ORDER BY host_key, name`
-      );
-      params = [now];
-    } else {
-      // Include both bare domain and leading-dot variant (Chromium stores domain
-      // cookies as ".github.com" but callers typically pass "github.com").
-      const expanded = domains.flatMap(d => [d, d.startsWith('.') ? d : `.${d}`]);
-      const placeholders = expanded.map(() => '?').join(',');
-      stmt = db.prepare(
-        `SELECT host_key, name, value, encrypted_value, path, expires_utc,
-                is_secure, is_httponly, has_expires, samesite
-         FROM cookies
-         WHERE host_key IN (${placeholders})
-           AND (has_expires = 0 OR expires_utc > ?)
-         ORDER BY host_key, name`
-      );
-      params = [...expanded, now];
-    }
-
-    const rows = stmt.all(...params);
+    const live = db.prepare(
+      `SELECT host_key, name, value, encrypted_value, path, expires_utc,
+              is_secure, is_httponly, has_expires, samesite
+       FROM cookies
+       WHERE has_expires = 0 OR expires_utc > ?
+       ORDER BY host_key, name`
+    ).all(now);
+    const rows = domains.length === 0
+      ? live
+      : live.filter(row => matchesAnyDomain(row.host_key, domains));
     const derivedKey = shouldLoadBrowserKey(rows) ? getDerivedKey(browser) : null;
 
     const cookies = [];
@@ -280,6 +261,26 @@ export async function importCookies(browserName, domains, profile = 'Default') {
   } finally {
     db.close();
   }
+}
+
+// ─── Internal: Domain Matching ──────────────────────────────────
+
+/**
+ * Cookie domain-match (RFC 6265 §5.1.3): a host_key matches a requested
+ * domain when it equals it or is a subdomain of it. Chromium stores domain
+ * cookies with a leading dot (".github.com") and host-only cookies without;
+ * both forms match. Case-insensitive.
+ */
+function matchesAnyDomain(hostKey, domains) {
+  const host = stripLeadingDot(hostKey.toLowerCase());
+  return domains.some(d => {
+    const domain = stripLeadingDot(d.toLowerCase());
+    return host === domain || host.endsWith(`.${domain}`);
+  });
+}
+
+function stripLeadingDot(s) {
+  return s.startsWith('.') ? s.slice(1) : s;
 }
 
 // ─── Internal: Browser Resolution ───────────────────────────────
