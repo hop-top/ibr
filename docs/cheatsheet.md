@@ -342,7 +342,7 @@ ibr upgrade preamble         # emit agent skill preamble fragment
 | `BROWSER_TIMEOUT` | `30000` | ms per action |
 | `BROWSER_CHANNEL` | _(chromium)_ | `brave` / `chrome` / `msedge` / `arc` / `comet` |
 | `BROWSER_EXECUTABLE_PATH` | — | Explicit browser binary path (overrides `BROWSER_CHANNEL`) |
-| `BROWSER_PROFILE` | `Default` | Browser profile to read cookies from |
+| `BROWSER_PROFILE` | `Default` | Browser profile to read cookies from: a profile dir name (`Profile 1`) or `last-used` (the browser's most recently used profile) |
 | `EXECUTION_TIMEOUT_MS` | _(none)_ | Global cap on a run, in ms (e.g. `60000`) |
 | `IBR_DAEMON` | `false` | Enable daemon mode |
 | `IBR_STATE_FILE` | `~/.ibr/server.json` | Daemon state file path |
