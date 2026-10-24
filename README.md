@@ -2,6 +2,8 @@
 
 An AI-powered instruction parser that converts human-readable instructions into automated web interactions. Powered by Playwright for browser automation and Vercel AI SDK for multi-provider AI support.
 
+> **Status:** Active development. Usable today, with some rough edges as features evolve.
+
 ## Features
 
 - **Multi-Provider AI Support**: OpenAI, Anthropic Claude, Google Gemini
